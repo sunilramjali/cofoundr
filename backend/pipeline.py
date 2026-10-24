@@ -2,7 +2,7 @@
 
 Every input channel (dashboard upload, Gmail, WhatsApp photo via Saint, ...) calls
 `ingest_invoice` with the raw document. Everything after that is processing:
-Gemini extraction + verification loop → save to MongoDB → activity log → overdue check.
+Gemini extraction + verification loop → save to MongoDB → activity log → price check (supplier bills) → overdue check.
 Input code should not call extract/save/overdue directly. It never raises: every
 outcome comes back as an IngestResult with a message safe to show the owner.
 """
@@ -13,7 +13,8 @@ from google.genai import errors as genai_errors
 
 from backend.ai import overdue
 from backend.ai.extract import extract_invoice, looks_like_invoice, save_invoice, to_invoice_doc
-from backend.db import activity
+from backend.db import activity, search
+from backend.db.client import get_db
 
 Source = Literal["whatsapp_photo", "pdf", "email", "manual"]
 
@@ -33,6 +34,27 @@ class IngestResult:
     drafted: List[dict] = field(default_factory=list)  # new pending approvals from the overdue check
     # "empty" | "too_large" | "unsupported_type" | "gemini_unavailable" | "unreadable" | "not_invoice"
     error: Optional[str] = None
+
+
+def _price_note(doc: dict) -> str:
+    """Compare a checked supplier bill's prices with earlier bills; log it and return one line for the owner (or "").
+    Never blocks the ingest: a failure is logged and the invoice is still saved."""
+    if doc.get("direction") != "payable" or doc.get("needs_review"):
+        return ""
+    try:
+        check = search.price_check(get_db(), doc)
+    except Exception as e:
+        activity.log("price_check_failed", f"Couldn't compare prices on {doc['invoice_number']} ({type(e).__name__})",
+                     invoice_id=str(doc["_id"]))
+        return ""
+    if not check.comparisons:
+        return ""
+    lines = check.lines()
+    activity.log("price_checked", lines[0] if lines else
+                 f"Checked {len(check.comparisons)} price(s) on {doc['invoice_number']} against earlier bills: in line",
+                 invoice_id=str(doc["_id"]), invoice_number=doc["invoice_number"], mode=check.mode,
+                 comparisons=check.comparisons, preferred=check.preferred)
+    return lines[0] if lines else ""
 
 
 def _fail(error: str, message: str, source: str, origin: str, **detail) -> IngestResult:
@@ -76,7 +98,9 @@ def ingest_invoice(data: bytes, mime_type: str, source: Source, origin: str = ""
     activity.log("invoice_extracted", f"Read {doc['invoice_number']} from {doc['counterparty']}, £{doc['amount']:.2f}, "
                  f"{verdict}{f' [{origin}]' if origin else ''}",
                  invoice_id=str(doc["_id"]), invoice_number=doc["invoice_number"], attempts=attempts, source=source)
+    note = _price_note(doc)
     drafted = overdue.run()
     extra = f" {len(drafted)} new action(s) drafted for approval." if drafted else ""
-    return IngestResult(True, f"Added {doc['invoice_number']} ({doc['counterparty']}, £{doc['amount']:.2f}): {verdict}.{extra}",
+    return IngestResult(True, f"Added {doc['invoice_number']} ({doc['counterparty']}, £{doc['amount']:.2f}): {verdict}.{extra}"
+                        + (f" {note}" if note else ""),
                         invoice=doc, created=True, needs_review=bool(issues), drafted=drafted)

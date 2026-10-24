@@ -54,6 +54,9 @@ class Business(TypedDict):
     business_type: str
     location: str
     currency: str
+    # counterparty_key()s the owner is loyal to: CoFoundr still reports their price rises, but never suggests
+    # alternatives to them (backend/db/search.py). Missing = none.
+    preferred_suppliers: List[str]
     synthetic: bool  # True for all demo data
     created_at: datetime
 
@@ -239,7 +242,8 @@ class Task(TypedDict):
     Tasks are gathered from MongoDB (never invented by Gemini); Gemini only orders them and says why."""
     _id: str  # "<business_id>:<kind>:<key>", stable across runs
     business_id: str
-    kind: Literal["approval", "review_invoice", "prep_day"]
+    # price_rise = a supplier charged more than last time; price_match = another supplier is cheaper, ask to match
+    kind: Literal["approval", "review_invoice", "prep_day", "price_rise", "price_match"]
     title: str  # one line, e.g. "Approve #3: chase Hackney Hub, £450.00, 12 days overdue"
     facts: str  # what the ranking was based on
     target_id: Optional[str]  # str(_id) of the approval / invoice / forecast it's about

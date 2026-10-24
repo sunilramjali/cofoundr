@@ -664,7 +664,7 @@ def test_search_falls_back_to_word_match_without_atlas_search(db):
     from backend.db import search
     result = search.search_invoices(db, "dairy milk")
     assert result.mode == "basic" and result.error
-    assert result.hits[0]["invoice_number"] == "EDC-7781" and result.hits[0]["matched_by"] == ["keyword"]
+    assert result.hits[0]["counterparty"] == "Eastside Dairy Co" and result.hits[0]["matched_by"] == ["keyword"]
     assert search.search_invoices(db, "   ").hits == []
     assert search.search_invoices(db, "submarine").hits == []
 
@@ -700,6 +700,7 @@ def test_price_check_compares_like_for_like_items_across_suppliers(db):
     assert by_item["Whole Milk (2L)"]["other_price"] == 1.85 and by_item["Whole Milk (2L)"]["change_pct"] == 2.7
     assert by_item["Whole Milk (2L)"]["counterparty"] == "Eastside Dairy Co"
     assert by_item["Oat Barista Milk (1L)"]["change_pct"] == -9.5  # cheaper than Eastside's "Oat milk, 1L"
+    assert by_item["Whole Milk (2L)"]["exact"] and not by_item["Oat Barista Milk (1L)"]["exact"]  # barista ≠ plain oat milk
     assert "Almond Barista Milk (1L)" not in by_item  # nothing comparable: no guess
     assert [c["item"] for c in check.cheaper_elsewhere] == ["Whole Milk (2L)"] and check.rises == []
 
@@ -732,15 +733,15 @@ def test_different_pack_sizes_are_never_compared(db):
 
 def test_only_earlier_trusted_same_currency_positive_prices_count(db):
     from backend.db import schema, search
-    old = datetime.now(timezone.utc) - timedelta(days=60)
-    assert search.price_check(db, _eastside(issue_date=old)).comparisons == []  # EDC-7781 is newer than this one
+    old = datetime.now(timezone.utc) - timedelta(days=200)
+    assert search.price_check(db, _eastside(issue_date=old)).comparisons == []  # every Eastside bill is newer
     assert search.price_check(db, _eastside(currency="EUR")).comparisons == []
     free = _eastside(line_items=[{"description": "Whole milk, 2L", "qty": 1, "unit_price": 0.0}])
     assert search.price_check(db, free).comparisons == []
     flagged = search.price_check(db, _eastside(needs_review=True))
     assert flagged.comparisons == [] and "check" in flagged.skipped
     db[schema.INVOICES].update_one({"invoice_number": "EDC-7781"}, {"$set": {"needs_review": True}})
-    assert search.price_check(db, _eastside()).comparisons == []  # a misread reference price is no reference
+    assert search.price_check(db, _eastside()).rises[0]["invoice_number"] == "EDC-7764"  # misread bill skipped
 
 
 def test_ties_go_to_the_most_similar_invoice(db, monkeypatch):
@@ -767,7 +768,7 @@ class EmptyAtlas:
 def test_an_empty_atlas_answer_falls_back_and_is_logged_once_an_hour(db):
     from backend.db import schema, search
     first = search.search_invoices(EmptyAtlas(db), "dairy")
-    assert first.mode == "basic" and first.hits[0]["invoice_number"] == "EDC-7781" and "building" in first.error
+    assert first.mode == "basic" and first.hits[0]["counterparty"] == "Eastside Dairy Co" and "building" in first.error
     search.search_invoices(EmptyAtlas(db), "cups")
     search.search_invoices(db, "milk")  # mongomock: $search unsupported, also a fallback
     assert db[schema.AGENT_LOG].count_documents({"kind": "search_fallback"}) == 1
@@ -780,3 +781,117 @@ def test_queries_without_words_or_too_long_are_handled():
     assert search.search_invoices(atlas, "?!..").hits == [] and atlas.pipeline is None  # no Atlas call at all
     search.search_invoices(atlas, "milk " * 500)
     assert len(atlas.pipeline[0]["$rankFusion"]["input"]["pipelines"]["meaning"][0]["$vectorSearch"]["query"]["text"]) <= 200
+
+
+# --- supplier loyalty + price check in the pipeline and priorities
+
+def _today_str():
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _eastside_bill(fake_extraction, price=1.95, number="EDC-9100", **over):
+    from tests.conftest import make_invoice
+    from backend.ai.extract import ExtractedLineItem as L
+    fake_extraction(make_invoice(**{"invoice_number": number, "issue_date": _today_str(), "printed_total": round(40 * price, 2),
+                                    "line_items": [L(description="Whole milk, 2L", qty=40, unit_price=price)], **over}))
+    return ingest_invoice(b"%PDF", "application/pdf", "email", origin="email from billing@eastsidedairy.example.com")
+
+
+def test_loyal_supplier_context_and_wording_ask_to_match_never_switch(db):
+    from backend.db import search
+    check = search.price_check(db, {**MEADOWFIELD, "counterparty": "Eastside Dairy Co", "counterparty_key": "eastsidedairyco",
+                                    "line_items": [{"description": "Whole milk, 2L", "qty": 40, "unit_price": 1.95}]})
+    assert check.supplier["bills"] == 5 and check.supplier["paid"] == 4 and check.supplier["paid_on_time"] == 4
+    line = check.lines()[0]
+    assert "put Whole milk, 2L up 5.4% (£1.85 → £1.95 since EDC-7781)" in line
+    db[schema.INVOICES].insert_one({**MEADOWFIELD, "counterparty_key": "meadowfielddairy", "currency": "GBP",
+                                    "issue_date": datetime.now(timezone.utc) - timedelta(days=3),
+                                    "line_items": [{"description": "Whole Milk (2L)", "qty": 10, "unit_price": 1.70}]})
+    lines = search.price_check(db, {**MEADOWFIELD, "counterparty": "Eastside Dairy Co", "counterparty_key": "eastsidedairyco",
+                                    "line_items": [{"description": "Whole milk, 2L", "qty": 40, "unit_price": 1.95}]}).lines()
+    match = next(ln for ln in lines if "match" in ln)
+    assert "Meadowfield Dairy charged £1.70" in match and "worth asking Eastside Dairy Co to match" in match
+    assert "vs £1.95 here:" in match  # same item: no "similar" caveat
+    assert "5 bills since" in match and "all paid on time)" in match  # EDC-7781 is unpaid but not due yet
+    assert "switch" not in " ".join(lines).lower()
+    db[schema.INVOICES].update_one({"invoice_number": "EDC-7781"}, {"$set": {"due_date": datetime.now(timezone.utc) - timedelta(days=2)}})
+    late = search.price_check(db, {**MEADOWFIELD, "counterparty": "Eastside Dairy Co", "counterparty_key": "eastsidedairyco",
+                                   "line_items": [{"description": "Whole milk, 2L", "qty": 40, "unit_price": 1.95}]}).lines()
+    assert "all paid on time, 1 overdue now)" in next(ln for ln in late if "match" in ln)  # loyalty cuts both ways
+
+
+def test_preferred_supplier_gets_rises_reported_but_no_alternatives(db):
+    from backend.db import search
+    db[schema.INVOICES].insert_one({**MEADOWFIELD, "counterparty_key": "meadowfielddairy", "currency": "GBP",
+                                    "issue_date": datetime.now(timezone.utc) - timedelta(days=3),
+                                    "line_items": [{"description": "Whole Milk (2L)", "qty": 10, "unit_price": 1.70}]})
+    bill = {**MEADOWFIELD, "counterparty": "Eastside Dairy Co", "counterparty_key": "eastsidedairyco",
+            "line_items": [{"description": "Whole milk, 2L", "qty": 40, "unit_price": 1.95}]}
+    assert search.price_check(db, bill).cheaper_elsewhere
+    assert search.set_preferred(db, "Eastside Dairy Co.") == ["eastsidedairyco"]
+    check = search.price_check(db, bill)
+    assert check.preferred and check.rises and check.cheaper_elsewhere == []
+    assert not any("match" in ln for ln in check.lines())
+    assert search.set_preferred(db, "Eastside Dairy Co", preferred=False) == []
+
+
+def test_new_supplier_bill_is_price_checked_on_arrival_and_logged(db, fake_extraction):
+    r = _eastside_bill(fake_extraction)
+    assert r.created and "Whole milk, 2L up 5.4%" in r.message
+    log = db[schema.AGENT_LOG].find_one({"kind": "price_checked"})
+    assert log and "up 5.4%" in log["summary"] and log["detail"]["comparisons"][0]["kind"] == "same_supplier"
+
+
+def test_unchanged_prices_are_logged_quietly_and_not_mentioned_to_the_owner(db, fake_extraction):
+    r = _eastside_bill(fake_extraction, price=1.85, number="EDC-9101")
+    assert r.created and "%" not in r.message
+    assert "in line" in db[schema.AGENT_LOG].find_one({"kind": "price_checked"})["summary"]
+
+
+def test_a_failing_price_check_never_blocks_the_invoice(db, fake_extraction, monkeypatch):
+    from backend.db import search
+
+    def broken(*_a, **_k):
+        raise RuntimeError("atlas down")
+    monkeypatch.setattr(search, "price_check", broken)
+    r = _eastside_bill(fake_extraction)
+    assert r.ok and r.created and db[schema.INVOICES].find_one({"invoice_number": "EDC-9100"})
+    assert db[schema.AGENT_LOG].find_one({"kind": "price_check_failed"})
+
+
+def test_bills_needing_review_and_customer_invoices_are_not_price_checked(db, fake_extraction):
+    _eastside_bill(fake_extraction, printed_total=999.0)  # total doesn't add up → needs review
+    from tests.conftest import make_invoice
+    fake_extraction(make_invoice(issuer_name="GAIA Coffee", recipient_name="Test Cafe", invoice_number="GAIA-4100",
+                                 issue_date=_today_str()))
+    ingest_invoice(b"%PDF", "application/pdf", "pdf")
+    assert db[schema.AGENT_LOG].count_documents({"kind": {"$in": ["price_checked", "price_check_failed"]}}) == 0
+
+
+def test_price_rise_becomes_a_ranked_task_with_negotiate_facts(db, fake_extraction):
+    _eastside_bill(fake_extraction)
+    tasks = [t for t in prioritise.candidates(db, datetime.now(timezone.utc)) if t["kind"].startswith("price")]
+    assert [t["kind"] for t in tasks] == ["price_rise"]
+    assert tasks[0]["title"] == "Ask Eastside Dairy Co about the price rise on Whole milk, 2L (+5.4%)"
+    assert tasks[0]["amount"] == 4.0 and "don't switch" in tasks[0]["facts"]
+    ranked = prioritise.rule_rank(tasks + [{"_id": "x", "kind": "approval", "facts": "£450 overdue", "score": 900}])
+    assert ranked[0]["_id"] == "x"  # a few pounds on milk never outranks an overdue £450
+
+
+def test_adding_missing_seed_invoices_only_adds(db):
+    from data import seed
+    db[schema.INVOICES].delete_one({"invoice_number": "EDC-7702"})
+    db[schema.INVOICES].update_one({"invoice_number": "EDC-7781"}, {"$set": {"status": "paid"}})  # a change made in the demo
+    invoices = seed.build_invoices(seed._today(), datetime.now(timezone.utc))
+    assert seed.add_missing(db, invoices) == 1 and seed.add_missing(db, invoices) == 0
+    assert db[schema.INVOICES].find_one({"invoice_number": "EDC-7781"})["status"] == "paid"  # left alone
+
+
+def test_similar_but_not_identical_items_are_named_so_the_owner_judges_quality(db):
+    from backend.db import search
+    db[schema.INVOICES].insert_one({**MEADOWFIELD, "counterparty_key": "meadowfielddairy", "currency": "GBP",
+                                    "issue_date": datetime.now(timezone.utc) - timedelta(days=3)})
+    lines = search.price_check(db, {**MEADOWFIELD, "counterparty": "Eastside Dairy Co", "counterparty_key": "eastsidedairyco",
+                                    "line_items": [{"description": "Oat milk, 1L", "qty": 36, "unit_price": 2.10}]}).lines()
+    oat = next(ln for ln in lines if "Oat Barista" in ln)
+    assert "vs £2.10 for your Oat milk, 1L (similar, not identical)" in oat

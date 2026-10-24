@@ -14,6 +14,7 @@ Usage (from the repo root):
     python -m backend.db.search --setup              # backfill search_text + create/update the Atlas indexes
     python -m backend.db.search "milk we owe"        # hybrid search
     python -m backend.db.search --similar MF-2087    # similar invoices + price check
+    python -m backend.db.search --check              # live self-test against Atlas (run before the demo)
 """
 import argparse
 import re
@@ -59,7 +60,7 @@ INDEXES = {
 
 FIELDS = {"invoice_number": 1, "counterparty": 1, "direction": 1, "amount": 1, "currency": 1, "issue_date": 1,
           "due_date": 1, "status": 1, "needs_review": 1, "line_items": 1, "search_text": 1, "counterparty_key": 1,
-          "created_at": 1}
+          "created_at": 1, "paid_at": 1}
 
 
 @dataclass
@@ -78,6 +79,9 @@ class PriceCheck:
     comparisons: List[dict] = field(default_factory=list)
     mode: str = "hybrid"
     skipped: Optional[str] = None  # why nothing was compared, e.g. the invoice itself still needs the owner's check
+    counterparty: str = ""
+    supplier: dict = field(default_factory=dict)  # supplier_history(): the relationship behind the numbers
+    preferred: bool = False  # the owner is loyal to this supplier: no "cheaper elsewhere" suggestions
 
     @property
     def rises(self) -> List[dict]:
@@ -85,7 +89,21 @@ class PriceCheck:
 
     @property
     def cheaper_elsewhere(self) -> List[dict]:
+        if self.preferred:
+            return []
         return [c for c in self.comparisons if c["kind"] == "other_supplier" and c["change_pct"] >= RISE_PCT]
+
+    def lines(self) -> List[str]:
+        """Owner-facing sentences. Loyalty first: a cheaper price elsewhere is a reason to ask for a match, never
+        advice to switch (the relationship, reliability and quality aren't in the numbers)."""
+        out = [f"{self.counterparty} put {c['item']} up {c['change_pct']:.1f}% (£{c['other_price']:.2f} → "
+               f"£{c['unit_price']:.2f} since {c['invoice_number']})." for c in self.rises]
+        for c in self.cheaper_elsewhere:
+            # Name both items when they differ ("Oat Barista Milk" isn't plain "Oat milk"): the owner judges quality
+            mine = "here" if c["exact"] else f"for your {c['item']} (similar, not identical)"
+            out.append(f"{c['counterparty']} charged £{c['other_price']:.2f} for {c['compared_to']} vs £{c['unit_price']:.2f} "
+                       f"{mine}: worth asking {self.counterparty} to match{_relationship(self.supplier)}.")
+        return out
 
 
 def ensure_search_indexes(db: Database) -> Dict[str, str]:
@@ -159,7 +177,7 @@ def price_check(db: Database, invoice: dict) -> PriceCheck:
     """Compare each line item's unit price with the same item (same pack size) on earlier invoices:
     this supplier's last price ("same_supplier") and the closest other supplier's ("other_supplier").
     "Whole Milk (2L) £1.90 vs £1.85 at Eastside Dairy Co (EDC-7781): +2.7%"."""
-    check = PriceCheck(invoice.get("invoice_number", ""))
+    check = PriceCheck(invoice.get("invoice_number", ""), counterparty=invoice.get("counterparty") or "This supplier")
     if invoice.get("needs_review"):
         check.skipped = "the invoice still needs the owner's check, so its prices aren't trusted yet"
         return check
@@ -169,6 +187,9 @@ def price_check(db: Database, invoice: dict) -> PriceCheck:
     # The supplier's own earlier bills matter most, so fetch them directly rather than hoping they rank in the top 8
     own = list(db[schema.INVOICES].find({"business_id": invoice.get("business_id", BUSINESS_ID), "counterparty_key": key,
                                          "direction": invoice.get("direction"), "_id": {"$ne": invoice.get("_id")}}, FIELDS))
+    check.supplier = supplier_history(own, invoice)
+    business = db[schema.BUSINESSES].find_one({"_id": invoice.get("business_id", BUSINESS_ID)}) or {}
+    check.preferred = key in (business.get("preferred_suppliers") or [])
     seen, candidates = set(), []
     for other in similar.hits + own:  # similar first: earlier position = more similar, wins ties
         if other.get("_id") in seen or not _comparable(invoice, other):
@@ -181,11 +202,12 @@ def price_check(db: Database, invoice: dict) -> PriceCheck:
             continue
         for kind in ("same_supplier", "other_supplier"):
             pool = [o for o in candidates if (_key(o) == key) == (kind == "same_supplier")]
-            match = _best_match(item, pool, latest_first=kind == "same_supplier")
+            match = _best_match(item, pool)
             if match:
                 other, li = match
                 check.comparisons.append({
-                    "kind": kind, "item": item["description"], "unit_price": item["unit_price"],
+                    "exact": _overlap(item["description"], li["description"]) == 1.0,
+                    "kind": kind, "item": item["description"], "unit_price": item["unit_price"], "qty": item.get("qty") or 0,
                     "compared_to": li["description"], "other_price": li["unit_price"],
                     "counterparty": other.get("counterparty"), "invoice_number": other.get("invoice_number"),
                     "change_pct": round((item["unit_price"] - li["unit_price"]) / li["unit_price"] * 100, 1),
@@ -193,7 +215,42 @@ def price_check(db: Database, invoice: dict) -> PriceCheck:
     return check
 
 
+def supplier_history(bills: List[dict], invoice: dict) -> dict:
+    """The relationship with this supplier from their earlier bills: how long, how many, how much, paid on time."""
+    earlier = [b for b in bills if _when(b) < _when(invoice)]
+    paid = [b for b in earlier if b.get("status") == "paid" and b.get("paid_at") and b.get("due_date")]
+    on_time = [b for b in paid if _aware(b["paid_at"]) <= _aware(b["due_date"])]
+    now = datetime.now(timezone.utc)
+    late = [b for b in earlier if b.get("status") != "paid" and b.get("due_date") and _aware(b["due_date"]) < now]
+    return {"bills": len(earlier), "since": min((_when(b) for b in earlier), default=None),
+            "spent": round(sum(b.get("amount") or 0 for b in earlier), 2), "paid": len(paid), "paid_on_time": len(on_time),
+            "overdue": len(late)}
+
+
+def set_preferred(db: Database, counterparty: str, preferred: bool = True, business_id: str = BUSINESS_ID) -> List[str]:
+    """Mark (or unmark) a supplier the owner is loyal to. Returns the new list of preferred supplier keys."""
+    op = "$addToSet" if preferred else "$pull"
+    db[schema.BUSINESSES].update_one({"_id": business_id}, {op: {"preferred_suppliers": schema.counterparty_key(counterparty)}})
+    return (db[schema.BUSINESSES].find_one({"_id": business_id}) or {}).get("preferred_suppliers", [])
+
+
 # ---------------------------------------------------------------- helpers
+
+def _aware(when: datetime) -> datetime:
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def _relationship(history: dict) -> str:
+    """ " (5 bills since Jul, £740 spent, all paid on time)" or "" when there's no history."""
+    if not history.get("bills"):
+        return ""
+    paid = history["paid"]
+    on_time = "all paid on time" if paid and history["paid_on_time"] == paid else \
+              f"{history['paid_on_time']} of {paid} paid on time" if paid else "none paid yet"
+    late = f", {history['overdue']} overdue now" if history.get("overdue") else ""
+    return f" ({history['bills']} bill{'s' if history['bills'] != 1 else ''} since {history['since']:%b}, " \
+           f"£{history['spent']:,.0f} spent, {on_time}{late})"
+
 
 def _words(text: Optional[str]) -> set:
     return {w for w in re.findall(r"[a-z0-9]+", (text or "").lower()) if w not in STOPWORDS}
@@ -214,8 +271,7 @@ def _key(doc: dict) -> str:
 
 def _when(doc: dict) -> datetime:
     """When the invoice was issued, or received if the date couldn't be read; always timezone-aware."""
-    when = doc.get("issue_date") or doc.get("created_at") or datetime.now(timezone.utc)
-    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+    return _aware(doc.get("issue_date") or doc.get("created_at") or datetime.now(timezone.utc))
 
 
 def _comparable(invoice: dict, other: dict) -> bool:
@@ -225,9 +281,9 @@ def _comparable(invoice: dict, other: dict) -> bool:
             and _when(other) < _when(invoice))
 
 
-def _best_match(item: dict, pool: List[dict], latest_first: bool):
-    """The closest line item with the same pack size: highest word overlap, then (for the supplier's own bills)
-    the most recent invoice, else the most similar one. None when nothing is close enough."""
+def _best_match(item: dict, pool: List[dict]):
+    """The closest line item with the same pack size: highest word overlap, then the most recent invoice (an old
+    price is no fair reference), then the most similar one. None when nothing is close enough."""
     best, best_rank = None, None
     for position, other in enumerate(pool):
         for li in other.get("line_items") or []:
@@ -235,7 +291,7 @@ def _best_match(item: dict, pool: List[dict], latest_first: bool):
             if overlap < MIN_ITEM_MATCH or not _positive(li.get("unit_price")) \
                     or _sizes(item.get("description")) != _sizes(li.get("description")):
                 continue
-            rank = (overlap, _when(other).timestamp() if latest_first else -position)
+            rank = (overlap, _when(other).timestamp(), -position)
             if best_rank is None or rank > best_rank:
                 best, best_rank = (other, li), rank
     return best
@@ -305,6 +361,22 @@ def _basic_similar(db: Database, invoice: dict, limit: int) -> List[dict]:
     return sorted(hits, key=lambda d: -d["score"])[:limit]
 
 
+def live_check(db: Database) -> List[tuple]:
+    """Before the demo: are the indexes up and does each search mode really answer? Returns (ok, what) pairs."""
+    statuses = {i["name"]: i.get("status") for i in db[schema.INVOICES].list_search_indexes()}
+    results = [(statuses.get(n) == "READY", f"index {n}: {statuses.get(n, 'missing')}") for n in INDEXES]
+    typo = search_invoices(db, "diary")
+    results.append((typo.mode == "hybrid" and any("keyword" in h["matched_by"] and "Dairy" in h["counterparty"] for h in typo.hits),
+                    f"keyword with a typo: 'diary' → {[h['counterparty'] for h in typo.hits][:3]} ({typo.mode})"))
+    meaning = search_invoices(db, "milk supplier")
+    results.append((meaning.mode == "hybrid" and any("meaning" in h["matched_by"] and "Dairy" in h["counterparty"] for h in meaning.hits),
+                    f"by meaning: 'milk supplier' → {[h['counterparty'] for h in meaning.hits][:3]} ({meaning.mode})"))
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    fallbacks = db[schema.AGENT_LOG].count_documents({"kind": "search_fallback", "at": {"$gte": since}})
+    results.append((fallbacks == 0, f"search fallbacks in the last 24 h: {fallbacks}"))
+    return results
+
+
 def main() -> None:
     from backend.db.client import get_db
 
@@ -312,8 +384,14 @@ def main() -> None:
     parser.add_argument("query", nargs="?")
     parser.add_argument("--setup", action="store_true", help="backfill search_text and create/update the indexes")
     parser.add_argument("--similar", metavar="INVOICE_NUMBER", help="similar invoices + price check")
+    parser.add_argument("--check", action="store_true", help="live self-test against Atlas")
     args = parser.parse_args()
     db = get_db()
+    if args.check:
+        results = live_check(db)
+        for ok, what in results:
+            print(f"  {'✓' if ok else '✗'} {what}")
+        raise SystemExit(0 if all(ok for ok, _ in results) else 1)
     if args.setup:
         print(ensure_search_indexes(db))
     if args.query:
@@ -330,6 +408,8 @@ def main() -> None:
         check = price_check(db, invoice)
         if check.skipped:
             print(f"  price check skipped: {check.skipped}")
+        for line in check.lines():
+            print(f"  owner sees: {line}")
         for c in check.comparisons:
             print(f"  [{c['kind']}] {c['item']}: £{c['unit_price']:.2f} vs £{c['other_price']:.2f} at {c['counterparty']} "
                   f"({c['invoice_number']}): {c['change_pct']:+.1f}%")

@@ -12,6 +12,21 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, ~19:00 — Price check in the pipeline + priorities, supplier loyalty, live self-test (MVP2)
+- **Pipeline:** every new checked supplier bill is price-checked on arrival. Logged as `price_checked` (or `price_check_failed`, which never blocks the invoice); the owner's reply gets one line, e.g. "Eastside Dairy Co put Whole milk, 2L up 5.4% (£1.85 → £1.95 since EDC-7781)."
+- **Priorities:** new task kinds `price_rise` / `price_match` (recent unpaid bills, £ extra × 10, so they never outrank overdue money). The Gemini prompt now says "negotiate with a loyal supplier, never switch on price alone"
+- **Loyalty:**
+  - Wording is "worth asking X to match", never "switch"
+  - Relationship context: "5 bills since Jul, £723 spent, all paid on time", plus "N overdue now" if we owe them
+  - `Business.preferred_suppliers` + `search.set_preferred()`: rises are still reported, alternatives are never suggested
+  - Non-identical matches are named ("for your Oat milk, 1L (similar, not identical)"), so barista vs plain oat milk is visible
+  - Other suppliers' *latest* price is used, not their oldest
+- **Live check:** `python -m backend.db.search --check` → indexes READY, typo search, search by meaning, no fallbacks in 24 h (✓ all on Atlas now)
+- **Atlas data:** `python -m data.seed --add-missing` (new, add-only) inserted 4 earlier **paid** Eastside bills (EDC-7702/7725/7748/7764, whole milk £1.75 → £1.85). 16 invoices, pending approvals still #1–#4
+- **Contract changes (`schema.py`):** `Business.preferred_suppliers`, `Task.kind` + `price_rise` / `price_match`
+- **Tests:** 15 new → 202 pass
+- **Blockers / notes for partner:** Jade, new `agent_log` kinds `price_checked` / `price_check_failed`, new task kinds for the dashboard/brief, and a preferred-supplier toggle could call `search.set_preferred(get_db(), name, True/False)`
+
 ## Sat 24 Oct, ~18:00 — Invoice search: Atlas Search + Automated Embedding (Voyage) + Hybrid (MVP2)
 - **Did:** `backend/db/search.py`:
   - `search_invoices(db, q)`: `$rankFusion` of keyword search (typos allowed only for 5+ letter words, English stemming, invoice number boosted) and vector search by meaning (`autoEmbed`, `voyage-4`, Atlas embeds both the documents and the query). Weak meaning-only hits are dropped (score <0.70 or >0.06 behind the best), and each hit says `matched_by`
