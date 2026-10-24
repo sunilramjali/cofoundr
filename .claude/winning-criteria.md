@@ -111,23 +111,17 @@ Source: Encode London 2026 Luma page (luma.com/encode-london-2026), checked Sat 
 - [ ] Function calling over MongoDB for prioritisation
 - [ ] "Real person" story: GAIA Coffee owner (synthetic data, real business)
 
-### Saint — "Best Use of Saint"
-- **Prize:** £200 cash, a Saint for each team member, and 3 months of Saint free.
-- **Rule:** put Saint to work on a **real problem** over the weekend.
+### Saint — not entered
+Dropped Sat 24 Oct, 22:45: Saint couldn't POST to our app. The owner's WhatsApp channel is **Twilio**, and the conversation is **Gemini** (no sponsor bounty for Twilio).
 
-**What they're looking for:**
-- **Cool factor:** would people crowd round to watch it?
-- **Working proof:** Saint actually doing the job in your demo, live or recorded, **with the before and the after**.
-- **Real-world use:** would this still be running on Monday?
-- **Human control:** what Saint does on its own, and where it stops and asks first.
-
-**CoFoundr plan:**
+### WhatsApp (Twilio + Gemini) — scores on the main tracks
+What it shows: the agent acts **unprompted** (Agents That Ship: "not a chatbot") and **stops and asks** before money moves (Safety and control; Gemini's "keeps people in control").
 - [ ] Demo shows a clear **before/after** (e.g. pile of unpaid invoices → chased + approved via WhatsApp)
-- [ ] Be explicit about the split: Saint drafts and briefs **on its own**, and **stops and asks** before any money action
-- [ ] Saint is the owner's WhatsApp interface: send invoice photos in, receive morning brief out
-- [ ] Approvals by WhatsApp reply ("approve") update MongoDB
-- [ ] Saint reads CoFoundr's `/brief` endpoint
-- [ ] Show Saint doing real work in the demo, not a bolt-on
+- [ ] Be explicit about the split: CoFoundr reads, drafts and updates **on its own**, and **stops and asks** before any money action
+- [ ] WhatsApp is the owner's interface: invoice photos in (`POST /whatsapp/twilio`), updates and the morning brief out
+- [ ] Approvals by WhatsApp reply ("approve 4") update MongoDB, never parsed by Gemini
+- [ ] Owner's questions on WhatsApp answered by Gemini from the data (read-only)
+- [ ] Every webhook, reply and failed send is in `agent_log` (forged Twilio signatures rejected)
 
 ---
 
@@ -156,7 +150,7 @@ Source: Encode London 2026 Luma page (luma.com/encode-london-2026), checked Sat 
 |---|---|
 | MongoDB Atlas | Flexible document store + Vector Search / Atlas Search / Voyage AI / time-series / change streams |
 | Gemini 4 Argon | Multimodal understanding + deep reasoning with visible explanations |
-| Saint | A real AI employee the owner talks to on WhatsApp |
+| Twilio + Gemini | The owner's AI co-founder on WhatsApp: messages them unprompted, asks before money moves |
 | Treg | One gateway to thousands of real-world data tools, chosen by the agent |
 
 ## To confirm
@@ -164,4 +158,3 @@ Source: Encode London 2026 Luma page (luma.com/encode-london-2026), checked Sat 
 - [ ] Main hackathon submission format (beyond the sponsor requirements above)
 - [x] Gemini model ID: `gemini-4-argon`
 - [x] Gemini 4 Argon API access / keys
-- [ ] Saint judging specifics — ask the Saint team
