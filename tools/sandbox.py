@@ -4,14 +4,14 @@
     COFOUNDR_SANDBOX=1 uvicorn bridge.main:app --reload --port 8000
 
 On start it reads every collection from Atlas once (read-only) into mongomock and points the app at that copy.
-The real inbox check and real email sending are switched off; Gemini still works (uploads are read for real).
+The real inbox check, real email sending and WhatsApp sending are switched off; Gemini still works (uploads are read for real).
 Changes vanish when the server restarts.
 """
 import mongomock
 
 from backend.db import client
 from backend.inputs import gmail
-from backend.outputs import email
+from backend.outputs import email, whatsapp
 
 _mock = None
 
@@ -38,6 +38,12 @@ def install() -> None:
     gmail.check_inbox = no_inbox
     gmail.start_polling = lambda *_a, **_k: None
     email.send_reminder = lambda approval: f"reminder to {approval.get('to_email')} NOT sent (sandbox)"
+
+    def no_whatsapp(body, to=None):
+        print(f"[sandbox] WhatsApp NOT sent: {body[:120]}")
+        return whatsapp.Sent(True, "sandbox")
+    whatsapp.send = no_whatsapp
+    whatsapp.start_polling = lambda *_a, **_k: None
     print(f"CoFoundr sandbox: {sum(copy[n].estimated_document_count() for n in copy.list_collection_names())} documents copied "
           f"into memory from {real.name}; nothing you do locally reaches Atlas.")
 
