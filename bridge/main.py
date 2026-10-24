@@ -142,6 +142,7 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "stock": view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now),
         "opportunities": view.opportunities(gmail_logs),
         "nav": NAV,
+        "checks": view.payment_checks(pending, invoices),
         "sandbox": bool(os.environ.get("COFOUNDR_SANDBOX")),
         "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
                   "polling": int(os.environ.get("GMAIL_POLL_SECONDS") or 0), "last": gmail.last_check},
@@ -183,6 +184,22 @@ def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Op
     return _back(f"#{result['ref']} {result['status']}: {result['effect']}.", back)
 
 
+ASKS_FOR_LIST = re.compile(r"\b(waiting|pending|to ?do|todo|brief|summary|status|today|what'?s (up|new|next|on))\b", re.IGNORECASE)
+
+
+def _chat_answer(text: str) -> str:
+    """Anything that isn't a decision: answer the few questions the data can answer; never guess or act."""
+    if ASKS_FOR_LIST.search(text):
+        todo = approvals.pending()
+        if not todo:
+            return "Nothing is waiting for your yes. I'll tell you the moment something is."
+        items = " · ".join(f"#{a['ref']} {a.get('counterparty') or a['title']} £{a['amount']:,.2f}" for a in todo[:3])
+        more = f" (+{len(todo) - 3} more)" if len(todo) > 3 else ""
+        return f"{len(todo)} waiting for your yes: {items}{more}. Reply “approve {todo[0]['ref']}” or “reject {todo[0]['ref']}”."
+    return ("I can't chat freely here yet, so nothing was sent. Try “what's waiting?”, or decide with “approve 1” / “reject 1”. "
+            "For anything else, message Saint on WhatsApp.")
+
+
 @app.post("/saint")
 def message_saint(text: str = Form(""), back: str = Form("/")):
     """The chat bar. Decisions ("approve 1", "reject 2") follow exactly the WhatsApp rules; anything else waits for Saint."""
@@ -191,7 +208,7 @@ def message_saint(text: str = Form(""), back: str = Form("/")):
         return _back("Type a message for Saint first.", back)
     parsed = parse_reply(text)
     if not parsed:
-        return _back('Saint isn\'t connected to the chat bar yet. Decisions work now: "approve 1" or "reject 1".', back)
+        return _back(_chat_answer(text), back)
     decision, ref = parsed
     approval = approvals.find(ref=ref)
     if not approval:

@@ -763,8 +763,9 @@ def test_saint_chat_bar_decides_like_whatsapp_and_never_guesses(db, gemini_down,
     r = web.post("/saint", data={"text": "approve 4", "back": "/"}, follow_redirects=False)
     assert r.headers["location"].startswith("/?msg=") and "#4 approved" in _flash(r)
     assert db[schema.APPROVALS].find_one({"ref": 4})["decided_via"] == "dashboard"
-    for text, expected in [("don't approve 1", "isn't connected"), ("what's on today?", "isn't connected"), ("", "Type a message"),
-                           ("approve 99", "no #99"), ("approve 4", "already")]:
+    for text, expected in [("don't approve 1", "nothing was sent"), ("tell me a joke", "nothing was sent"), ("", "Type a message"),
+                           ("what's waiting?", "3 waiting for your yes: #1 Shoreditch Design Studio £288.00"),
+                           ("brief", "Reply “approve 1”"), ("approve 99", "no #99"), ("approve 4", "already")]:
         assert expected in _flash(web.post("/saint", data={"text": text, "back": "/"}, follow_redirects=False)), text
     assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "pending"  # the negated message changed nothing
 
@@ -868,3 +869,32 @@ def test_weather_never_makes_a_page_wait_on_a_refresh(monkeypatch):
             break
         threading.Event().wait(.02)
     assert view.weather_by_date()["2026-10-24"]["summary"] == "v2"
+
+
+def test_opportunities_ignore_lookalikes_and_automated_senders():
+    logs = [{"detail": {"emails": [
+        {"subject": "Security event on your account", "from": "no-reply@accounts.google.com"},
+        {"subject": "New partnership offer", "from": "noreply@spam.example.com"},
+        {"subject": "Events this weekend", "from": "news@x.com"},
+        {"subject": "Pop-up at Broadway Market?", "from": "hello@market.example.com"}]}}]
+    assert [o["subject"] for o in view.opportunities(logs)] == ["Pop-up at Broadway Market?"]
+
+
+def test_first_time_supplier_payments_are_flagged(db, gemini_down, fake_extraction):
+    from backend.pipeline import ingest_invoice
+    fake_extraction(make_invoice(issuer_name="Totally Real Supplies Ltd", invoice_number="TRS-1", issue_date="2025-12-01", due_date="2026-01-01",
+                                 printed_total=20.0))
+    ingest_invoice(b"%PDF", "application/pdf", "email", origin="email from scam@example.com")
+    overdue.run()
+    pending = list(db[schema.APPROVALS].find({"status": "pending"}))
+    invoices = list(db[schema.INVOICES].find())
+    checks = view.payment_checks(pending, invoices)
+    scam = next(a for a in pending if a["counterparty"] == "Totally Real Supplies Ltd")
+    seeded = next(a for a in pending if a["action_type"] == "supplier_payment" and a is not scam)
+    assert checks[str(scam["_id"])]["new_sender"] and checks[str(scam["_id"])]["source"] == "email"
+    assert not checks[str(seeded["_id"])]["new_sender"] and checks[str(seeded["_id"])]["source"] == "demo"
+    home = web.get("/").text
+    assert "First invoice ever from this supplier" in home and f'href="/approvals#a{scam["ref"]}"' in home
+    assert 'value="approve"' not in home.split("Invoice to be paid")[1].split("</div>")[0]  # no one-click pay from home
+    page = web.get("/approvals").text
+    assert "First invoice we've ever had from Totally Real Supplies Ltd" in page and f'id="a{scam["ref"]}"' in page

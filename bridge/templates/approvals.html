@@ -15,7 +15,8 @@
 <div class="asks">
   {% for a in pending %}
   {%- set reminder = a.action_type == "invoice_reminder" -%}
-  <article class="ask" style="--i:{{ loop.index0 }}">
+  {%- set c = checks.get(a._id|string, {}) -%}
+  <article class="ask" id="a{{ a.ref }}" style="--i:{{ loop.index0 }}">
     <div class="ask__ref" aria-hidden="true">{{ a.ref }}</div>
     <form method="post" action="/approvals/{{ a._id }}/decide">
       <input type="hidden" name="back" value="/approvals">
@@ -36,6 +37,11 @@
         {% if a.invoice_number %}<span class="chip">{{ a.invoice_number }}</span>{% endif %}
       </div>
       <p class="ask__why">{{ a.reason }}</p>
+      {% if c.new_sender %}
+      <p class="warn"><svg class="ico"><use href="#i-alert"/></svg><span><b>First invoice we've ever had from {{ a.counterparty }}.</b>
+        It came in by {{ "email" ~ (" from " ~ c.from_email if c.from_email else "") if c.source == "email" else "upload" }}. Anyone can send an invoice, so check it's genuine before you pay.</span></p>
+      {% elif c.source == "email" %}<p class="ask__why"><span class="chip chip--sky"><svg class="ico"><use href="#i-mail"/></svg>Read from email</span></p>{% endif %}
+      {% if c.needs_review %}<p class="warn"><svg class="ico"><use href="#i-alert"/></svg><span>The numbers on this invoice didn't fully check out. Look at it before paying.</span></p>{% endif %}
       <details class="draft">
         <summary><svg class="ico"><use href="#i-chev"/></svg>{{ "Read and edit the email" if reminder else "Read and edit the payment note" }}</summary>
         <div class="draft__meta">
