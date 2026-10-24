@@ -1,4 +1,4 @@
-"""Ask CoFoundr: the owner's questions answered by Gemini, from the business's own data (replaces Saint).
+"""Ask CoFoundr: the owner's questions answered by Gemini, from the business's own data.
 
 - Gemini gets read-only tools over MongoDB (approvals, invoices, search, forecast, sales, priorities, activity) and
   picks which to call (function calling). There is no tool that changes anything: approving, rejecting, paying and

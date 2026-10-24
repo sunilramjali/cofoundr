@@ -7,7 +7,7 @@ Atlas features used (each doing the job it's best at):
 - Hybrid Search ($rankFusion): one search box that merges both rankings.
 
 Without Atlas Search (tests on mongomock, an index missing or still building) every function falls back to a plain
-word match and says so (`mode = "basic"`, logged in agent_log at most once an hour), so the dashboard and Saint never
+word match and says so (`mode = "basic"`, logged in agent_log at most once an hour), so the dashboard and WhatsApp never
 break and the failure is never silent.
 
 Usage (from the repo root):

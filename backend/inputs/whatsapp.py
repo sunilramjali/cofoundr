@@ -1,4 +1,4 @@
-"""WhatsApp in, through Twilio: what the owner sends CoFoundr on WhatsApp (replaces Saint).
+"""WhatsApp in, through Twilio: what the owner sends CoFoundr on WhatsApp.
 
 Twilio POSTs each incoming message to /whatsapp/twilio. The bridge checks Twilio's signature (signature_ok) and
 answers at once; handle() then runs in the background, because Gemini can take longer than Twilio waits.

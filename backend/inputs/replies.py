@@ -1,5 +1,5 @@
-"""The owner's approval replies ("approve 4", "reject 2", "yes 1"), however they arrive: WhatsApp via Saint's
-POST /approve, the dashboard chat bar, or Saint's emails to the demo inbox. Anything looser is not a decision."""
+"""The owner's approval replies ("approve 4", "reject 2", "yes 1"), however they arrive: WhatsApp (Twilio)
+or the dashboard chat bar. Anything looser is not a decision."""
 import re
 from typing import Optional, Tuple
 
