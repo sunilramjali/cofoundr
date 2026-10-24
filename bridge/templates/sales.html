@@ -95,6 +95,32 @@
     <span class="drop__file" aria-live="polite"></span>
     <button class="btn" type="submit" data-busy="Importing…">Import <svg class="ico"><use href="#i-arrow"/></svg></button>
   </form>
+  <form class="drop" method="post" action="/import/fees" enctype="multipart/form-data" style="margin-top:14px">
+    <input type="hidden" name="back" value="/sales">
+    <input type="file" name="file" accept="image/*,application/pdf" required aria-label="Card fee summary">
+    <span class="gem"><svg class="ico"><use href="#i-pound"/></svg></span>
+    <h3>Check my card fees</h3>
+    <p>Drop your card provider's fee summary (photo or PDF) and I'll check every payment against it</p>
+    <span class="drop__file" aria-live="polite"></span>
+    <button class="btn" type="submit" data-busy="Reading with Gemini…">Check fees <svg class="ico"><use href="#i-arrow"/></svg></button>
+  </form>
+  {% if fee_audit %}
+  {% set a = fee_audit.audit %}
+  <div class="card card--quiet" style="grid-template-columns:minmax(0,1fr);margin-top:14px">
+    <div>
+      {% if not a %}
+      <h3>Fee summary needs your check</h3>
+      <p>I read it twice but the rates didn't reproduce its own worked example, so I didn't audit anything: {{ fee_audit.problems|join("; ") }}</p>
+      {% else %}
+      <h3>{% if a.overcharged %}{{ fee_audit.schedule.provider or "Your card provider" }} overcharged {{ a.overcharged|length }} payment{{ "s" if a.overcharged|length != 1 }} by £{{ "%.2f"|format(a.extra_total) }}{% else %}Every card fee matched your contract{% endif %}</h3>
+      <p>{{ a.matched }} of {{ a.checked }} UK card payments charged exactly the contract rate{% if a.not_covered %}; {{ a.not_covered }} overseas or unlisted cards aren't covered by the summary{% endif %}. I checked my reading of the summary against its own worked example{{ " (after one re-read)" if fee_audit.attempts > 1 }}.{% if fee_audit.schedule.contract_end %} Contract ends {{ fee_audit.schedule.contract_end }}.{% endif %}</p>
+      {% if a.overcharged %}<ul>{% for o in a.overcharged[:6] %}<li class="muted">{{ o.date }}: £{{ "%.2f"|format(o.amount) }} {{ o.card }} card, charged £{{ "%.2f"|format(o.charged) }}, contract £{{ "%.2f"|format(o.expected) }}</li>{% endfor %}</ul>
+      <p class="muted">It's in your Tasks to query with them. I won't contact them without you.</p>{% endif %}
+      {% for m in a.below_minimum %}<p class="muted">{{ m.month }}: fees came to £{{ "%.2f"|format(m.fees) }}, under the £{{ "%.2f"|format(m.minimum) }} monthly minimum, so you were topped up by £{{ "%.2f"|format(m.topped_up_by) }}.</p>{% endfor %}
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
   <p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>In EVO's portal, export Transactions as CSV. I keep the date, amount, fee and card type (debit/credit) of each payment. Card numbers, auth codes and card-network references are never stored. Square and SumUp connect directly instead.</span></p>
 </section>
 {% endblock %}

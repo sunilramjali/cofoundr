@@ -37,6 +37,9 @@ Date (and time when the provider gives it), amount, fee, sale or refund, debit/c
 - Raw exports **never enter the repo or the Docker image**: `*.csv` and `private/` are in `.gitignore` and `.dockerignore`, apart from `data/samples/*_synthetic.csv`. Keep them outside the project folder, and delete or archive them privately after import.
 - Gemini only ever sees **daily totals**, never individual payments.
 
+## Card fee summaries
+The provider's fee summary (rates, contract end) is the business's own commercial data, not customer data. Gemini reads it to audit fees; only the rates and the audit result are stored. On the demo database, a fee summary that isn't marked synthetic is refused and nothing is stored.
+
 ## Synthetic vs real
 - **Square / SumUp:** sandbox counts as synthetic, production as real (`SQUARE_ENV`, `SUMUP_ENV`).
 - **EVO CSV:** a file is synthetic only if every row's merchant name ends with `(SYNTHETIC)`, as in `data/samples/evo_transactions_synthetic.csv`. A single unmarked row makes the whole file real.

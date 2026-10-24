@@ -27,6 +27,7 @@ ORDERS = "orders"  # one doc per till order (idempotency + order totals); its li
 STOCK_COUNTS = "stock_counts"  # physical ingredient counts on the truck (beans, milk, cups), one doc per count
 FORECAST_REVIEWS = "forecast_reviews"  # past forecasts graded against actual takings (backend/ai/review.py)
 LESSONS = "lessons"  # what the forecaster learned from its grades; the active ones go into the next forecast
+FEE_AUDITS = "fee_audits"  # card provider's fee summary read by Gemini + every payment checked against it (backend/ai/fees.py)
 BOARD_MEMOS = "board_memos"  # Gemini's checked board memo, one per business per day (backend/ai/board.py)
 PAYMENTS = "payments"  # card payments from a card provider with no item detail (EVO CSV, SumUp), card data stripped
 
@@ -366,7 +367,8 @@ class Task(TypedDict):
     _id: str  # "<business_id>:<kind>:<key>", stable across runs
     business_id: str
     # price_rise = a supplier charged more than last time; price_match = another supplier is cheaper, ask to match
-    kind: Literal["approval", "review_invoice", "prep_day", "price_rise", "price_match"]
+    # fee_overcharge = the card provider charged more than its own fee summary allows (backend/ai/fees.py)
+    kind: Literal["approval", "review_invoice", "prep_day", "price_rise", "price_match", "fee_overcharge"]
     title: str  # one line, e.g. "Approve #3: chase Hackney Hub, £450.00, 12 days overdue"
     facts: str  # what the ranking was based on
     target_id: Optional[str]  # str(_id) of the approval / invoice / forecast it's about

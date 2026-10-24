@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from backend import approvals, payments
-from backend.ai import board, overdue, review
+from backend.ai import board, fees, overdue, review
 from backend.inputs import evo, gmail
 from backend.inputs.replies import parse_reply  # noqa: F401 (also imported from here by tests)
 from backend.outputs.brief import build_brief
@@ -135,6 +135,7 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "memo": db[schema.BOARD_MEMOS].find_one({"business_id": BUSINESS_ID}, sort=[("generated_at", -1)]),
         "memo_running": _board_running.locked(),
         "record": _forecast_record(db),
+        "fee_audit": db[schema.FEE_AUDITS].find_one({"business_id": BUSINESS_ID}, sort=[("created_at", -1)]),
         "checks": view.payment_checks(pending, invoices),
         "sandbox": bool(os.environ.get("COFOUNDR_SANDBOX")),
         "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
@@ -189,6 +190,28 @@ def import_evo(file: UploadFile = File(...), back: str = Form("/sales")):
     except ValueError as e:
         return _back(str(e), back)
     return _back(result.message + (f" {len(parsed.errors)} row(s) couldn't be read." if parsed.errors else ""), back)
+
+
+@app.post("/import/fees")
+def import_fees(file: UploadFile = File(...), back: str = Form("/sales")):
+    """The card provider's fee summary (photo or PDF): Gemini reads it, its own worked examples check the reading,
+    then every stored card payment is audited against it. Nothing is claimed from the provider here."""
+    data = file.file.read(MAX_UPLOAD + 1)
+    mime = file.content_type or "application/octet-stream"
+    if len(data) > MAX_UPLOAD or not (mime.startswith("image/") or mime == "application/pdf"):
+        return _back("Upload the fee summary as a photo or PDF (10 MB max).", back)
+    try:
+        doc = fees.run(data, mime)
+    except RealDataRefused as e:
+        return _back(str(e), back)
+    except Exception as e:  # Gemini busy after retries, unreadable file: say so, store nothing
+        return _back(f"I couldn't read that fee summary ({getattr(e, 'code', None) or type(e).__name__}). Try again in a minute.", back)
+    if doc["problems"]:
+        return _back("I read the fee summary but its numbers didn't check out against its own example, so I didn't audit "
+                     "anything. Please check it.", back)
+    a = doc["audit"]
+    return _back(f"Checked {a['checked']} card payments: {a['matched']} charged correctly, {len(a['overcharged'])} overcharged "
+                 f"(£{a['extra_total']:.2f}).", back)
 
 
 @app.post("/approvals/{approval_id}/decide")
