@@ -1,0 +1,25 @@
+{% extends "page.html" %}
+{% block title %}WhatsApp{% endblock %}
+{% block vt %}m-whatsapp{% endblock %}
+{% block eyebrow %}<svg class="ico"><use href="#i-chat"/></svg>On WhatsApp{% endblock %}
+{% block heading %}Your brief, on WhatsApp{% endblock %}
+{% block lede %}Saint reads this from <code>/brief</code> and sends it to you on WhatsApp. Reply to decide from your phone: the same rules apply as here.{% endblock %}
+{% block body %}
+<div class="phone-layout">
+  <div class="phone" aria-label="The brief Saint sends on WhatsApp">
+    <div class="phone__screen">
+      <div class="phone__bar"><span class="phone__avatar">C</span><div>CoFoundr<small>via Saint · WhatsApp</small></div></div>
+      <div class="phone__chat">
+        <div class="bubble" style="--i:0">{{ brief.text }}<time>{{ now.strftime("%H:%M") }}</time></div>
+        {% if n %}<div class="bubble bubble--me" style="--i:1">approve {{ pending[0].ref }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="cmds">
+    <div class="cmd"><code>approve 1</code><p>Approves #1 and sends it. "yes 1" and "ok 1" work too.</p></div>
+    <div class="cmd"><code>reject 1</code><p>Rejects #1. Nothing is sent.</p></div>
+    <div class="cmd"><code>don't approve 1</code><p>Ignored on purpose: anything negated or ambiguous never moves money. I'll ask again instead.</p></div>
+    <div class="cmd"><code>approve 1 and 2</code><p>Also ignored: one decision per message, so nothing is approved by accident.</p></div>
+  </div>
+</div>
+{% endblock %}

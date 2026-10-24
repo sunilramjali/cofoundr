@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block topleft %}
+<a class="back" href="/"><svg class="ico"><use href="#i-back"/></svg>Home</a>
+<a class="brand" href="/" aria-label="CoFoundr home"><span class="brand__mark">C</span></a>
+{% endblock %}
+{% block content %}
+<article class="sheet" style="view-transition-name: {% block vt %}page{% endblock %}">
+  <header class="sheet__head page-in">
+    <div>
+      <p class="eyebrow">{% block eyebrow %}{% endblock %}</p>
+      <h1>{% block heading %}{% endblock %}</h1>
+      <p class="lede">{% block lede %}{% endblock %}</p>
+    </div>
+    {% block stats %}{% endblock %}
+  </header>
+  <div class="page-in">{% block body %}{% endblock %}</div>
+</article>
+{% endblock %}
