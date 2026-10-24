@@ -83,8 +83,9 @@ def send(body: str, to: Optional[str] = None) -> Sent:
             detail = json.loads(e.read(4000) or b"{}").get("message", "")
         except (ValueError, OSError):
             detail = ""
-        if "ContentSid" in detail:  # WhatsApp's 24 h rule: only templates until the owner messages us again
-            detail = "the owner hasn't messaged the WhatsApp number in the last 24 h (send it \"hi\" first)"
+        if "ContentSid" in detail:  # Twilio allows only templates: a trial account, or WhatsApp's 24 h rule
+            detail = ("only template messages allowed: the Twilio account is a trial (upgrade it), or the owner hasn't "
+                      "messaged the WhatsApp number in the last 24 h (send it \"hi\")")
         return Sent(False, error=f"Twilio answered HTTP {e.code}" + (f": {detail[:200]}" if detail else ""))
     except (urllib.error.URLError, OSError, ValueError) as e:
         return Sent(False, error=f"Twilio is unreachable ({type(e).__name__})")
