@@ -25,6 +25,7 @@ CURSORS = "cursors"  # per-consumer read position in agent_log for /updates, _id
 COUNTERS = "counters"  # atomic sequences, e.g. _id = "<business_id>:approval_ref"
 ORDERS = "orders"  # one doc per till order (idempotency + order totals); its lines live in SALES
 STOCK_COUNTS = "stock_counts"  # physical ingredient counts on the truck (beans, milk, cups), one doc per count
+PAYMENTS = "payments"  # card payments from a card provider with no item detail (EVO CSV, SumUp), card data stripped
 
 
 def counterparty_key(name: Optional[str]) -> str:
@@ -201,6 +202,39 @@ class StockCount(TypedDict):
     method: Optional[str]
     items: List[StockItem]
     synthetic: bool
+
+
+# ---------------------------------------------------------------- card payments (MVP2)
+# For card providers that know how much was paid but not what was sold (EVO's CSV export, SumUp). A provider that
+# knows the items (Square) goes through the POS format above instead. Privacy (docs/privacy.md): only the fields below
+# are ever stored. No card number (masked or not), cardholder name, auth code, card-network reference, card token or
+# issuer country; the provider's transaction id is stored only as a salted hash, for de-duplication.
+#
+# INPUT format (inputs → backend.payments.record_payments), one dict per payment:
+#   {"source": "evo" | "sumup", "source_id": str (provider's id: hashed, never stored), "paid_at": ISO timestamp with
+#    offset, or "YYYY-MM-DD" when the provider only gives the date, "amount_gbp": float, "fee_gbp": float | None,
+#    "currency": "GBP", "kind": "sale" | "refund" | "other", "status": "successful" | <anything else = skipped>,
+#    "card_product": "debit" | "credit" | None, "card_category": "consumer" | "corporate" | None,
+#    "region": "domestic" | "eea" | "international" | None, "brand": "Visa" | ... | None, "entry_mode": str | None}
+# Any other key is ignored. Real data (synthetic=False) is refused in the shared demo database (DB_NAME).
+
+class Payment(TypedDict):
+    _id: str  # "<business_id>:<source>:<id_hash>": importing the same payment twice is a no-op
+    business_id: str
+    source: Literal["evo", "sumup"]
+    id_hash: str  # HMAC-SHA256 of the provider's transaction id with PAYMENT_ID_SALT (first 24 hex chars)
+    date: str  # London day, "2026-10-24"
+    paid_at: Optional[datetime]  # UTC; None when the provider only gives the date (EVO's CSV)
+    amount: float  # GBP, always positive; `kind` says whether it came in or went back
+    fee: Optional[float]  # what the provider charged for it, GBP (EVO: MSC); None = not given
+    kind: Literal["sale", "refund"]
+    card_product: Optional[Literal["debit", "credit"]]
+    card_category: Optional[Literal["consumer", "corporate"]]
+    region: Optional[Literal["domestic", "eea", "international"]]
+    brand: Optional[str]
+    entry_mode: Optional[str]
+    synthetic: bool
+    imported_at: datetime
 
 
 # ---------------------------------------------------------------- forecast (MVP2)

@@ -20,14 +20,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from backend import approvals
+from backend import approvals, payments
 from backend.ai import overdue
-from backend.inputs import gmail
+from backend.inputs import evo, gmail
 from backend.outputs.brief import build_brief
 from backend.outputs.updates import get_updates
 from backend.pipeline import ingest_invoice
 from backend.db import activity, schema
-from backend.db.client import get_db
+from backend.db.client import RealDataRefused, get_db
 from bridge import view
 
 if os.environ.get("COFOUNDR_SANDBOX"):  # local development on an in-memory copy of the demo data (tools/sandbox.py)
@@ -169,6 +169,24 @@ def upload(file: UploadFile = File(...), back: str = Form("/inbox")):
     mime = file.content_type or "application/octet-stream"
     result = ingest_invoice(data, mime, "pdf" if mime == "application/pdf" else "manual", origin="dashboard upload")
     return _back(result.message, back)
+
+
+@app.post("/import/evo")
+def import_evo(file: UploadFile = File(...), back: str = Form("/sales")):
+    """EVO's transactions CSV, uploaded by hand (EVO has no API). Card data is never stored (backend.inputs.evo).
+    On the shared demo database only the synthetic sample is accepted; real exports are refused, nothing stored."""
+    data = file.file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        return _back("That file is too big for an EVO export (10 MB max).", back)
+    try:
+        parsed = evo.parse(data)
+        result = payments.record_payments(parsed.payments, origin="EVO CSV (dashboard upload)", synthetic=parsed.synthetic)
+    except RealDataRefused:
+        return _back("That's a real EVO export. This demo only takes synthetic data, so nothing was stored. "
+                     "Import real data on your own machine into your own database.", back)
+    except ValueError as e:
+        return _back(str(e), back)
+    return _back(result.message + (f" {len(parsed.errors)} row(s) couldn't be read." if parsed.errors else ""), back)
 
 
 @app.post("/approvals/{approval_id}/decide")

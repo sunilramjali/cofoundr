@@ -7,3 +7,7 @@
 **/__pycache__
 *.pyc
 .DS_Store
+# Real business data is never built into the image (only the synthetic sample)
+private
+**/*.csv
+!data/samples/*_synthetic.csv

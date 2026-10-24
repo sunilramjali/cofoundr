@@ -27,14 +27,21 @@ def _reason(err: urllib.error.HTTPError) -> str:
         return ""
     if not isinstance(body, dict):
         return ""
-    text = body.get("reason") or (body.get("fault") or {}).get("faultstring") or ((body.get("errors") or [{}])[0] or {}).get("detail")
+    first = (body.get("errors") or [{}])[0] or {}  # Ticketmaster / Square: errors[0].detail
+    text = body.get("reason") or (body.get("fault") or {}).get("faultstring") or first.get("detail") or body.get("message")
     return f": {str(text)[:200]}" if text else ""
 
 
-def get_json(url: str, params: dict, source: str, timeout: float = TIMEOUT, expect: type = dict):
-    """GET url?params → the decoded JSON object (or list, with expect=list), or FetchError("<source> …")."""
-    request = urllib.request.Request(f"{url}?{urllib.parse.urlencode(params)}",
-                                     headers={"User-Agent": "CoFoundr/1.0 (hackathon demo)", "Accept": "application/json"})
+def get_json(url: str, params: dict, source: str, timeout: float = TIMEOUT, expect: type = dict,
+             headers: Optional[dict] = None, body: Optional[dict] = None):
+    """GET url?params → the decoded JSON object (or list, with expect=list), or FetchError("<source> …").
+    `headers` adds e.g. an Authorization header (never echoed in errors); `body` makes it a JSON POST (read-only
+    search endpoints such as Square's SearchOrders)."""
+    query = f"?{urllib.parse.urlencode(params)}" if params else ""
+    request = urllib.request.Request(f"{url}{query}", data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"User-Agent": "CoFoundr/1.0 (hackathon demo)", "Accept": "application/json",
+                                              **({"Content-Type": "application/json"} if body is not None else {}),
+                                              **(headers or {})})
     secrets = [str(v) for k, v in params.items() if k.lower() in SECRET_PARAMS and v]
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:

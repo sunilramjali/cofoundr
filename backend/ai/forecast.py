@@ -298,6 +298,10 @@ def run(days: int = 7, now: Optional[datetime] = None, dry_run: bool = False, us
     names = {p["_id"]: p["name"] for p in db[schema.PRODUCTS].find({"business_id": BUSINESS_ID}, {"name": 1})}
 
     history = daily_history(orders)
+    if not orders:  # no till: card payments (EVO CSV, SumUp) give takings, but not what sold
+        from backend.payments import daily_takings
+        days_window = {"$gte": since.date().isoformat(), "$lt": until.date().isoformat()}
+        history = daily_takings(db[schema.PAYMENTS].find({"business_id": BUSINESS_ID, "date": days_window}, {"date": 1, "amount": 1, "kind": 1}))
     forecasts = baseline(history, daily_product_qty(sales), names, today, days)
     summary = adjust(forecasts, conditions.conditions_for([f["date"] for f in forecasts]), history) if use_gemini else None
     if not dry_run:
@@ -307,7 +311,7 @@ def run(days: int = 7, now: Optional[datetime] = None, dry_run: bool = False, us
         trading = [f for f in forecasts if f["trading"]]
         activity.log("forecast_updated", f"Forecast for {forecasts[0]['date']}–{forecasts[-1]['date']}: "
                      f"{len(trading)} trading day(s), £{sum(f['expected_revenue'] for f in trading):,.0f} expected "
-                     f"(baseline from {len(orders)} orders)", days=[f["date"] for f in forecasts])
+                     f"(baseline from {f'{len(orders)} orders' if orders else 'card payments'})", days=[f["date"] for f in forecasts])
         if summary:
             log_adjustment(forecasts, summary)
     return forecasts

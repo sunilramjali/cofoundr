@@ -40,3 +40,10 @@ The demo inbox (`GMAIL_ADDRESS` + a 16-letter `GMAIL_APP_PASSWORD`) is checked o
 - Each email is handled once: it gets the Gmail label `CoFoundr/processed` (no DB writes here). If Gemini was busy, it stays unlabelled and the next check retries it. Nothing is marked as read.
 - `check_inbox()` never raises → `InboxResult(ok, message, emails, error)`; one `gmail_checked` log line per check with new email; login/connection failures logged once, not every minute.
 - Try it: `python -m backend.inputs.gmail` (real inbox + real Gemini + Atlas: it labels emails and saves invoices).
+
+## Card payments: EVO CSV, Square, SumUp (`evo.py`, `square.py`, `sumup.py`; built by Sunil, flagged for Jade)
+Read-only. Card data is never stored: see `docs/privacy.md`. Real data is refused in the demo database.
+- **EVO** has no merchant API: the owner exports *Transactions* as CSV and uploads it on the **Sales** page (`POST /import/evo`) or runs `python -m backend.inputs.evo <path> [--dry-run]`. Only allow-listed columns are read → `backend.payments.record_payments`. Demo sample: `data/samples/evo_transactions_synthetic.csv` (`python -m data.make_evo_sample`).
+- **Square** (`SQUARE_ACCESS_TOKEN`, `SQUARE_ENV`, scope `ORDERS_READ`): completed orders **with items** → POS format → `sales.record_orders`. `python -m backend.inputs.square --days 7 --dry-run`
+- **SumUp** (`SUMUP_ACCESS_TOKEN`, `SUMUP_ENV`, scope `transactions.history`): payments → `record_payments`. `python -m backend.inputs.sumup --days 7 --dry-run`
+- Sandbox = synthetic, production = real (needs a non-demo `MONGODB_DB` + `PAYMENT_ID_SALT`). Not on the poller yet.

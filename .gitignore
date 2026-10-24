@@ -18,3 +18,8 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+
+# Real business data (EVO exports, bank statements): never committed. Keep it outside the repo.
+private/
+*.csv
+!data/samples/*_synthetic.csv
