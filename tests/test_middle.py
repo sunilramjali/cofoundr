@@ -282,3 +282,108 @@ def test_ensure_indexes_migrates_an_older_database(monkeypatch):
 def seed_today():
     from data.seed import _today
     return _today()
+
+
+# --- till data: backend.sales (Jade's POS connector → MongoDB)
+import copy  # noqa: E402
+
+from backend import sales  # noqa: E402
+from backend.inputs.pos.client import PosClient  # noqa: E402
+
+CLOCK = "2026-12-01"  # after the last of Jade's synthetic till data (Sep–Nov 2026)
+POS = PosClient(now=CLOCK)
+
+
+def _orders(since="2026-10-02", until="2026-10-03"):
+    return list(POS.iter_sales(since=since, until=until))
+
+
+def test_all_of_jades_pos_data_records_cleanly(db):
+    every = list(POS.iter_sales())
+    r = sales.record_orders(now=CLOCK, orders=every)
+    assert r.errors == [] and r.skipped == 0 and r.new == len(every) == 3969
+    assert db[schema.ORDERS].count_documents({}) == 3969
+    assert db[schema.SALES].count_documents({}) == sum(len(o["items"]) for o in every)
+    assert round(r.revenue, 2) == round(sum(o["total_gbp"] for o in every), 2)
+    menu = {p["_id"]: p for p in db[schema.PRODUCTS].find()}
+    assert len(menu) == 15 and menu["FLW"]["name"] == "Flat White" and menu["FLW"]["category"] == "coffee"
+    assert set(menu["PAT"]["variants"]) == {"Almond Croissant", "Butter Croissant", "Pain au Chocolat"}
+
+
+def test_sync_is_idempotent_and_overlapping_windows_are_fine(db):
+    first = sales.record_orders(now=CLOCK, orders=_orders("2026-10-02", "2026-10-04"))
+    again = sales.record_orders(now=CLOCK, orders=_orders("2026-10-03", "2026-10-06"))  # overlaps one day
+    assert first.new > 0 and again.duplicates == len(_orders("2026-10-03", "2026-10-04")) and again.errors == []
+    assert db[schema.ORDERS].count_documents({}) == len(_orders("2026-10-02", "2026-10-06"))
+
+
+def test_timestamps_are_stored_in_utc(db):
+    o = _orders()[0]  # "2026-10-02T07:16:06+01:00" (London summer time)
+    sales.record_orders(now=CLOCK, orders=[o])
+    stored = db[schema.ORDERS].find_one({"order_id": o["order_id"]})
+    assert stored["placed_at"].hour == 6 and stored["placed_at"].utcoffset().total_seconds() == 0
+    naive = dict(copy.deepcopy(o), order_id="NAIVE-1", placed_at="2026-10-02T07:16:06")  # no offset → London
+    sales.record_orders(now=CLOCK, orders=[naive])
+    assert db[schema.ORDERS].find_one({"order_id": "NAIVE-1"})["placed_at"].hour == 6
+
+
+def test_cancelled_and_refunded_orders_are_skipped(db):
+    a, b = copy.deepcopy(_orders()[:2])
+    a["order_status"] = "cancelled"
+    b["payment"]["status"] = "refunded"
+    r = sales.record_orders(now=CLOCK, orders=[a, b])
+    assert r.skipped == 2 and r.new == 0 and db[schema.ORDERS].count_documents({}) == 0
+
+
+@pytest.mark.parametrize("breakage,reason", [
+    (lambda o: o.update(order_id=""), "missing order_id"),
+    (lambda o: o.update(items=[]), "no items"),
+    (lambda o: o.update(placed_at="2026-12-02T09:00:00+00:00"), "future"),  # after the pinned clock
+    (lambda o: o.update(placed_at="yesterday"), "Invalid isoformat"),
+    (lambda o: o["items"][0].update(quantity=-1), "refunds"),
+    (lambda o: o["items"][0].update(quantity="2"), "must be a number"),
+    (lambda o: o["items"][0].update(sku=""), "missing sku"),
+    (lambda o: o["items"][0].update(unit_price_gbp=-2.0), "negative price"),
+    (lambda o: o["items"][0].update(line_total_gbp=99.0), "line total"),
+    (lambda o: o.update(total_gbp=o["total_gbp"] + 5), "totals don't add up"),
+])
+def test_bad_orders_are_rejected_with_a_reason_and_the_rest_still_recorded(db, breakage, reason):
+    bad, good = copy.deepcopy(_orders()[:2])
+    breakage(bad)
+    r = sales.record_orders(now=CLOCK, orders=[bad, good, "not even a dict"])
+    assert r.new == 1 and len(r.errors) == 2 and reason.lower() in r.errors[0].lower()
+    assert db[schema.ORDERS].count_documents({}) == 1
+
+
+def test_a_failed_line_save_releases_the_order_so_the_next_sync_retries(db, monkeypatch):
+    o = _orders()[0]
+    real = db[schema.SALES].insert_many
+    monkeypatch.setattr(db[schema.SALES].__class__, "insert_many", lambda *a, **k: (_ for _ in ()).throw(ConnectionError("down")))
+    r = sales.record_orders(now=CLOCK, orders=[o])
+    assert r.new == 0 and "will retry" in r.errors[0] and db[schema.ORDERS].count_documents({}) == 0
+    monkeypatch.setattr(db[schema.SALES].__class__, "insert_many", real)
+    assert sales.record_orders(now=CLOCK, orders=[o]).new == 1
+
+
+def test_one_log_line_per_sync_not_per_order(db):
+    sales.record_orders(now=CLOCK, orders=_orders("2026-10-02", "2026-10-06"))
+    logs = list(db[schema.AGENT_LOG].find({"kind": "sales_synced"}))
+    assert len(logs) == 1 and "new order(s)" in logs[0]["summary"]
+    sales.record_orders(now=CLOCK, orders=_orders("2026-10-02", "2026-10-06"))  # all duplicates: nothing worth logging
+    assert db[schema.AGENT_LOG].count_documents({"kind": "sales_synced"}) == 1
+
+
+def test_stock_counts_are_stored_once_with_their_kind(db):
+    counts = POS.list_stock_counts()
+    assert len(counts) == 6 and all(sales.record_stock_count(c) for c in counts)
+    assert not any(sales.record_stock_count(c) for c in counts)  # idempotent
+    latest = sales.latest_stock()
+    assert latest["kind"] == "closing" and latest["items"][0]["sku"].startswith("INV-")
+    assert {c["kind"] for c in db[schema.STOCK_COUNTS].find()} == {"opening", "closing"}
+    with pytest.raises(ValueError):
+        sales.record_stock_count({"record_type": "something_else"})
+
+
+def test_till_sync_never_reaches_the_future_through_the_connector(db):
+    r = sales.record_orders(PosClient(now="2026-10-03").iter_sales(), now="2026-10-03")
+    assert r.new > 0 and db[schema.ORDERS].find_one(sort=[("placed_at", -1)])["placed_at"].date().isoformat() <= "2026-10-02"

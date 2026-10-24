@@ -58,6 +58,17 @@ def ensure_indexes(db: Database) -> None:
     approvals.create_index([("business_id", ASCENDING), ("ref", ASCENDING)], unique=True, name="unique_ref",
                            partialFilterExpression={"ref": {"$exists": True}})
 
+    # Till data: SALES is a time-series collection (one doc per order line, bucketed by hour)
+    if schema.SALES not in db.list_collection_names():
+        try:
+            db.create_collection(schema.SALES, timeseries={"timeField": "ts", "metaField": "meta", "granularity": "hours"})
+        except NotImplementedError:  # mongomock in tests has no time-series support: a plain collection is fine there
+            db.create_collection(schema.SALES)
+    db[schema.SALES].create_index([("meta.business_id", ASCENDING), ("meta.sku", ASCENDING), ("ts", ASCENDING)])
+    db[schema.SALES].create_index([("order_id", ASCENDING)])
+    db[schema.ORDERS].create_index([("business_id", ASCENDING), ("placed_at", ASCENDING)])
+    db[schema.STOCK_COUNTS].create_index([("business_id", ASCENDING), ("counted_at", ASCENDING)])
+
 
 def next_refs(db: Database, business_id: str, n: int) -> list:
     """Atomically reserve n approval reference numbers (safe under concurrent overdue checks)."""

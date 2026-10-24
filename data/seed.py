@@ -14,7 +14,8 @@ from datetime import datetime, timedelta, timezone
 from backend.db import schema
 
 BUSINESS_ID = "gaia-coffee"
-SEEDED = [schema.BUSINESSES, schema.INVOICES, schema.APPROVALS, schema.AGENT_LOG]  # + cursors and counters on --reset
+SEEDED = [schema.BUSINESSES, schema.INVOICES, schema.APPROVALS, schema.AGENT_LOG,
+          schema.ORDERS, schema.SALES, schema.PRODUCTS, schema.STOCK_COUNTS]  # + cursors and counters on --reset
 
 
 def _today() -> datetime:
