@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, 16:15 — Weather + events inputs for the forecast (MVP2)
+- **Did:** `backend/inputs/`: `weather.py` (Open-Meteo daily forecast, no key, 7 days per pitch, London dates; verified live), `events.py` (Ticketmaster Discovery, events within 3 km over 7 days; venue distance, paging cap 5, dedupe, cancelled/malformed left out), `fetch.py` (stdlib HTTP helper; plain `FetchError`s, API keys never in messages), `pitches.py`. Both return plain dicts, never write MongoDB; formats in `backend/inputs/README.md`. CLIs: `python -m backend.inputs.weather` / `.events`. 24 tests (fake HTTP; autouse guard blocks real calls) → 132 pass. PR #16 merged into `stage`
+- **Status:** inputs done; events not run live (no `TICKETMASTER_API_KEY` yet); nothing stored yet
+- **Next:** weather/events sync once the middle's record functions exist; confirm pitches with the owner
+- **Blockers / notes for partner:** Sunil, please add weather + event shapes to `schema.py` (weather in `events` or its own collection?) and idempotent record functions (weather by `pitch_id`+`date`, events by `source`+`source_id`). Pitch is an **assumption**: Broadway Market only. I still need a Ticketmaster key and my own Atlas user
+
 ## Sat 24 Oct, 16:05 — Till sync: POS → MongoDB via backend.sales (MVP2)
 - **Did:** `backend/inputs/pos/sync.py`: `sync(client, days=7)` reads the connector and hands everything to `sales.record_orders` / `sales.record_stock_count` (never writes MongoDB itself). Re-reads a 7-day window each run (duplicates skipped, missed runs lose nothing); passes the till clock as `now`; reads the till fully first, so a broken file records nothing and is reported; bad stock counts reported, the rest kept. CLI: `python -m backend.inputs.pos.sync [--days N | --all] [--now DATE]`. 6 tests in `tests/test_edges.py` (108 pass). PR #14 merged into `stage`
 - **Status:** done; not run against Atlas from my side (Sunil already loaded the data up to today)

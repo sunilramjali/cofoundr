@@ -482,3 +482,63 @@ def test_a_new_business_with_two_weeks_of_history_still_gets_a_forecast():
     h = _hist({0: 600, 5: 700}, weeks=2)
     out = forecast.baseline(h, {}, {}, _date(2026, 10, 24), days=3)  # Sat, Sun, Mon
     assert [f["trading"] for f in out] == [True, False, True] and "last 2 Saturdays" in out[0]["basis"]
+
+
+# --- Gemini retry with backoff
+from types import SimpleNamespace  # noqa: E402
+
+from backend.ai.gemini import with_retry  # noqa: E402
+
+
+def _api_error(code):
+    return (genai_errors.ClientError if code < 500 else genai_errors.ServerError)(code, {"error": {"code": code, "message": "x"}})
+
+
+def _flaky(*outcomes):
+    """A call that raises/returns each outcome in turn; counts how often it was made."""
+    left = list(outcomes)
+
+    def call():
+        call.n += 1
+        out = left.pop(0)
+        if isinstance(out, Exception):
+            raise out
+        return out
+    call.n = 0
+    return call
+
+
+def test_gemini_retries_busy_errors_then_succeeds():
+    call = _flaky(_api_error(429), _api_error(503), "ok")
+    assert with_retry(call) == "ok" and call.n == 3
+
+
+def test_gemini_gives_up_after_three_attempts_and_raises():
+    call = _flaky(*[_api_error(429)] * 5)
+    with pytest.raises(Exception) as e:
+        with_retry(call)
+    assert e.value.code == 429 and call.n == 3
+
+
+def test_gemini_does_not_retry_a_bad_request():
+    call = _flaky(_api_error(400), "ok")
+    with pytest.raises(Exception):
+        with_retry(call)
+    assert call.n == 1
+
+
+def test_extraction_survives_one_busy_answer_from_gemini(monkeypatch):
+    good = Extraction(**BASE, printed_total=237.0).model_dump_json()
+    call = _flaky(_api_error(429), SimpleNamespace(text=good))
+    fake = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **_k: call()))
+    monkeypatch.setattr(extract, "get_client", lambda: fake)
+    ex, issues, attempts = extract.extract_invoice(b"%PDF", "application/pdf")
+    assert issues == [] and attempts == 1 and call.n == 2
+
+
+def test_template_fallback_is_logged_for_the_owner(db, gemini_down):
+    new = overdue.run()
+    log = db[schema.AGENT_LOG].find_one({"kind": "gemini_fallback"})
+    assert log and log["detail"]["refs"] == [a["ref"] for a in new if a["drafted_by"] == "template"]
+    overdue.run()  # nothing new drafted → no second fallback line
+    assert db[schema.AGENT_LOG].count_documents({"kind": "gemini_fallback"}) == 1
