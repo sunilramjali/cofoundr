@@ -15,7 +15,7 @@ TOKEN = os.environ["BRIEF_TOKEN"]
 @pytest.fixture(autouse=True)
 def no_real_services(monkeypatch):
     """Tests never reach the real Atlas cluster or Gemini, even when .env has real keys."""
-    from backend.ai import extract, overdue
+    from backend.ai import extract, gemini, overdue
     from backend.db import client
 
     def no_db():
@@ -27,6 +27,7 @@ def no_real_services(monkeypatch):
     monkeypatch.setattr(client, "get_client", no_db)
     monkeypatch.setattr(extract, "get_client", no_gemini)
     monkeypatch.setattr(overdue, "get_client", no_gemini)
+    monkeypatch.setattr(gemini, "_sleep", lambda _s: None)  # retries back off instantly in tests
 
 
 @pytest.fixture

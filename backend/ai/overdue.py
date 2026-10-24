@@ -21,7 +21,7 @@ from typing import Dict, List
 from google.genai import types
 from pydantic import BaseModel
 
-from backend.ai.gemini import MODEL, get_client
+from backend.ai.gemini import MODEL, get_client, with_retry
 from backend.db import schema
 
 BUSINESS_ID = "gaia-coffee"
@@ -89,10 +89,10 @@ def draft_reminders(invoices: List[dict], today: datetime) -> Dict[str, tuple]:
         + "\n".join(lines)
     )
     try:
-        response = get_client().models.generate_content(
+        response = with_retry(lambda: get_client().models.generate_content(
             model=MODEL, contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=Drafts),
-        )
+        ))
         got = {d.invoice_number: (d, "gemini") for d in Drafts.model_validate_json(response.text).drafts}
     except Exception as e:  # quota, bad JSON, network: the flow must still work on stage
         print(f"Gemini unavailable ({getattr(e, 'code', None) or type(e).__name__}); using template drafts.")
@@ -205,6 +205,10 @@ def run(dry_run: bool = False) -> List[dict]:
             except DuplicateKeyError:  # another check drafted this invoice at the same moment; keep theirs
                 pass
         new = saved
+        fallback = sum(a["drafted_by"] == "template" for a in new)
+        if fallback:  # surfaced, never silent: the owner sees these drafts weren't written by Gemini
+            activity.log("gemini_fallback", f"Gemini didn't draft {fallback} reminder(s) (unavailable after retries or skipped them); used the template",
+                         refs=[a["ref"] for a in new if a["drafted_by"] == "template"])
         activity.log("overdue_check", f"Overdue check: {len(overdue)} overdue, {len(new)} new action(s) drafted for approval",
                      refs=[a["ref"] for a in new])
     print(f"{len(overdue)} overdue invoice(s): {len(new)} new approval(s) "
