@@ -49,7 +49,7 @@ def ingest_invoice(data: bytes, mime_type: str, source: Source, origin: str = ""
     if not created:
         return IngestResult(True, f"{doc['invoice_number']} is already in CoFoundr.", invoice=doc)
 
-    verdict = "needs your review: " + issues[0] if issues else f"checked ✓ (attempt {attempts})"
+    verdict = "needs your review: " + issues[0].rstrip(".") if issues else f"checked ✓ (attempt {attempts})"
     activity.log("invoice_extracted", f"Read {doc['invoice_number']} from {doc['counterparty']}, £{doc['amount']:.2f}, "
                  f"{verdict}{f' [{origin}]' if origin else ''}", invoice_number=doc["invoice_number"], attempts=attempts, source=source)
     drafted = overdue.run()
