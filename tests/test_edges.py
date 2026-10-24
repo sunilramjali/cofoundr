@@ -1161,9 +1161,9 @@ def test_whatsapp_numbers_are_normalised(raw, expected):
 
 
 def test_whatsapp_outside_the_24h_window_says_why(monkeypatch, twilio):
-    """What Twilio really answered on Saturday when the owner hadn't messaged the sandbox for a day."""
+    """What Twilio really answered on Saturday (trial account, and outside the 24 h window)."""
     def refuse(url, form, auth):
         raise urllib.error.HTTPError(url, 400, "Bad Request", {}, io.BytesIO(b'{"message": "ContentSid Required"}'))
     monkeypatch.setattr(wa_out, "_post", refuse)
     result = wa_out.send("hi")
-    assert not result.ok and "last 24 h" in result.error and TWILIO_TOKEN not in result.error
+    assert not result.ok and "trial" in result.error and "last 24 h" in result.error and TWILIO_TOKEN not in result.error
