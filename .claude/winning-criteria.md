@@ -69,14 +69,14 @@ Source: Encode London 2026 Luma page (luma.com/encode-london-2026), checked Sat 
 - **Submission:** a **GitHub repository** + a **3-minute demo video** showing the app in action **and MongoDB in use**.
 
 **CoFoundr plan — use as many scored features as fit naturally:**
-- [ ] Atlas as the single source of truth (all collections)
-- [ ] **Atlas Search** — full-text search over invoices/suppliers in the dashboard
-- [ ] **Vector Search** — match events/partnership opportunities to the business profile; find similar past invoices/suppliers
-- [ ] **Hybrid Search** — combine text + vector search (e.g. "invoices from the milk supplier" by keyword + meaning)
-- [ ] **Automated Embedding** — let Atlas generate embeddings on insert (invoices, events, products) instead of us doing it in code
-- [ ] **Voyage AI** — embedding/reranking model behind the search above
+- [x] Atlas as the single source of truth (all collections)
+- [x] **Atlas Search** — full-text search over invoices/suppliers (`backend/db/search.py`, index `invoices_text`, typo-tolerant; used by the price check). *Dashboard search box not built yet*
+- [x] **Vector Search** — find similar past invoices/suppliers (`similar_invoices`, index `invoices_semantic`; powers the cross-supplier price check). *Events matching not built*
+- [x] **Hybrid Search** — combine text + vector search with `$rankFusion` (`search.hybrid`) (e.g. "invoices from the milk supplier" by keyword + meaning)
+- [x] **Automated Embedding** — Atlas embeds invoices' `search_text` on insert (`autoEmbed`), no embedding code of ours
+- [x] **Voyage AI** — `voyage-4` behind Automated Embedding
 - [ ] **Atlas Stream Processing** — trigger the agent when a new invoice/order lands (replaces plain change streams, which aren't on the scored list)
-- [ ] Time-series collection for POS sales (nice, but **not on the scored list**)
+- [x] Time-series collection for POS sales (nice, but **not on the scored list**)
 - [ ] Demo video + README name each Atlas feature explicitly and show it working
 
 ### Google DeepMind — "Build with Gemini 4 Argon"
@@ -100,14 +100,14 @@ Source: Encode London 2026 Luma page (luma.com/encode-london-2026), checked Sat 
 - Anything built before kickoff. Open-source libraries and starter templates are OK, but the demo must only show code written during the hackathon
 
 **CoFoundr plan:**
-- [ ] Use `gemini-4-argon` for all reasoning calls
-- [ ] **Verification loop:** Gemini checks its own extraction (e.g. line items sum to the total, due date is valid) and flags low confidence for human review
-- [ ] Use Argon's **1M context**: feed the full 6-month sales + invoice history in one call for forecasting/prioritisation
+- [x] Use `gemini-4-argon` for all reasoning calls (`GEMINI_MODEL`, `fly.toml`)
+- [x] **Verification loop:** Gemini checks its own extraction (e.g. line items sum to the total, due date is valid) and flags low confidence for human review. Also: forecast adjustments checked (factors exist, add up, direction), board memo claims recomputed from MongoDB, fee summary checked against its own worked example
+- [x] Use Argon's **1M context**: the board meeting (`backend/ai/board.py`) feeds every till line, invoice, approval, forecast and agent action in one call (~169k tokens live)
 - [ ] Consider **multi-agent orchestration** (e.g. invoice agent, forecast agent, planner agent) or Managed Agents if time allows
 - [ ] Named user: the GAIA Coffee owner
 - [ ] Demo rehearsed to run live in **under 3 minutes, no slides**
-- [ ] Multimodal: invoice photo/PDF → structured JSON
-- [ ] Reasoning shown in UI: forecast adjustment explanations, task ranking reasons
+- [x] Multimodal: invoice photo/PDF → structured JSON (+ card fee summary image → rates)
+- [x] Reasoning shown in UI: forecast adjustment explanations, approval reasons, board memo with every number checked, forecast lessons
 - [ ] Function calling over MongoDB for prioritisation
 - [ ] "Real person" story: GAIA Coffee owner (synthetic data, real business)
 
@@ -163,5 +163,5 @@ Source: Encode London 2026 Luma page (luma.com/encode-london-2026), checked Sat 
 - [x] Submission format: GitHub repo + 3-min demo video (MongoDB); 3-min live demo + 2-min Q&A, no slides (Gemini)
 - [ ] Main hackathon submission format (beyond the sponsor requirements above)
 - [x] Gemini model ID: `gemini-4-argon`
-- [ ] Gemini 4 Argon API access / keys
+- [x] Gemini 4 Argon API access / keys
 - [ ] Saint judging specifics — ask the Saint team

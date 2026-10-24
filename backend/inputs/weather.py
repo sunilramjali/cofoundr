@@ -13,6 +13,8 @@ from backend.inputs import fetch
 from backend.inputs.pitches import PITCHES, Pitch
 
 OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
+ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"  # observed weather for past days (a few days' delay)
+TRADING_HOURS = range(7, 18)  # 07:00-17:59 London: rain outside these hours doesn't reach the truck's customers
 MAX_DAYS = 16  # Open-Meteo's forecast horizon
 DAILY = ["weather_code", "temperature_2m_max", "temperature_2m_min", "precipitation_sum",
          "precipitation_probability_max", "wind_speed_10m_max"]
@@ -68,6 +70,37 @@ def forecast(pitch: Pitch = PITCHES[0], days: int = 7, timeout: float = fetch.TI
             "temp_max_c": v["temperature_2m_max"], "temp_min_c": v["temperature_2m_min"],
             "precip_mm": v["precipitation_sum"], "precip_chance_pct": v["precipitation_probability_max"],
             "wind_max_kmh": v["wind_speed_10m_max"], "source": "open-meteo", "fetched_at": fetched_at,
+        })
+    return out
+
+
+def history(start: date, end: date, pitch: Pitch = PITCHES[0], timeout: float = fetch.TIMEOUT) -> List[dict]:
+    """Observed weather for past days at one pitch, same shape as forecast() plus `trading_rain_mm`: rain during
+    trading hours only (a "heavy drizzle" day can be dry while the truck is open). precip_chance_pct is None."""
+    if end < start:
+        raise ValueError("end must not be before start")
+    data = fetch.get_json(ARCHIVE, {
+        "latitude": pitch["lat"], "longitude": pitch["lon"], "start_date": start.isoformat(), "end_date": end.isoformat(),
+        "daily": ",".join(d for d in DAILY if d != "precipitation_probability_max"), "hourly": "precipitation",
+        "timezone": "Europe/London", "temperature_unit": "celsius", "wind_speed_unit": "kmh", "precipitation_unit": "mm",
+    }, source="Open-Meteo archive", timeout=timeout)
+    daily, hourly = data.get("daily"), data.get("hourly")
+    if not isinstance(daily, dict) or not isinstance(daily.get("time"), list) or not isinstance(hourly, dict):
+        raise fetch.FetchError("Open-Meteo's archive answered without daily and hourly data")
+    rain: dict = {}
+    for t, mm in zip(hourly.get("time") or [], hourly.get("precipitation") or []):
+        if isinstance(t, str) and len(t) >= 13 and int(t[11:13]) in TRADING_HOURS and isinstance(mm, (int, float)):
+            rain[t[:10]] = round(rain.get(t[:10], 0.0) + mm, 1)
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    out = []
+    for i, day in enumerate(daily["time"]):
+        v = {name: _num((daily.get(name) or [None] * (i + 1))[i], name) for name in DAILY if name != "precipitation_probability_max"}
+        code = None if v["weather_code"] is None else int(v["weather_code"])
+        out.append({
+            "pitch_id": pitch["id"], "date": day, "summary": describe(code), "weather_code": code,
+            "temp_max_c": v["temperature_2m_max"], "temp_min_c": v["temperature_2m_min"], "precip_mm": v["precipitation_sum"],
+            "precip_chance_pct": None, "wind_max_kmh": v["wind_speed_10m_max"], "trading_rain_mm": rain.get(day),
+            "source": "open-meteo-archive", "fetched_at": fetched_at,
         })
     return out
 

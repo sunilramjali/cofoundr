@@ -9,6 +9,7 @@ Endpoints are sync `def` so blocking PyMongo / Gemini calls run in FastAPI's thr
 import html
 import os
 import secrets
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -20,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from backend import approvals, payments
-from backend.ai import overdue
+from backend.ai import board, fees, overdue, review
 from backend.inputs import evo, gmail, whatsapp as whatsapp_in
 from backend.inputs.replies import parse_reply  # noqa: F401 (also imported from here by tests)
 from backend.outputs import assistant, whatsapp as whatsapp_out
@@ -88,7 +89,7 @@ def _public_url(request: Request) -> str:
     return os.environ.get("PUBLIC_URL") or str(request.base_url).rstrip("/")
 
 
-PAGES = {"/", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings"}
+PAGES = {"/", "/board", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings"}
 
 
 def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
@@ -99,7 +100,7 @@ def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
 # ---------- Owner dashboard: a home of modules, each opening into its own page ----------
 
 NAV = [  # sidebar: (label, path, icon); pages not listed here are reached from the home feed
-    ("Home", "/", "home"), ("Insights", "/sales", "chart"), ("Finances", "/invoices", "pound"), ("Inventory", "/inventory", "box"),
+    ("Home", "/", "home"), ("Board", "/board", "bulb"), ("Insights", "/sales", "chart"), ("Finances", "/invoices", "pound"), ("Inventory", "/inventory", "box"),
     ("Ask", "/whatsapp", "chat"), ("Tasks", "/approvals", "yes"),
 ]
 
@@ -135,11 +136,24 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "stock": view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now),
         "opportunities": view.opportunities(gmail_logs),
         "nav": NAV,
+        "memo": db[schema.BOARD_MEMOS].find_one({"business_id": BUSINESS_ID}, sort=[("generated_at", -1)]),
+        "memo_running": _board_running.locked(),
+        "record": _forecast_record(db),
+        "fee_audit": db[schema.FEE_AUDITS].find_one({"business_id": BUSINESS_ID}, sort=[("created_at", -1)]),
         "checks": view.payment_checks(pending, invoices),
         "sandbox": bool(os.environ.get("COFOUNDR_SANDBOX")),
         "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
                   "polling": int(os.environ.get("GMAIL_POLL_SECONDS") or 0), "last": gmail.last_check},
     }
+
+
+def _forecast_record(db) -> dict:
+    """How the forecasts did against actual takings (backend/ai/review.py), for the Sales page."""
+    reviews = list(db[schema.FORECAST_REVIEWS].find({"business_id": BUSINESS_ID}).sort("date", -1).limit(30))
+    cap, why = review.earned_cap(db)
+    return {"overall": review.stats(reviews).get("overall"), "days": reviews[:8], "cap": cap, "why": why,
+            "full_cap": cap >= review.forecast.MAX_PCT,
+            "lessons": list(db[schema.LESSONS].find({"business_id": BUSINESS_ID, "active": True}).sort("created_at", -1))}
 
 
 def _page(name: str):
@@ -150,7 +164,7 @@ def _page(name: str):
     return render
 
 
-for _path, _name in [("/", "home"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
+for _path, _name in [("/", "home"), ("/board", "board"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
                      ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp"), ("/inventory", "inventory"),
                      ("/settings", "settings")]:
     app.add_api_route(_path, _page(_name), methods=["GET"], response_class=HTMLResponse, name=f"page_{_name}")
@@ -180,6 +194,28 @@ def import_evo(file: UploadFile = File(...), back: str = Form("/sales")):
     except ValueError as e:
         return _back(str(e), back)
     return _back(result.message + (f" {len(parsed.errors)} row(s) couldn't be read." if parsed.errors else ""), back)
+
+
+@app.post("/import/fees")
+def import_fees(file: UploadFile = File(...), back: str = Form("/sales")):
+    """The card provider's fee summary (photo or PDF): Gemini reads it, its own worked examples check the reading,
+    then every stored card payment is audited against it. Nothing is claimed from the provider here."""
+    data = file.file.read(MAX_UPLOAD + 1)
+    mime = file.content_type or "application/octet-stream"
+    if len(data) > MAX_UPLOAD or not (mime.startswith("image/") or mime == "application/pdf"):
+        return _back("Upload the fee summary as a photo or PDF (10 MB max).", back)
+    try:
+        doc = fees.run(data, mime)
+    except RealDataRefused as e:
+        return _back(str(e), back)
+    except Exception as e:  # Gemini busy after retries, unreadable file: say so, store nothing
+        return _back(f"I couldn't read that fee summary ({getattr(e, 'code', None) or type(e).__name__}). Try again in a minute.", back)
+    if doc["problems"]:
+        return _back("I read the fee summary but its numbers didn't check out against its own example, so I didn't audit "
+                     "anything. Please check it.", back)
+    a = doc["audit"]
+    return _back(f"Checked {a['checked']} card payments: {a['matched']} charged correctly, {len(a['overcharged'])} overcharged "
+                 f"(£{a['extra_total']:.2f}).", back)
 
 
 @app.post("/approvals/{approval_id}/decide")
@@ -219,6 +255,24 @@ def ask(text: str = Form(""), back: str = Form("/")):
 @app.post("/check-inbox")
 def check_inbox(back: str = Form("/inbox")):
     return _back(gmail.check_inbox().message, back)
+
+
+_board_running = threading.Lock()
+
+
+@app.post("/board/run")
+def run_board(back: str = Form("/board")):
+    """Gemini reads everything (about a minute), so it runs in the background; one at a time."""
+    if not _board_running.acquire(blocking=False):
+        return _back("A board meeting is already running. Refresh in a minute.", back)
+
+    def work():
+        try:
+            board.run()
+        finally:
+            _board_running.release()
+    threading.Thread(target=work, daemon=True).start()
+    return _back("Gemini is reading everything the business has recorded (about a minute). Refresh to see the memo.", back)
 
 
 @app.post("/run-check")

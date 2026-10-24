@@ -1,0 +1,52 @@
+{% extends "page.html" %}
+{% block title %}Board meeting{% endblock %}
+{% block vt %}m-board{% endblock %}
+{% block eyebrow %}<svg class="ico"><use href="#i-bulb"/></svg>Board meeting{% endblock %}
+{% block heading %}{{ memo.headline if memo else "This week's board memo" }}{% endblock %}
+{% block lede %}I read everything the business has recorded in one go, then a separate check recomputes every number I quote from the database. Anything that doesn't add up is shown, not hidden.{% endblock %}
+{% block stats %}
+<div class="stats">
+  {% if memo %}
+  {% if memo.read.tokens %}<div class="stat"><b class="num">{{ "{:,}".format(memo.read.tokens) }}</b><span>tokens read in one go</span></div>{% endif %}
+  <div class="stat"><b class="num">{{ "{:,}".format(memo.read.sales_lines) }}</b><span>till lines + {{ memo.read.invoices }} invoices</span></div>
+  <div class="stat"><b class="num">{{ memo.insights|selectattr("status", "in", ["verified", "corrected"])|list|length }}/{{ memo.insights|length }}</b><span>insights that checked out</span></div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block body %}
+<section class="block">
+  <form method="post" action="/board/run" style="margin:0 0 18px">
+    <input type="hidden" name="back" value="/board">
+    <button class="btn" type="submit" data-busy="Starting…"{% if memo_running %} disabled{% endif %}>{{ "Reading everything…" if memo_running else "Hold a board meeting" }} <svg class="ico ico--go"><use href="#i-arrow"/></svg></button>
+    {% if memo %}<span class="muted" style="margin-left:12px">Last memo {{ memo.generated_at|stamp }} · {{ memo.model }}{% if memo.synthetic %} · synthetic demo data{% endif %}</span>{% endif %}
+  </form>
+  {% if memo %}
+  {% for i in memo.insights %}
+  <article class="card card--quiet" style="grid-template-columns:minmax(0,1fr);align-items:start;margin-bottom:14px">
+    <div>
+      <p style="margin:0 0 6px">
+        {% if i.status == "verified" %}<span class="chip chip--sage">Checked ✓</span>
+        {% elif i.status == "corrected" %}<span class="chip chip--sky">Corrected after the check</span>
+        {% elif i.status == "withdrawn" %}<span class="chip chip--rust">Withdrawn: the numbers didn't hold</span>
+        {% else %}<span class="chip chip--rust">Failed the check</span>{% endif %}
+        {% if i.impact_gbp_per_month %}<span class="muted" style="margin-left:8px">~{{ i.impact_gbp_per_month|money0 }}/month (estimate)</span>{% endif %}
+      </p>
+      <h3>{% if i.status in ["failed", "withdrawn"] %}<s>{{ i.title }}</s>{% else %}{{ i.title }}{% endif %}</h3>
+      <p>{% if i.status in ["failed", "withdrawn"] %}<s>{{ i.finding }}</s>{% else %}{{ i.finding }}{% endif %}</p>
+      {% if i.status not in ["failed", "withdrawn"] %}<p><b>Next:</b> {{ i.action }}</p>{% endif %}
+      <details style="margin-top:8px"><summary class="muted">How I checked this ({{ i.claims|length }} number{{ "s" if i.claims|length != 1 }})</summary>
+        <ul style="margin:8px 0 0;padding-left:18px">
+          {% for c in i.claims %}<li class="muted">{{ "✓" if c.ok else "✗" }} “{{ c.says }}”: I said {{ "{:,.2f}".format(c.value).rstrip("0").rstrip(".") }}, the database says {{ ("{:,.2f}".format(c.actual).rstrip("0").rstrip(".")) if c.actual is not none else "—" }}{% if c.why %} ({{ c.why }}){% endif %}</li>{% endfor %}
+          {% for p in i.first_problems %}<li class="muted">Fixed on the recheck: {{ p }}</li>{% endfor %}
+          {% for p in i.problems %}<li class="muted">Still wrong: {{ p }}</li>{% endfor %}
+        </ul>
+      </details>
+    </div>
+  </article>
+  {% endfor %}
+  <p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>Suggestions only: anything that moves money still waits for your yes in Tasks. £/month figures are my estimates; every other number was recomputed from your records.</span></p>
+  {% else %}
+  <div class="empty"><svg class="ico"><use href="#i-bulb"/></svg><div><b>No memo yet.</b>Hold a board meeting and I'll read every sale, invoice and decision, then tell you what matters.</div></div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -87,7 +87,8 @@ Trading days to adjust:
 {days}
 
 GAIA's daily takings so far ({data_label}):
-{history}"""
+{history}
+{lessons}"""
 
 RECHECK = """Automatic checks rejected your adjustment for some days:
 {problems}
@@ -182,6 +183,8 @@ def baseline(history: Dict[date, dict], product_days: Dict[date, Dict[str, float
 # ---------------------------------------------------------------- Gemini adjustment
 
 def is_wet(w: dict) -> bool:
+    if w.get("trading_rain_mm") is not None:  # observed: only rain while the truck is open counts
+        return w["trading_rain_mm"] >= 0.5
     return (w.get("weather_code") or 0) >= 51 or (w.get("precip_mm") or 0) >= 2 or (w.get("precip_chance_pct") or 0) >= 60
 
 
@@ -192,7 +195,8 @@ def day_conditions(date_: str, cond: dict) -> Dict[str, dict]:
     if w and w.get("weather_code") is not None:
         out[f"weather:{date_}"] = {
             "kind": "weather", "label": w["summary"], "wet": is_wet(w),
-            "facts": {k: w.get(k) for k in ("summary", "temp_max_c", "temp_min_c", "precip_mm", "precip_chance_pct", "wind_max_kmh")}}
+            "facts": {k: w.get(k) for k in ("summary", "temp_max_c", "temp_min_c", "precip_mm", "precip_chance_pct", "wind_max_kmh",
+                                            "trading_rain_mm") if k in w}}
     for e in cond.get("events", []):
         out[e["_id"]] = {"kind": "event", "label": e["name"],
                          "facts": {"name": e["name"], "category": e.get("category"), "venue": e.get("venue"),
@@ -205,8 +209,9 @@ def day_conditions(date_: str, cond: dict) -> Dict[str, dict]:
     return out
 
 
-def check(day: dict, refs: Dict[str, dict], adj: DayAdjustment) -> List[str]:
-    """Deterministic checks on one day's adjustment. Empty list = accepted."""
+def check(day: dict, refs: Dict[str, dict], adj: DayAdjustment, max_pct: float = MAX_PCT) -> List[str]:
+    """Deterministic checks on one day's adjustment. Empty list = accepted. `max_pct` = the cap Gemini has earned."""
+    max_factor = min(MAX_FACTOR_PCT, max_pct)
     problems = []
     cited = [f.ref for f in adj.factors]
     for ref in sorted({r for r in cited if cited.count(r) > 1}):
@@ -218,15 +223,15 @@ def check(day: dict, refs: Dict[str, dict], adj: DayAdjustment) -> List[str]:
             continue
         if known["kind"] != f.kind:
             problems.append(f"factor {f.ref!r} is {known['kind']}, not {f.kind}")
-        if abs(f.effect_pct) > MAX_FACTOR_PCT:
-            problems.append(f"factor {f.ref!r} is {f.effect_pct:+g}%, beyond ±{MAX_FACTOR_PCT}%")
+        if abs(f.effect_pct) > max_factor:
+            problems.append(f"factor {f.ref!r} is {f.effect_pct:+g}%, beyond ±{max_factor:g}%")
         if f.effect_pct > 0 and (known["kind"] == "transport" or known.get("wet")):
             problems.append(f"factor {f.ref!r} ({known['label']}) can't raise takings, but has {f.effect_pct:+g}%")
     total = sum(f.effect_pct for f in adj.factors)
     if abs(total - adj.pct) > SUM_TOLERANCE:
         problems.append(f"factors add up to {total:+g}%, but the day's pct is {adj.pct:+g}%")
-    if abs(adj.pct) > MAX_PCT:
-        problems.append(f"pct {adj.pct:+g}% is beyond ±{MAX_PCT}%")
+    if abs(adj.pct) > max_pct:
+        problems.append(f"pct {adj.pct:+g}% is beyond ±{max_pct:g}%")
     stated = [float(n) for n in re.findall(r"(\d+(?:\.\d+)?)\s*%", adj.reason)]
     if abs(adj.pct) >= 0.5 and not any(abs(n - abs(adj.pct)) <= 1 for n in stated):  # "+13%" for 12.5 is fine
         problems.append(f"reason {adj.reason!r} doesn't state the day's {adj.pct:+.0f}%")
@@ -245,7 +250,8 @@ def ask_gemini(prompt: str) -> List[DayAdjustment]:
     return Adjustments.model_validate_json(response.text).days
 
 
-def adjust(forecasts: List[dict], conditions: Dict[str, dict], history: Dict[date, dict], synthetic: bool = True) -> dict:
+def adjust(forecasts: List[dict], conditions: Dict[str, dict], history: Dict[date, dict], synthetic: bool = True,
+           max_pct: float = MAX_PCT, lessons: Optional[List[str]] = None) -> dict:
     """Adjust trading days in place (adjustment + final_revenue). Returns a summary for the log:
     {"adjusted": [dates], "kept": {date: problems}, "skipped": [dates without conditions], "attempts", "error"}."""
     summary = {"adjusted": [], "kept": {}, "skipped": [], "attempts": 0, "error": None}
@@ -264,9 +270,11 @@ def adjust(forecasts: List[dict], conditions: Dict[str, dict], history: Dict[dat
                 "range_gbp": [f["low_revenue"], f["high_revenue"]], "basis": f["basis"],
                 "conditions": [{"ref": r, "kind": c["kind"], **c["facts"]} for r, c in refs.items()]} for d, (f, refs) in days.items()]
     takings = [{"date": d.isoformat(), "weekday": DAYS[d.weekday()][:3], "gbp": round(v["revenue"], 2)} for d, v in sorted(history.items())]
-    prompt = PROMPT.format(max_pct=MAX_PCT, max_factor=MAX_FACTOR_PCT, days=json.dumps(listing, indent=1, default=str),
-                           history=json.dumps(takings, separators=(",", ":")),
-                           data_label="synthetic demo data" if synthetic else "the business's real takings")
+    lesson_text = ("\nLessons from grading your earlier forecasts against what GAIA actually took (follow them):\n"
+                   + "\n".join(f"- {t}" for t in lessons)) if lessons else ""
+    prompt = PROMPT.format(max_pct=f"{max_pct:g}", max_factor=f"{min(MAX_FACTOR_PCT, max_pct):g}",
+                           days=json.dumps(listing, indent=1, default=str), history=json.dumps(takings, separators=(",", ":")),
+                           data_label="synthetic demo data" if synthetic else "the business's real takings", lessons=lesson_text)
     accepted: Dict[str, DayAdjustment] = {}
     answers: Dict[str, DayAdjustment] = {}
     problems: Dict[str, List[str]] = {d: ["no answer for this day"] for d in days}
@@ -282,7 +290,7 @@ def adjust(forecasts: List[dict], conditions: Dict[str, dict], history: Dict[dat
                     answers[a.date] = a
             for d in list(problems):
                 if d in answers:
-                    found = check(days[d][0], days[d][1], answers[d])
+                    found = check(days[d][0], days[d][1], answers[d], max_pct)
                     if not found:
                         accepted[d] = answers[d]
                         del problems[d]
@@ -305,6 +313,27 @@ def adjust(forecasts: List[dict], conditions: Dict[str, dict], history: Dict[dat
     return summary
 
 
+def load(db, since: datetime, until: datetime):
+    """(real?, daily history, product quantities per day, sku → name, where it came from) for [since, until).
+    Never mixes synthetic and real history: once any real till data or card payments exist, only real data is used.
+    Card payments (EVO CSV, SumUp) give takings but not what sold, and are never added to till orders (the same sale
+    would count twice): whichever source covers more days wins, e.g. a till connected last week vs months of EVO."""
+    from backend.payments import daily_takings
+    real = bool(db[schema.ORDERS].find_one({"business_id": BUSINESS_ID, "synthetic": False}, {"_id": 1})
+                or db[schema.PAYMENTS].find_one({"business_id": BUSINESS_ID, "synthetic": False}, {"_id": 1}))
+    kind = {"synthetic": False} if real else {"synthetic": {"$ne": False}}
+    window = {"$gte": since, "$lt": until}
+    orders = list(db[schema.ORDERS].find({"business_id": BUSINESS_ID, "placed_at": window, **kind}, {"placed_at": 1, "total": 1}))
+    sales = list(db[schema.SALES].find({"meta.business_id": BUSINESS_ID, "ts": window, **kind}, {"ts": 1, "meta.sku": 1, "qty": 1}))
+    names = {p["_id"]: p["name"] for p in db[schema.PRODUCTS].find({"business_id": BUSINESS_ID}, {"name": 1})}
+    history = daily_history(orders)
+    days_window = {"$gte": since.astimezone(LONDON).date().isoformat(), "$lt": until.astimezone(LONDON).date().isoformat()}
+    card = daily_takings(db[schema.PAYMENTS].find({"business_id": BUSINESS_ID, "date": days_window, **kind}, {"date": 1, "amount": 1, "kind": 1}))
+    if len(card) > len(history):
+        return real, card, {}, names, "card payments"
+    return real, history, daily_product_qty(sales), names, f"{len(orders)} orders"
+
+
 def run(days: int = 7, now: Optional[datetime] = None, dry_run: bool = False, use_gemini: bool = True) -> List[dict]:
     """Recompute the next `days` days from MongoDB history, let Gemini adjust them, and store them (latest run wins)."""
     from backend import conditions
@@ -316,28 +345,16 @@ def run(days: int = 7, now: Optional[datetime] = None, dry_run: bool = False, us
     today = now.astimezone(LONDON).date()
     since = datetime.combine(today - timedelta(weeks=LOOKBACK_WEEKS + 1), datetime.min.time(), LONDON)
     until = datetime.combine(today, datetime.min.time(), LONDON)  # only complete days: today isn't over yet
-    window = {"$gte": since, "$lt": until}
-    # Never mix synthetic and real history: once any real till data or card payments exist, only real data is used
-    real = bool(db[schema.ORDERS].find_one({"business_id": BUSINESS_ID, "synthetic": False}, {"_id": 1})
-                or db[schema.PAYMENTS].find_one({"business_id": BUSINESS_ID, "synthetic": False}, {"_id": 1}))
-    kind = {"synthetic": False} if real else {"synthetic": {"$ne": False}}
-    orders = list(db[schema.ORDERS].find({"business_id": BUSINESS_ID, "placed_at": window, **kind}, {"placed_at": 1, "total": 1}))
-    sales = list(db[schema.SALES].find({"meta.business_id": BUSINESS_ID, "ts": window, **kind}, {"ts": 1, "meta.sku": 1, "qty": 1}))
-    names = {p["_id"]: p["name"] for p in db[schema.PRODUCTS].find({"business_id": BUSINESS_ID}, {"name": 1})}
-
-    history = daily_history(orders)
-    # Card payments (EVO CSV, SumUp) give takings but not what sold. Never add them to till orders (the same sale
-    # would count twice): use whichever source covers more days, e.g. a till connected last week vs months of EVO.
-    from backend.payments import daily_takings
-    days_window = {"$gte": since.date().isoformat(), "$lt": until.date().isoformat()}
-    card = daily_takings(db[schema.PAYMENTS].find({"business_id": BUSINESS_ID, "date": days_window, **kind}, {"date": 1, "amount": 1, "kind": 1}))
-    source = "card payments" if len(card) > len(history) else f"{len(orders)} orders"
-    if len(card) > len(history):
-        history, sales = card, []
-    forecasts = baseline(history, daily_product_qty(sales), names, today, days)
+    real, history, product_days, names, source = load(db, since, until)
+    forecasts = baseline(history, product_days, names, today, days)
     for f in forecasts:
         f["synthetic"] = not real
-    summary = adjust(forecasts, conditions.conditions_for([f["date"] for f in forecasts]), history, synthetic=not real) if use_gemini else None
+    from backend.ai import review
+    cap, record = review.earned_cap(db)
+    summary = adjust(forecasts, conditions.conditions_for([f["date"] for f in forecasts]), history, synthetic=not real,
+                     max_pct=cap, lessons=review.current_lessons(db)) if use_gemini else None
+    if summary is not None:
+        summary.update(cap=cap, record=record)
     if not dry_run:
         for f in forecasts:
             f["generated_at"] = now
@@ -358,9 +375,10 @@ def log_adjustment(forecasts: List[dict], summary: dict) -> None:
     by_date = {f["date"]: f for f in forecasts}
     if summary["adjusted"]:
         lines = "; ".join(by_date[d]["adjustment"]["reason"] for d in summary["adjusted"])
+        trust = (f" (limited to ±{summary['cap']:g}%: {summary['record']})" if summary.get("cap", MAX_PCT) < MAX_PCT else "")
         activity.log("forecast_adjusted", f"Gemini adjusted {len(summary['adjusted'])} day(s), checked"
-                     f"{' after a recheck' if summary['attempts'] > 1 else ''}: {lines}",
-                     days=summary["adjusted"], attempts=summary["attempts"])
+                     f"{' after a recheck' if summary['attempts'] > 1 else ''}{trust}: {lines}",
+                     days=summary["adjusted"], attempts=summary["attempts"], cap=summary.get("cap", MAX_PCT))
     if summary["error"] or summary["kept"]:
         why = f"Gemini unavailable ({summary['error']})" if summary["error"] else "Gemini's adjustment failed the checks twice"
         activity.log("gemini_fallback", f"Forecast: {why}; baseline kept for {', '.join(sorted(summary['kept']))}",

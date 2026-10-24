@@ -70,11 +70,11 @@ Each morning the owner gets a WhatsApp brief **without asking**: what's coming i
 
 **Middle (Sunil)**
 - [x] **Sales history:** Jade's synthetic GAIA POS export (Sep–Nov 2026, 3,969 orders) recorded via `backend.sales` into MongoDB **time-series** `sales` (+ `orders`, `products`, `stock_counts`); loaded up to today, rest arrives as time passes
-- [ ] **Forecast:** ✓ **baseline done** (`backend/ai/forecast.py`: trading days learned from history, average of the last 6 same weekdays with a low–high range, per-product quantities; stored in `forecasts`). **Still to do:** **Gemini adjusts** for weather + nearby events and **explains why** ("+28% Sat: market nearby + sunny"), needs Jade's weather/events inputs
-- [ ] **Prioritisation:** Gemini ranks open tasks (approvals, review flags, forecast prep like "order extra oat milk") by impact with a one-line reason each; stored in `tasks`
-- [ ] **Atlas Search:** full-text search over invoices/suppliers (index + query function)
-- [ ] **Vector Search / Automated Embedding:** semantic match of events to the business profile ("worth trading at?"), or similar past invoices; **Hybrid Search** if time allows
-- [ ] **Error hardening:** Gemini 429s retried with backoff; every failure logged in `agent_log` and surfaced to the owner, never silent
+- [x] **Forecast:** baseline (`backend/ai/forecast.py`: trading days learned from history, average of the last 6 same weekdays with a low–high range, closed days left out, per-product quantities) + **Gemini adjusts** for weather, events and TfL disruptions and **explains why**, every adjustment checked; graded against actual takings with lessons and an earned cap (`backend/ai/review.py`). Stored in `forecasts`
+- [x] **Prioritisation:** Gemini ranks open tasks (approvals, review flags, forecast prep like "order extra oat milk") by impact with a one-line reason each; stored in `tasks`
+- [x] **Atlas Search:** full-text search over invoices/suppliers (index + query function)
+- [x] **Vector Search / Automated Embedding:** similar past invoices (Voyage via `autoEmbed`) + **Hybrid Search** (`$rankFusion`). Events matching not built
+- [x] **Error hardening:** Gemini 429s retried with backoff; every failure logged in `agent_log` and surfaced to the owner, never silent
 
 **Outputs (Jade)**
 - [ ] **Real reminder emails:** `outputs/email.py` sends approved reminders (Gmail SMTP from the demo inbox); `effect` shows "sent", never sends without approval
