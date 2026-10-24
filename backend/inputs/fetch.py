@@ -10,7 +10,7 @@ import urllib.request
 from typing import Optional
 
 TIMEOUT = 10  # seconds
-SECRET_PARAMS = ("apikey", "api_key", "key", "token")
+SECRET_PARAMS = ("apikey", "api_key", "app_key", "key", "token")
 
 
 class FetchError(RuntimeError):
@@ -31,8 +31,8 @@ def _reason(err: urllib.error.HTTPError) -> str:
     return f": {str(text)[:200]}" if text else ""
 
 
-def get_json(url: str, params: dict, source: str, timeout: float = TIMEOUT) -> dict:
-    """GET url?params → the decoded JSON object, or FetchError("<source> …")."""
+def get_json(url: str, params: dict, source: str, timeout: float = TIMEOUT, expect: type = dict):
+    """GET url?params → the decoded JSON object (or list, with expect=list), or FetchError("<source> …")."""
     request = urllib.request.Request(f"{url}?{urllib.parse.urlencode(params)}",
                                      headers={"User-Agent": "CoFoundr/1.0 (hackathon demo)", "Accept": "application/json"})
     secrets = [str(v) for k, v in params.items() if k.lower() in SECRET_PARAMS and v]
@@ -48,8 +48,8 @@ def get_json(url: str, params: dict, source: str, timeout: float = TIMEOUT) -> d
             data = json.loads(raw)
         except ValueError:
             raise FetchError(f"{source} sent something that isn't JSON") from None
-        if not isinstance(data, dict):
-            raise FetchError(f"{source} sent JSON that isn't an object")
+        if not isinstance(data, expect):
+            raise FetchError(f"{source} sent JSON that isn't {'a list' if expect is list else 'an object'}")
         return data
     for secret in secrets:
         message = message.replace(secret, "***")

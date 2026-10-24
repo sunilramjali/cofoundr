@@ -14,7 +14,9 @@ BUSINESSES = "businesses"
 PRODUCTS = "products"
 SALES = "sales"
 INVOICES = "invoices"
-EVENTS = "events"
+EVENTS = "events"  # things happening near the truck's pitches (Ticketmaster), one doc per event
+WEATHER = "weather"  # daily weather forecast per pitch (Open-Meteo), one doc per pitch per London day
+TRANSPORT = "transport"  # TfL disruptions that hit a station near a pitch during trading hours, one doc per disruption
 FORECASTS = "forecasts"
 TASKS = "tasks"
 APPROVALS = "approvals"
@@ -29,6 +31,14 @@ def counterparty_key(name: Optional[str]) -> str:
     """Normalised name used to tell invoices apart: invoice numbers are only unique per supplier/customer.
     "Eastside Dairy Co." and "eastside dairy co" → "eastsidedairyco"."""
     return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+def invoice_search_text(doc: dict) -> str:
+    """One line describing an invoice, for Atlas Search and Automated Embedding (Voyage) to index.
+    "Eastside Dairy Co | supplier bill (we pay) | EDC-7781 | Whole milk, 2L; Oat milk, 1L"."""
+    kind = "customer invoice (owed to us)" if doc.get("direction") == "receivable" else "supplier bill (we pay)"
+    items = "; ".join(li.get("description", "") for li in doc.get("line_items") or [])
+    return " | ".join([doc.get("counterparty") or "", kind, doc.get("invoice_number") or "", items])
 
 
 class AgentLogEntry(TypedDict):
@@ -46,6 +56,9 @@ class Business(TypedDict):
     business_type: str
     location: str
     currency: str
+    # counterparty_key()s the owner is loyal to: CoFoundr still reports their price rises, but never suggests
+    # alternatives to them (backend/db/search.py). Missing = none.
+    preferred_suppliers: List[str]
     synthetic: bool  # True for all demo data
     created_at: datetime
 
@@ -78,6 +91,7 @@ class Invoice(TypedDict):
     verification_issues: List[str]  # what failed; empty when clean (seeded docs omit it)
     extraction_notes: Optional[str]  # Gemini notes on unclear values
     reminders_sent: int  # escalation level for receivables
+    search_text: str  # invoice_search_text(doc): what Atlas Search + Automated Embedding index (backend/db/search.py)
     synthetic: bool
     created_at: datetime
 
@@ -230,7 +244,8 @@ class Task(TypedDict):
     Tasks are gathered from MongoDB (never invented by Gemini); Gemini only orders them and says why."""
     _id: str  # "<business_id>:<kind>:<key>", stable across runs
     business_id: str
-    kind: Literal["approval", "review_invoice", "prep_day"]
+    # price_rise = a supplier charged more than last time; price_match = another supplier is cheaper, ask to match
+    kind: Literal["approval", "review_invoice", "prep_day", "price_rise", "price_match"]
     title: str  # one line, e.g. "Approve #3: chase Hackney Hub, £450.00, 12 days overdue"
     facts: str  # what the ranking was based on
     target_id: Optional[str]  # str(_id) of the approval / invoice / forecast it's about
@@ -244,4 +259,78 @@ class Task(TypedDict):
     synthetic: bool
 
 
-# TODO(Sunil, MVP2): Event shape
+# ---------------------------------------------------------------- weather + events around the pitches (MVP2)
+# INPUT formats = Jade's backend/inputs/weather.py and events.py (see backend/inputs/README.md), passed as-is to
+# backend.conditions.record_weather() / record_events(); only backend.conditions writes these collections.
+# Real public data (not synthetic), so synthetic=False.
+
+class WeatherDay(TypedDict):
+    """The latest forecast for one pitch on one day: a re-sync overwrites it (forecasts improve as the day nears)."""
+    _id: str  # "<business_id>:<pitch_id>:<date>"
+    business_id: str
+    pitch_id: str  # backend/inputs/pitches.py id, e.g. "broadway-market"
+    date: str  # London day, "2026-10-25"
+    summary: str  # "Light drizzle"
+    weather_code: Optional[int]  # WMO code; None = no data
+    temp_max_c: Optional[float]
+    temp_min_c: Optional[float]
+    precip_mm: Optional[float]
+    precip_chance_pct: Optional[float]
+    wind_max_kmh: Optional[float]
+    source: str  # "open-meteo"
+    fetched_at: datetime  # when the source produced this forecast
+    updated_at: datetime  # when we last stored a change
+    synthetic: bool
+
+
+class Event(TypedDict):
+    """One event near a pitch. Never deleted: an event that drops out of a later fetch for the same window and pitch
+    gets status "removed" (cancelled or moved), so the forecast stops counting it."""
+    _id: str  # "<business_id>:<source>:<source_id>"
+    business_id: str
+    source: str  # "ticketmaster"
+    source_id: str
+    name: str
+    category: Optional[str]  # "Music", "Sports", ...
+    genre: Optional[str]
+    date: str  # London day, "2026-10-25"
+    starts_at: Optional[datetime]  # UTC; None = time to be announced
+    status: str  # the source's status ("onsale", "rescheduled", ...) or "removed"
+    venue: Optional[str]
+    lat: Optional[float]
+    lon: Optional[float]
+    distance_km: Optional[float]  # to the nearest pitch
+    pitch_id: str  # nearest pitch (an event found near two pitches is stored once)
+    url: Optional[str]
+    search_text: str  # "name | category, genre | venue": for Automated Embedding (event ↔ business matching)
+    fetched_at: datetime
+    first_seen_at: datetime
+    last_seen_at: datetime
+    synthetic: bool
+
+
+class TransportDisruption(TypedDict):
+    """A TfL disruption that hits at least one station near a pitch during trading hours (backend/transport.py decides;
+    line-level problems elsewhere on the line are not stored). Never deleted: one that TfL stops listing for a window
+    we re-fetched gets state "resolved"."""
+    _id: str  # "<business_id>:tfl:<source_id>"
+    business_id: str
+    source: str  # "tfl"
+    source_id: str  # hash of line + status + TfL's text
+    pitch_id: str
+    line_id: str  # "weaver", "central", ...
+    line_name: str
+    status: str  # TfL's words: "Part Closure", "Severe Delays", ...
+    impact: Literal["closed", "delays", "uncertain"]  # uncertain = TfL's text couldn't be placed on the line's map
+    category: Literal["planned", "live"]  # planned works (known days ahead) or live (today)
+    reason: str  # TfL's text, shown as-is
+    dates: List[str]  # London days it touches during trading hours (07:00-18:00)
+    stations: List[str]  # nearby stations it hits, e.g. ["London Fields", "Cambridge Heath"]
+    nearest_m: int  # walking distance from the pitch to the nearest affected station
+    starts_at: Optional[datetime]
+    ends_at: Optional[datetime]
+    state: Literal["active", "resolved"]
+    fetched_at: datetime
+    first_seen_at: datetime
+    last_seen_at: datetime
+    synthetic: bool

@@ -13,7 +13,7 @@ Usage (from the repo root):
 """
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Literal, Optional
 from zoneinfo import ZoneInfo
 
@@ -21,11 +21,13 @@ from google.genai import types
 from pydantic import BaseModel
 
 from backend.ai.gemini import MODEL, get_client, with_retry
-from backend.db import schema
+from backend.db import schema, search
 
 BUSINESS_ID = "gaia-coffee"
 LONDON = ZoneInfo("Europe/London")
 REVIEW_WEIGHT = 1.5  # an unchecked invoice blocks everything after it (can't chase or pay what isn't verified)
+PRICE_WEIGHT = 10  # £ extra on one bill × 10 ≈ a few months of the same orders: worth a call, rarely urgent
+PRICE_LOOKBACK_DAYS = 30  # only recent supplier bills raise price tasks
 
 
 class Ranked(BaseModel):
@@ -61,6 +63,7 @@ def candidates(db, now: datetime) -> List[dict]:
             "facts": f"{inv['direction']}, £{inv['amount']:.2f}; automatic check failed: {issue}; can't be chased or paid until checked",
             "score": inv["amount"] * REVIEW_WEIGHT,
         })
+    tasks += price_tasks(db, now)
     today = now.astimezone(LONDON).date().isoformat()
     day = db[schema.FORECASTS].find_one({"business_id": BUSINESS_ID, "trading": True, "date": {"$gte": today}}, sort=[("date", 1)])
     if day:
@@ -78,6 +81,33 @@ def candidates(db, now: datetime) -> List[dict]:
     return tasks
 
 
+def price_tasks(db, now: datetime) -> List[dict]:
+    """Recent, checked, unpaid supplier bills priced above the supplier's last bill (price_rise) or above another
+    supplier (price_match: ask for a match, never "switch"; none for preferred suppliers)."""
+    tasks = []
+    since = now - timedelta(days=PRICE_LOOKBACK_DAYS)
+    for inv in db[schema.INVOICES].find({"business_id": BUSINESS_ID, "direction": "payable", "status": {"$ne": "paid"},
+                                         "needs_review": {"$ne": True}, "created_at": {"$gte": since}}):
+        check = search.price_check(db, inv)
+        for kind, found in (("price_rise", check.rises), ("price_match", check.cheaper_elsewhere)):
+            if not found:
+                continue
+            extra = round(sum((c["unit_price"] - c["other_price"]) * c["qty"] for c in found), 2)
+            first = found[0]
+            title = (f"Ask {inv['counterparty']} about the price rise on {first['item']} (+{first['change_pct']:.1f}%)"
+                     if kind == "price_rise" else
+                     f"Ask {inv['counterparty']} to match {first['counterparty']}'s £{first['other_price']:.2f} for {first['compared_to']}")
+            lines = [ln for ln in check.lines() if (" up " in ln) == (kind == "price_rise")]
+            tasks.append({
+                "_id": f"{BUSINESS_ID}:{kind}:{inv['_id']}", "kind": kind, "title": title, "target_id": str(inv["_id"]),
+                "approval_ref": None, "amount": extra,
+                "facts": f"£{extra:.2f} extra on {inv['invoice_number']}; " + " ".join(lines)
+                         + "; negotiate with the current supplier, don't switch on price alone",
+                "score": extra * PRICE_WEIGHT,
+            })
+    return tasks
+
+
 def rule_rank(tasks: List[dict]) -> List[dict]:
     out = sorted(tasks, key=lambda t: -t["score"])
     for t in out:
@@ -92,7 +122,8 @@ def gemini_rank(tasks: List[dict]) -> Dict[str, Ranked]:
     prompt = (
         "You are the co-founder of GAIA Coffee, a one-person mobile coffee truck in East London. "
         "Rank the owner's open tasks below by impact on the business: cash flow, supplier relationships, "
-        "customer relationships, and being ready to trade. Most important first. For each give an impact level "
+        "customer relationships, and being ready to trade. Price tasks are about asking a loyal supplier to hold or "
+        "match a price, never about switching on price alone. Most important first. For each give an impact level "
         "and ONE short reason (under 20 words, British English) the owner will read on WhatsApp. "
         "Use only the ids given; don't add tasks.\n\n" + json.dumps(listing, indent=1)
     )

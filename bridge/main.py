@@ -13,7 +13,7 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
@@ -30,6 +30,10 @@ from backend.db import activity, schema
 from backend.db.client import get_db
 from bridge import view
 
+if os.environ.get("COFOUNDR_SANDBOX"):  # local development on an in-memory copy of the demo data (tools/sandbox.py)
+    from tools import sandbox
+    sandbox.install()
+
 
 
 @asynccontextmanager
@@ -43,6 +47,18 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="CoFoundr", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def same_site_posts_only(request: Request, call_next):
+    """Block cross-site form posts (CSRF): another website must never be able to approve, pay or upload for the owner.
+    Browsers send Origin (or at least Referer) on cross-site POSTs; Saint's server-to-server calls send neither."""
+    if request.method == "POST":
+        source = request.headers.get("origin") or request.headers.get("referer")
+        host = request.headers.get("host", "")
+        if source is not None and (source == "null" or urlsplit(source).netloc != host):
+            return PlainTextResponse("Blocked: this action can only be sent from CoFoundr's own pages.", status_code=403)
+    return await call_next(request)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["money"] = lambda v: f"£{v:,.2f}" if v is not None else "–"
@@ -79,7 +95,7 @@ def _public_url(request: Request) -> str:
     return os.environ.get("PUBLIC_URL") or str(request.base_url).rstrip("/")
 
 
-PAGES = {"/", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp"}
+PAGES = {"/", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings"}
 
 
 def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
@@ -88,6 +104,12 @@ def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
 
 
 # ---------- Owner dashboard: a home of modules, each opening into its own page ----------
+
+NAV = [  # sidebar: (label, path, icon); pages not listed here are reached from the home feed
+    ("Home", "/", "home"), ("Insights", "/sales", "chart"), ("Finances", "/invoices", "pound"), ("Inventory", "/inventory", "box"),
+    ("Saint", "/whatsapp", "chat"), ("Tasks", "/approvals", "yes"),
+]
+
 
 def _context(request: Request, msg: Optional[str]) -> dict:
     db = get_db()
@@ -100,6 +122,9 @@ def _context(request: Request, msg: Optional[str]) -> dict:
                      .sort("date", 1).limit(7))
     since = view.days_ago(now, 29)
     orders = list(db[schema.ORDERS].find({"business_id": BUSINESS_ID, "placed_at": {"$gte": since}}, {"placed_at": 1, "total": 1}))
+    week = view.week(forecasts, view.weather_by_date(), now.date())
+    sales = view.sales_history(orders, now.date())
+    gmail_logs = list(db[schema.AGENT_LOG].find({"business_id": BUSINESS_ID, "kind": "gmail_checked"}).sort("at", -1).limit(20))
     return {
         "msg": msg,
         "now": now,
@@ -111,8 +136,14 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "review": review,
         "brief": brief,
         "timeline": view.timeline(activity.recent(30), now),
-        "week": view.week(forecasts, view.weather_by_date(), now.date()),
-        "sales": view.sales_history(orders, now.date()),
+        "week": week,
+        "sales": sales,
+        "trend": view.trend(sales, week),
+        "stock": view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now),
+        "opportunities": view.opportunities(gmail_logs),
+        "nav": NAV,
+        "checks": view.payment_checks(pending, invoices),
+        "sandbox": bool(os.environ.get("COFOUNDR_SANDBOX")),
         "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
                   "polling": int(os.environ.get("GMAIL_POLL_SECONDS") or 0), "last": gmail.last_check},
     }
@@ -127,7 +158,8 @@ def _page(name: str):
 
 
 for _path, _name in [("/", "home"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
-                     ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp")]:
+                     ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp"), ("/inventory", "inventory"),
+                     ("/settings", "settings")]:
     app.add_api_route(_path, _page(_name), methods=["GET"], response_class=HTMLResponse, name=f"page_{_name}")
 
 
@@ -147,6 +179,42 @@ def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Op
         return _back("Approval not found.", back)
     try:
         result = approvals.decide(approval, decision, via="dashboard", edited_draft=draft)
+    except approvals.DecisionError as e:
+        return _back(str(e), back)
+    return _back(f"#{result['ref']} {result['status']}: {result['effect']}.", back)
+
+
+ASKS_FOR_LIST = re.compile(r"\b(waiting|pending|to ?do|todo|brief|summary|status|today|what'?s (up|new|next|on))\b", re.IGNORECASE)
+
+
+def _chat_answer(text: str) -> str:
+    """Anything that isn't a decision: answer the few questions the data can answer; never guess or act."""
+    if ASKS_FOR_LIST.search(text):
+        todo = approvals.pending()
+        if not todo:
+            return "Nothing is waiting for your yes. I'll tell you the moment something is."
+        items = " · ".join(f"#{a['ref']} {a.get('counterparty') or a['title']} £{a['amount']:,.2f}" for a in todo[:3])
+        more = f" (+{len(todo) - 3} more)" if len(todo) > 3 else ""
+        return f"{len(todo)} waiting for your yes: {items}{more}. Reply “approve {todo[0]['ref']}” or “reject {todo[0]['ref']}”."
+    return ("I can't chat freely here yet, so nothing was sent. Try “what's waiting?”, or decide with “approve 1” / “reject 1”. "
+            "For anything else, message Saint on WhatsApp.")
+
+
+@app.post("/saint")
+def message_saint(text: str = Form(""), back: str = Form("/")):
+    """The chat bar. Decisions ("approve 1", "reject 2") follow exactly the WhatsApp rules; anything else waits for Saint."""
+    text = text.strip()
+    if not text:
+        return _back("Type a message for Saint first.", back)
+    parsed = parse_reply(text)
+    if not parsed:
+        return _back(_chat_answer(text), back)
+    decision, ref = parsed
+    approval = approvals.find(ref=ref)
+    if not approval:
+        return _back(f"There's no #{ref} waiting for you.", back)
+    try:
+        result = approvals.decide(approval, decision, via="dashboard")
     except approvals.DecisionError as e:
         return _back(str(e), back)
     return _back(f"#{result['ref']} {result['status']}: {result['effect']}.", back)

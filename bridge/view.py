@@ -1,4 +1,6 @@
 """Read-only helpers that turn MongoDB documents into what the dashboard shows. No writes, never raises on bad data."""
+import math
+import re
 import threading
 import time
 from datetime import date, datetime, time as dtime, timezone
@@ -11,8 +13,9 @@ from backend.inputs.pitches import PITCHES
 LONDON = ZoneInfo("Europe/London")
 WEATHER_TTL = 30 * 60  # seconds; Open-Meteo updates hourly at best
 WEATHER_RETRY = 5 * 60  # after a failure, don't slow every page load by retrying
+WEATHER_TIMEOUT = 3  # seconds: the one inline fetch (nothing cached yet) never holds a page longer than this
 
-_weather = {"at": 0.0, "ttl": 0, "days": {}}
+_weather = {"at": 0.0, "ttl": 0, "days": {}, "refreshing": False}
 _weather_lock = threading.Lock()
 
 # activity kind → (icon, short label); unknown kinds fall back to a dot
@@ -87,17 +90,32 @@ def weather_icon(code: Optional[int]) -> str:
     return "storm"
 
 
-def weather_by_date() -> Dict[str, dict]:
-    """The first pitch's 7-day forecast keyed by date, cached; {} when Open-Meteo can't be reached."""
+def _refresh_weather() -> None:
+    try:
+        days, ttl = {d["date"]: d for d in weather.forecast(PITCHES[0], days=7, timeout=WEATHER_TIMEOUT)}, WEATHER_TTL
+    except Exception:  # the page must render without weather
+        days, ttl = None, WEATHER_RETRY
     with _weather_lock:
+        if days is not None:
+            _weather["days"] = days
+        _weather.update(at=time.monotonic(), ttl=ttl, refreshing=False)
+
+
+def weather_by_date() -> Dict[str, dict]:
+    """The first pitch's 7-day forecast keyed by date; {} when Open-Meteo can't be reached.
+    Never makes a page wait on a refresh: stale weather is served while a background thread fetches new weather.
+    Only the very first fetch (nothing cached yet) is inline, and it gives up after WEATHER_TIMEOUT seconds."""
+    with _weather_lock:
+        days = _weather["days"]
         if time.monotonic() - _weather["at"] < _weather["ttl"]:
-            return _weather["days"]
-        try:
-            days, ttl = {d["date"]: d for d in weather.forecast(PITCHES[0], days=7)}, WEATHER_TTL
-        except Exception:  # the page must render without weather
-            days, ttl = {}, WEATHER_RETRY
-        _weather.update(at=time.monotonic(), ttl=ttl, days=days)
-        return days
+            return days
+        if days:
+            if not _weather.get("refreshing"):
+                _weather["refreshing"] = True
+                threading.Thread(target=_refresh_weather, name="weather-refresh", daemon=True).start()
+            return days
+    _refresh_weather()
+    return _weather["days"]
 
 
 def week(forecasts: List[dict], weather_days: Dict[str, dict], today: date) -> dict:
@@ -195,3 +213,95 @@ def sales_history(orders: List[dict], today: date, days: int = 28) -> dict:
     return {"days": out, "total": round(sum(d["revenue"] for d in trading), 2), "trading_days": len(trading),
             "last": trading[-1] if trading else None,
             "average": round(sum(d["revenue"] for d in trading) / len(trading), 2) if trading else 0}
+
+
+LOW_COVER_DAYS = 7  # flag stock that will last less than a week
+ORDER_COVER_DAYS = 14  # suggested order tops stock up to two weeks
+OPPORTUNITY = re.compile(r"\b(partner(ship)?s?|collab\w*|opportunit\w*|pop-?ups?|sponsor\w*)\b", re.IGNORECASE)
+AUTOMATED = re.compile(r"(no-?reply|donotreply|mailer-daemon|notifications?)@", re.IGNORECASE)
+
+
+def stock_estimate(counts: List[dict], now: datetime) -> dict:
+    """What's probably on the truck today: the latest physical count minus usage since, where usage per day comes from
+    the most recent opening → closing pair of counts. An estimate (deliveries aren't recorded), labelled as such."""
+    counts = sorted([c for c in counts if isinstance(c.get("counted_at"), datetime)], key=lambda c: c["counted_at"])
+    if not counts:
+        return {"rows": [], "low": [], "counted_at": None, "days_since": None, "basis": None}
+    latest = counts[-1]
+    usage, basis = {}, None
+    for close in reversed(counts):
+        opening = next((c for c in reversed(counts) if c.get("kind") == "opening" and c["counted_at"] < close["counted_at"]), None)
+        if close.get("kind") == "closing" and opening:
+            days = max(1, (close["counted_at"] - opening["counted_at"]).days)
+            before = {i["sku"]: i.get("qty") or 0 for i in opening.get("items", [])}
+            usage = {i["sku"]: max(0.0, (before.get(i["sku"], 0) - (i.get("qty") or 0)) / days) for i in close.get("items", [])}
+            basis = f"usage between the {opening['counted_at'].astimezone(LONDON):%d %b} and {close['counted_at'].astimezone(LONDON):%d %b} counts"
+            break
+    since = max(0, (now - latest["counted_at"]).days)
+    items = []
+    for i in latest.get("items", []):
+        per_day = usage.get(i["sku"])
+        est = (i.get("qty") or 0) - (per_day or 0) * since
+        cover = est / per_day if per_day else None
+        items.append({"sku": i["sku"], "name": i.get("item_name") or i["sku"], "unit": i.get("unit") or "", "counted": i.get("qty") or 0,
+                      "per_day": per_day, "estimate": max(0.0, est), "out": est <= 0, "cover": None if cover is None else max(0.0, cover),
+                      "low": cover is not None and cover < LOW_COVER_DAYS,
+                      "order": max(0, math.ceil(per_day * ORDER_COVER_DAYS - max(0.0, est))) if per_day else 0})
+    items.sort(key=lambda x: (x["cover"] is None, x["cover"] if x["cover"] is not None else 0))
+    return {"rows": items, "low": [x for x in items if x["low"]], "counted_at": latest["counted_at"], "days_since": since, "basis": basis}
+
+
+def opportunities(gmail_logs: List[dict]) -> List[dict]:
+    """Partnership / event emails the inbox check set aside (newest first, one per subject)."""
+    seen, out = set(), []
+    for log in gmail_logs:
+        for e in (log.get("detail") or {}).get("emails") or []:
+            subject = (e.get("subject") or "").strip()
+            if subject and OPPORTUNITY.search(subject) and not AUTOMATED.search(e.get("from") or "") and subject.lower() not in seen:
+                seen.add(subject.lower())
+                who = re.search(r"[–-]\s*(.+?)\s+[x×]\s+", subject)
+                out.append({"subject": subject, "sender": e.get("from") or "", "at": log.get("at"),
+                            "who": who.group(1).strip() if who else subject})
+    return out
+
+
+def trend(sales: dict, wk: dict, days: int = 14) -> dict:
+    """SVG geometry for 'takings vs forecast': the last `days` trading days of actuals, then the forecast days ahead."""
+    actual = [d for d in sales.get("days", []) if d["orders"]][-days:]
+    ahead = [d for d in wk.get("days", []) if d["trading"]]
+    values = [d["revenue"] for d in actual] + [d["revenue"] for d in ahead]
+    if len(values) < 2:
+        return {"actual": "", "forecast": "", "area": "", "dot": None, "labels": []}
+    top, low = max(values) * 1.08, min(values) * .82
+    n = len(values)
+    pt = lambda i, v: (round(100 * i / (n - 1), 2), round(100 - 100 * (v - low) / (top - low or 1), 2))  # noqa: E731
+    pts = [pt(i, v) for i, v in enumerate(values)]
+    split = len(actual) - 1
+    line = lambda ps: " ".join(f"{'M' if k == 0 else 'L'}{x},{y}" for k, (x, y) in enumerate(ps))  # noqa: E731
+    return {"actual": line(pts[:split + 1]), "forecast": line(pts[split:]) if ahead else "",
+            "area": line(pts[:split + 1]) + f" L{pts[split][0]},100 L0,100 Z", "dot": pts[split] if actual else None,
+            "split": pts[split][0] if actual else 0}
+
+
+def payment_checks(pending: List[dict], invoices: List[dict]) -> Dict[str, dict]:
+    """For each pending supplier payment: where its invoice came from and whether this is the first invoice we've ever had
+    from that supplier. Anyone can email an invoice in, so a first-time sender gets a visible warning before Pay."""
+    by_id = {str(i.get("_id")): i for i in invoices}
+    seen: Dict[str, int] = {}
+    for i in invoices:
+        key = i.get("counterparty_key") or (i.get("counterparty") or "").lower()
+        seen[key] = seen.get(key, 0) + 1
+    out = {}
+    for a in pending:
+        if a.get("action_type") != "supplier_payment":
+            continue
+        inv = by_id.get(str(a.get("target_id"))) or {}
+        key = inv.get("counterparty_key") or (inv.get("counterparty") or "").lower()
+        read_by_ai = "verification_issues" in inv  # seed/demo invoices weren't read from a document
+        out[str(a["_id"])] = {
+            "source": inv.get("source") if read_by_ai else "demo",
+            "new_sender": bool(inv) and read_by_ai and seen.get(key, 0) <= 1,
+            "needs_review": bool(inv.get("needs_review")),
+            "from_email": inv.get("counterparty_email"),
+        }
+    return out

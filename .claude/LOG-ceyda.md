@@ -12,6 +12,33 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, 19:00 — Post-mortem of my work + fixes (MVP2)
+- **Did:** reviewed today's work for edge cases; verified live: Gmail labels applied (0 unprocessed), Saturday's till data complete (73 orders, £617.20). Fixed:
+  1. **CSRF** (verified exploitable: any site could POST "approve 1" to `/saint`): middleware rejects POSTs whose Origin/Referer isn't CoFoundr (also `Origin: null`); Saint's server calls (no Origin) still work. PR #33
+  2. **Local dev wrote to the shared demo DB** (how the live Gmail run happened). My Atlas user can't create another DB → **sandbox mode** `COFOUNDR_SANDBOX=1` (`tools/sandbox.py`): in-memory copy of the demo data, inbox/email off, sidebar badge. Verified: approving #4 locally left Atlas #4 pending. PR #33
+  3. **Gmail retry storm:** busy-Gemini emails retried after 15 min, not every minute. PR #33
+  4. **Weather blocking pages:** 3 s first fetch, then stale-while-refresh in the background. PR #33
+  5. **Fake-invoice risk:** `view.payment_checks` warns on first-time suppliers (home card + approval); **Pay now** opens the full approval (`/approvals#a3`) instead of paying in one click. PR #34
+  6. **Chat bar:** answers "what's waiting?/brief/status/today" with the list; anything else: "nothing was sent" + what works. PR #34
+  7. Opportunity filter tightened (no "Security event", no no-reply senders); WebGL capped at ~30 fps. PR #34
+- **Tests:** 202 pass (CSRF matrix, sandbox isolation, retry backoff with a fake clock, non-blocking weather, scam-invoice end to end)
+- **Status:** done, merged into `stage`
+- **Next:** release #19 (Sunil) + Fly Gmail secrets; Ticketmaster key; Saint API for the chat bar
+- **Blockers / notes for partner:** Sunil, **run the local app with `COFOUNDR_SANDBOX=1`** (see `bridge/README.md`) so local clicks never touch the demo data. Edits in your area: none this round. `MVP.md` Gmail box left unticked on purpose (needs Fly secrets to be true)
+
+## Sat 24 Oct, 18:30 — Dashboard rebuilt from my sketch: sidebar, 3D orb, feed cards, Saint chat bar (MVP2)
+- **Did:** layout from my notebook sketch. Floating glass **sidebar** (Home, Insights → `/sales`, Finances → `/invoices`, Inventory, Saint → `/whatsapp`, Tasks → `/approvals`, Settings, owner profile). **Home feed:** greeting · today's update card (forecast + what drives it, takings-vs-forecast chart) with a live ray-marched **3D pearl orb** · action cards: opportunity (partnership emails the inbox set aside), running low (stock estimate), invoice to be paid (Pay now = the approval), reminders ready, latest activity · **Saint chat bar** (`POST /saint`: "approve 1"/"reject 1" use the WhatsApp parser; anything else says Saint isn't connected to the bar yet). Cards tilt in 3D with glare. New pages `/inventory`, `/settings`; opportunities on `/inbox`. `view.stock_estimate` (last count − daily use from latest opening→closing pair; low < 7 days; order tops up to 2 weeks; labelled as estimate). 181 tests pass. PR #30 merged into `stage`
+- **Status:** done locally; ships with release #19
+- **Next:** design feedback; weather/events storage + Gemini forecast reasons; Saint API for the chat bar
+- **Blockers / notes for partner:** data says napkins/stirrers/cookies are low, not oat milk. Stock estimate + opportunity extraction live in `bridge/view.py` (display-only analysis, Sunil's area in spirit: move to the middle if you prefer). Chat bar needs `SAINT_API_KEY` to talk to Saint for real
+
+## Sat 24 Oct, 18:00 — Dashboard redesign: modular home + glass (MVP2) · Gmail intake ran live
+- **Did:** dashboard rebuilt in 3 rounds (feedback-driven): dark editorial (#24) → light **modular home** (#26) → **living backdrop + frosted glass** (#28). Now: home = 7 modules (Your yes, Sales & the week, Overdue to you, Inbox, What I did on my own, Invoices, On WhatsApp); each opens into its own page (`/approvals`, `/sales`, `/invoices[?show=overdue]`, `/inbox`, `/activity`, `/whatsapp`) with a module→page morph (cross-document View Transitions). Slow WebGL gradient backdrop (continuous across pages, reduced-motion + no-WebGL fallbacks), glass surfaces, Instrument Serif + Inter. New: `bridge/view.py` (read-only helpers incl. 28-day sales history, weather cached 30 min), `bridge/static/`, `templates/base|page|home|…`. Actions return to their page via a whitelisted `back` field (no open redirect). Pages server-rendered, work without JS (Saint can read them). Tests → 175 pass
+- **Gmail intake ran live** (via "Check inbox now"): 2 email-body invoices read by Gemini, both checked ✓ on attempt 2 (Ember & Oak GR-2026-1048 £91.00, Meadowfield MF-2087 £54.10), saved to Atlas; 6 other emails labelled only; approvals #1–#4 untouched, none new
+- **Status:** design merged into `stage`; local only until release #19 is approved
+- **Next:** design feedback round; weather/events storage + Gemini forecast reasons; Saint wiring
+- **Blockers / notes for partner:** Sunil, the live Gmail run answers the "OK a real Gmail run?" item in #22 (Atlas now has 12 invoices). Release #19 now also contains the redesign
+
 ## Sat 24 Oct, 17:30 — Gmail autonomous intake (MVP1)
 - **Did:** `backend/inputs/gmail.py`: demo inbox over IMAP (app password). Reads PDF/image attachments, and invoices written in the email body when the subject mentions an invoice (the demo inbox's 2 invoices are body-only). Gmail label `CoFoundr/processed` = handled once; Gemini-busy → retried next check; nothing marked read. Background poll every `GMAIL_POLL_SECONDS` (60 in `fly.toml`) + **Check inbox now** button (`POST /check-inbox`). 13 tests (fake IMAP + fake Gemini) → 149 pass. Read-only preview on the real inbox: 2 invoices would be read, 6 other emails only labelled. PR #21 merged into `stage`
 - **Edits in Sunil's area:** `backend/pipeline.py` (`text/plain` allowed), `tests/test_middle.py` (unsupported example → zip), `fly.toml` (`GMAIL_POLL_SECONDS`)

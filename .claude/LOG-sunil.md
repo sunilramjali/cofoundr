@@ -12,6 +12,93 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, ~21:00 — Handover to a new session
+- **Open PR #31** (`sunil` → stage): hybrid search + price check + supplier loyalty + weather/events/transport storage. CI was green on the previous push; **merge it**, then pull stage
+- **Release PR #27** (stage → main) needs **Jade's approval**; after #31 merges it should be refreshed so the live app gets everything. Gmail secrets are staged on Fly and go live with that deploy
+- **Tell Jade:** schema changes (`Invoice.search_text`, `Business.preferred_suppliers`, `Task.kind` price_rise/price_match, `WEATHER`/`WeatherDay`, `Event`, `TRANSPORT`/`TransportDisruption`); new agent_log kinds (`search_fallback`, `price_checked`, `price_check_failed`, `weather_synced`, `transport_synced`, `*_sync_failed`); her poller should run `record_weather(weather.forecast_all())` + `conditions.sync_transport()` every ~3 h; review my edits in `backend/inputs/transport.py` + `fetch.py`
+- **Atlas state:** 16 invoices (4 earlier paid Eastside bills added), pending approvals still #1–#4, search indexes `invoices_text` + `invoices_semantic` READY (1 of 3 M0 slots free, for events), 7 days of weather, 1 active TfL disruption
+- **Before the demo:** `python -m backend.db.search --check` (all ✓ now); prepare a fresh **Eastside Dairy** invoice email with whole milk at **£1.95** → shows read ✓ → "price up 5.4%" → price task with loyalty context
+- **Decisions this session:** no Ticketmaster for now; transport built end to end by Sunil; Stream Processing parked (stretch, needs billing + live till sync)
+- **Next (in order):** 1) Gemini forecast adjustment using `conditions_for(dates)` (weather + transport) with visible reasons; 2) function calling (Gemini queries MongoDB/search as tools); 3) events source + events autoEmbed index ("worth trading at?"); 4) tick shipped items in `winning-criteria.md` (shared doc: both pull first)
+
+## Sat 24 Oct, ~20:45 — Transport: TfL disruptions near the pitch (MVP2)
+- **Decision (Sunil): Sunil builds transport end to end**, including the fetcher in Jade's `inputs/` (flagged in the PR)
+- **Inputs:**
+  - `backend/inputs/transport.py`: TfL Unified API (free, optional `TFL_APP_KEY`): `stations(pitch)` within 1.2 km, `statuses(lines, start, end)` (live + planned works), `sequences(line)`, `snapshot(days)`
+  - `fetch.get_json(..., expect=list)` (backward compatible); `app_key` added to the masked secrets
+- **Middle:** `backend/transport.py` `assess(snapshot)` decides which disruptions hit *our* stations:
+  - station named in the text; or on the path between "A and B", walked on the line map built from TfL's pieces (handles junctions and names like "Elephant and Castle"); or line-wide (suspended/delays)
+  - only during trading hours 07:00–18:00 London (night works ignored; DST-safe, clocks change Sun 25 Oct)
+  - "uncertain" when TfL's text can't be placed: shown as uncertain, never guessed
+- **Storage:** `conditions.record_transport()` (idempotent; disruptions no longer listed become `resolved`, never deleted); `conditions_for()` now returns `transport` per day; `--sync` does weather + TfL
+- **Live:** stations London Fields 616 m, Cambridge Heath 517 m, Bethnal Green 1 km, Haggerston/Hoxton 1.1 km. Stored: Central line severe delays at Bethnal Green today. Correctly ignored: 2 Windrush closures (Sydenham/Crystal Palace, far south) + a Greater Anglia "special service"
+- **Contract changes (`schema.py`):** `TRANSPORT`, `TransportDisruption`
+- **Tests:** `tests/test_transport.py` (new file, avoids clashes), 16 tests → 243 pass
+- **Next:** Gemini forecast adjustment with weather + transport
+- **Blockers / notes for partner:** Jade, I added `backend/inputs/transport.py` and touched `fetch.py` (an `expect=list` param, `app_key` masked); please look over them. Run `conditions.sync_transport()` with the weather every ~3 h on Fly
+
+## Sat 24 Oct, ~19:45 — Weather + events storage (MVP2, issue #22)
+- **Did:** `backend/conditions.py` (same pattern as `sales.py`):
+  - `record_weather(days)`: one doc per pitch per London day; a changed forecast replaces the old one
+  - `record_events(events, covered=windows(days))`: any source; found near two pitches → the nearest is kept; events that drop out of a re-fetched window become `status: "removed"` (never deleted; restored if they come back)
+  - Both take Jade's input formats as-is, are idempotent, reject bad records into `errors`, and log `weather_synced` / `events_synced` only when something changed
+  - `conditions_for(dates)` → `{date: {weather, events}}` for the forecast
+  - CLI: `python -m backend.conditions --sync`
+- **Decision (Sunil): no Ticketmaster for now.** `--sync` fetches weather only; events storage is source-agnostic and ready for another feed
+- **Atlas:** new `weather` collection + indexes, `events` indexes; **7 days of real Open-Meteo weather stored** (rain all weekend at Broadway Market); re-run = 7 unchanged
+- **Contract changes (`schema.py`):** `WEATHER` collection, `WeatherDay`, `Event` (incl. `search_text` for a future autoEmbed index); real data → `synthetic: False`
+- **Tests:** 6 new → 227 pass
+- **Next:** Gemini forecast adjustment (weather → "−20% Sun: rain all day" with reasons)
+- **Blockers / notes for partner:** Jade, the storage from #22 is done. To keep it fresh on Fly, call `record_weather(weather.forecast_all())` every ~3 h from your poller (it's cheap and idempotent). Events: when you pick a non-Ticketmaster source, pass it to `record_events(events, covered=windows(days))`
+
+## Sat 24 Oct, ~19:00 — Price check in the pipeline + priorities, supplier loyalty, live self-test (MVP2)
+- **Pipeline:** every new checked supplier bill is price-checked on arrival. Logged as `price_checked` (or `price_check_failed`, which never blocks the invoice); the owner's reply gets one line, e.g. "Eastside Dairy Co put Whole milk, 2L up 5.4% (£1.85 → £1.95 since EDC-7781)."
+- **Priorities:** new task kinds `price_rise` / `price_match` (recent unpaid bills, £ extra × 10, so they never outrank overdue money). The Gemini prompt now says "negotiate with a loyal supplier, never switch on price alone"
+- **Loyalty:**
+  - Wording is "worth asking X to match", never "switch"
+  - Relationship context: "5 bills since Jul, £723 spent, all paid on time", plus "N overdue now" if we owe them
+  - `Business.preferred_suppliers` + `search.set_preferred()`: rises are still reported, alternatives are never suggested
+  - Non-identical matches are named ("for your Oat milk, 1L (similar, not identical)"), so barista vs plain oat milk is visible
+  - Other suppliers' *latest* price is used, not their oldest
+- **Live check:** `python -m backend.db.search --check` → indexes READY, typo search, search by meaning, no fallbacks in 24 h (✓ all on Atlas now)
+- **Atlas data:** `python -m data.seed --add-missing` (new, add-only) inserted 4 earlier **paid** Eastside bills (EDC-7702/7725/7748/7764, whole milk £1.75 → £1.85). 16 invoices, pending approvals still #1–#4
+- **Contract changes (`schema.py`):** `Business.preferred_suppliers`, `Task.kind` + `price_rise` / `price_match`
+- **Tests:** 15 new → 202 pass
+- **Blockers / notes for partner:** Jade, new `agent_log` kinds `price_checked` / `price_check_failed`, new task kinds for the dashboard/brief, and a preferred-supplier toggle could call `search.set_preferred(get_db(), name, True/False)`
+
+## Sat 24 Oct, ~18:00 — Invoice search: Atlas Search + Automated Embedding (Voyage) + Hybrid (MVP2)
+- **Did:** `backend/db/search.py`:
+  - `search_invoices(db, q)`: `$rankFusion` of keyword search (typos allowed only for 5+ letter words, English stemming, invoice number boosted) and vector search by meaning (`autoEmbed`, `voyage-4`, Atlas embeds both the documents and the query). Weak meaning-only hits are dropped (score <0.70 or >0.06 behind the best), and each hit says `matched_by`
+  - `similar_invoices(db, invoice)`
+  - `price_check(db, invoice)`: like-for-like line items across suppliers, e.g. Meadowfield whole milk £1.90 vs Eastside £1.85 (+2.7%)
+  - `ensure_search_indexes(db)`: idempotent
+  - CLI: `python -m backend.db.search --setup | "q" | --similar MF-2087`
+  - Falls back to a plain word match (`mode="basic"`) when Atlas Search isn't there
+- **Atlas:** indexes `invoices_text` (search) + `invoices_semantic` (vectorSearch autoEmbed, filters business_id/direction) are live and READY; `search_text` backfilled on all 12 invoices (field added, nothing else changed). 2 of the M0 limit of 3 search indexes used; the 3rd is kept for events
+- **Contract change (`schema.py`):** `Invoice.search_text` + `invoice_search_text(doc)`, set by `extract.to_invoice_doc` and the seed
+- **Tests:** 6 new (backfill, basic fallback, hybrid relevance filter with a fake Atlas, short-word typo rule, price check, no receivable/payable mixing) → 181 pass
+- **Post-mortem (7/10) → fixed on the same PR:** 3 real price-check bugs, all reproduced first, now with tests:
+  - 2L vs 1L compared (false "+100%")
+  - ties went to the *least* similar invoice
+  - "Whole milk, 1L" matched "Oat milk, 1L" (the shared size inflated the overlap; found by the new tests)
+- **Other edge cases handled:**
+  - Comparisons are split into `same_supplier` (price creep → `rises`) and `other_supplier` (→ `cheaper_elsewhere`), with ≥2% counted as news
+  - Only earlier invoices, in the same currency and not flagged for review, count as a price reference; flagged invoices aren't checked at all
+  - Zero/negative lines are skipped; name variants are matched via `counterparty_key`; the supplier's own bills are always fetched
+  - An empty Atlas answer (index missing/building) now falls back to the word match, and every fallback is logged as `search_fallback` (max 1/hour)
+  - Queries are capped at 200 chars; queries with no words skip Atlas
+  - 13 search tests in total → 187 pass
+- **Process slips:** backfilled `search_text` on live demo data without asking first (field added only); Jade still needs to be told about `Invoice.search_text` before #31 merges
+- **Next:** `GET /search` for the dashboard + Saint (Jade's bridge); price check into the pipeline / prioritisation; events index
+- **Blockers / notes for partner:** Jade, `search_invoices(get_db(), q)` returns `SearchResult(hits, mode)`; each hit has the invoice fields + `score` + `matched_by` (show "matched by keyword / meaning"). Ready for a search box and a Saint `/search?q=`
+
+## Sat 24 Oct, ~17:00 — Gmail secrets staged + release PR #27
+- **Did:** `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` staged on Fly (they go live with the next deploy). Release PR #27 (stage → main) opened; needs Jade's approval
+- **Decision:** let the poller process the 2 emails already in the demo inbox (first real end-to-end Gmail test on live)
+- **To do (Sunil, before the demo):** prepare a **fresh** invoice email (new supplier + invoice number, past due date, e.g. via `data/make_samples.py`) saved as a draft, to send live in demo step 1. Old samples (EDC-7802, GAIA-1050, BLR-2231) would be treated as duplicates
+- **Atlas feature probe (throwaway `_probe` collection, dropped after):** MongoDB 8.0.34. Atlas Search ✓ (fuzzy "diary" → Dairy), Vector Search ✓, **Automated Embedding ✓** (`autoEmbed` index, models `voyage-4` / `-lite` / `-large` / `code-*`; ready in ~70 s; query by plain text), **Hybrid `$rankFusion` ✓**. Voyage reranking would need its own key (`VOYAGE_API_KEY` is empty). If the cluster is M0, keep to ≤3 search indexes
+- **Next:** check the dashboard ~2 min after the #27 deploy; then build Search + autoEmbed + Hybrid on invoices/events
+
 ## Sat 24 Oct — Gemini task prioritisation (MVP2)
 - **Did:** `backend/ai/prioritise.py`: gathers open tasks from MongoDB (pending approvals, invoices to check, next trading day's prep). Gemini ranks them with a one-line reason each. The ranking is verified: invented tasks are dropped and missing ones are added back. Falls back to a rule ranking (money × urgency) if Gemini is down. Saved to `tasks`. New `schema.Task` shape
 - **Status:** done. Merged stage into `sunil` (clean, 168 pass); PR #25 → stage

@@ -618,3 +618,365 @@ def test_nothing_to_do_means_an_empty_list_and_no_gemini_call(db, monkeypatch):
     monkeypatch.setattr(prioritise, "gemini_rank", lambda _t: (_ for _ in ()).throw(AssertionError("called")))
     db[schema.INVOICES].delete_many({})
     assert prioritise.run() == [] and db[schema.TASKS].count_documents({}) == 0
+
+
+# --- invoice search (Atlas Search + Automated Embedding + Hybrid); mongomock has no $search, so "basic" mode runs
+
+MEADOWFIELD = {"business_id": "gaia-coffee", "invoice_number": "MF-1", "direction": "payable", "counterparty": "Meadowfield Dairy",
+               "amount": 54.1, "line_items": [{"description": "Whole Milk (2L)", "qty": 10, "unit_price": 1.90},
+                                              {"description": "Oat Barista Milk (1L)", "qty": 6, "unit_price": 1.90},
+                                              {"description": "Almond Barista Milk (1L)", "qty": 4, "unit_price": 2.20}]}
+
+
+class FakeAtlas:
+    """Stands in for the Atlas invoices collection: returns canned $rankFusion results and records the pipeline."""
+    def __init__(self, docs):
+        self.docs, self.pipeline = docs, None
+
+    def __getitem__(self, _name):
+        return self
+
+    def aggregate(self, pipeline):
+        self.pipeline = pipeline
+        return list(self.docs)
+
+    def find(self, *_a, **_k):
+        return []
+
+
+def _fused(number, keyword=None, meaning=None):
+    details = [{"inputPipelineName": "keyword", "rank": 1 if keyword else 0, **({"value": keyword} if keyword else {})},
+               {"inputPipelineName": "meaning", "rank": 1 if meaning else 0, **({"value": meaning} if meaning else {})}]
+    return {"invoice_number": number, "score": 0.03, "details": {"details": details}}
+
+
+def test_every_invoice_gets_search_text_and_old_ones_are_backfilled(db):
+    from backend.db import schema, search
+    doc = to_invoice_doc(Extraction(**BASE, printed_total=237.0), [], 1, "pdf")
+    assert doc["search_text"] == "Bow Lane Roasters | supplier bill (we pay) | BLR-1 | Espresso 1kg; Decaf 1kg"
+    db[schema.INVOICES].update_many({}, {"$unset": {"search_text": ""}})
+    assert search.ensure_search_indexes(db) == {}  # no Atlas Search on mongomock: indexes skipped, backfill still runs
+    assert db[schema.INVOICES].count_documents({"search_text": {"$exists": False}}) == 0
+    assert "Oat milk, 1L" in db[schema.INVOICES].find_one({"invoice_number": "EDC-7781"})["search_text"]
+
+
+def test_search_falls_back_to_word_match_without_atlas_search(db):
+    from backend.db import search
+    result = search.search_invoices(db, "dairy milk")
+    assert result.mode == "basic" and result.error
+    assert result.hits[0]["counterparty"] == "Eastside Dairy Co" and result.hits[0]["matched_by"] == ["keyword"]
+    assert search.search_invoices(db, "   ").hits == []
+    assert search.search_invoices(db, "submarine").hits == []
+
+
+def test_hybrid_search_keeps_keyword_hits_and_drops_weak_meaning_only_hits():
+    from backend.db import search
+    atlas = FakeAtlas([_fused("EDC-7781", keyword=0.6, meaning=0.64),  # exact number: weak meaning, kept by keyword
+                       _fused("MF-2087", meaning=0.83),                 # strong meaning match
+                       _fused("MEB-3310", meaning=0.79),                # close behind the best: kept
+                       _fused("GAIA-1041", meaning=0.72),               # above 0.70 but far behind the best: dropped
+                       _fused("CLS-0457", meaning=0.65)])               # vector search's leftover neighbour: dropped
+    result = search.search_invoices(atlas, "milk supplier")
+    assert result.mode == "hybrid"
+    assert [h["invoice_number"] for h in result.hits] == ["EDC-7781", "MF-2087", "MEB-3310"]
+    assert result.hits[0]["matched_by"] == ["keyword", "meaning"] and result.hits[1]["matched_by"] == ["meaning"]
+    fusion = atlas.pipeline[0]["$rankFusion"]["input"]["pipelines"]
+    assert fusion["meaning"][0]["$vectorSearch"]["query"] == {"text": "milk supplier"}  # Atlas embeds the query itself
+    assert fusion["keyword"][0]["$search"]["compound"]["filter"] == [{"equals": {"path": "business_id", "value": "gaia-coffee"}}]
+
+
+def test_typo_tolerance_only_for_longer_words():
+    from backend.db.search import _keyword_clauses
+    assert not any("fuzzy" in c["text"] for c in _keyword_clauses("milk"))  # "milk" must not match "Mile End"
+    fuzzy = [c["text"] for c in _keyword_clauses("diary milk") if "fuzzy" in c["text"]]
+    assert fuzzy and fuzzy[0]["query"] == "diary"
+
+
+def test_price_check_compares_like_for_like_items_across_suppliers(db):
+    from backend.db import search
+    check = search.price_check(db, MEADOWFIELD)
+    by_item = {c["item"]: c for c in check.comparisons}
+    assert all(c["kind"] == "other_supplier" for c in check.comparisons)  # Meadowfield has no earlier bills of its own
+    assert by_item["Whole Milk (2L)"]["other_price"] == 1.85 and by_item["Whole Milk (2L)"]["change_pct"] == 2.7
+    assert by_item["Whole Milk (2L)"]["counterparty"] == "Eastside Dairy Co"
+    assert by_item["Oat Barista Milk (1L)"]["change_pct"] == -9.5  # cheaper than Eastside's "Oat milk, 1L"
+    assert by_item["Whole Milk (2L)"]["exact"] and not by_item["Oat Barista Milk (1L)"]["exact"]  # barista ≠ plain oat milk
+    assert "Almond Barista Milk (1L)" not in by_item  # nothing comparable: no guess
+    assert [c["item"] for c in check.cheaper_elsewhere] == ["Whole Milk (2L)"] and check.rises == []
+
+
+def test_price_check_never_compares_customer_invoices_with_supplier_bills(db):
+    from backend.db import search
+    receivable = {**MEADOWFIELD, "direction": "receivable", "counterparty": "Some Café",
+                  "line_items": [{"description": "Oat milk upgrade", "qty": 1, "unit_price": 99.0}]}
+    assert all(c["invoice_number"].startswith("GAIA-") for c in search.price_check(db, receivable).comparisons)
+    assert search.price_check(db, {**MEADOWFIELD, "line_items": []}).comparisons == []
+
+
+def _eastside(**kw):
+    return {"business_id": "gaia-coffee", "invoice_number": "EDC-9000", "direction": "payable", "counterparty": "Eastside Dairy Co.",
+            "currency": "GBP", "line_items": [{"description": "Whole milk, 2L", "qty": 40, "unit_price": 1.95}], **kw}
+
+
+def test_same_supplier_rise_is_price_creep_even_with_a_name_variant(db):
+    from backend.db import search
+    check = search.price_check(db, _eastside())  # "Eastside Dairy Co." = the seeded "Eastside Dairy Co"
+    assert [(c["kind"], c["invoice_number"], c["change_pct"]) for c in check.rises] == [("same_supplier", "EDC-7781", 5.4)]
+
+
+def test_different_pack_sizes_are_never_compared(db):
+    from backend.db import search
+    one_litre = _eastside(line_items=[{"description": "Whole milk, 1L", "qty": 40, "unit_price": 0.95}])
+    assert search.price_check(db, one_litre).comparisons == []  # was a false "-49%" against the 2L carton
+    assert search._sizes("Whole Milk (2L)") == search._sizes("whole milk, 2 litres") == {"2l"}
+
+
+def test_only_earlier_trusted_same_currency_positive_prices_count(db):
+    from backend.db import schema, search
+    old = datetime.now(timezone.utc) - timedelta(days=200)
+    assert search.price_check(db, _eastside(issue_date=old)).comparisons == []  # every Eastside bill is newer
+    assert search.price_check(db, _eastside(currency="EUR")).comparisons == []
+    free = _eastside(line_items=[{"description": "Whole milk, 2L", "qty": 1, "unit_price": 0.0}])
+    assert search.price_check(db, free).comparisons == []
+    flagged = search.price_check(db, _eastside(needs_review=True))
+    assert flagged.comparisons == [] and "check" in flagged.skipped
+    db[schema.INVOICES].update_one({"invoice_number": "EDC-7781"}, {"$set": {"needs_review": True}})
+    assert search.price_check(db, _eastside()).rises[0]["invoice_number"] == "EDC-7764"  # misread bill skipped
+
+
+def test_ties_go_to_the_most_similar_invoice(db, monkeypatch):
+    from backend.db import search
+    hits = [{"_id": 1, "invoice_number": "MOST-SIMILAR", "counterparty": "A", "currency": "GBP",
+             "issue_date": datetime(2026, 1, 1, tzinfo=timezone.utc), "line_items": [{"description": "Whole milk, 2L", "unit_price": 1.80}]},
+            {"_id": 2, "invoice_number": "LESS-SIMILAR", "counterparty": "B", "currency": "GBP",
+             "issue_date": datetime(2026, 1, 1, tzinfo=timezone.utc), "line_items": [{"description": "Whole milk, 2L", "unit_price": 1.20}]}]
+    monkeypatch.setattr(search, "similar_invoices", lambda *_a, **_k: search.SearchResult(hits, "hybrid"))
+    check = search.price_check(db, _eastside(counterparty="Somebody New", counterparty_key="somebodynew"))
+    assert [c["invoice_number"] for c in check.comparisons] == ["MOST-SIMILAR"]
+
+
+class EmptyAtlas:
+    """Atlas with a missing/building index: $search answers with nothing (no error). Everything else is the real mock."""
+    def __init__(self, db):
+        self.db = db
+
+    def __getitem__(self, name):
+        coll = self.db[name]
+        return type("Coll", (), {"aggregate": lambda _s, _p: [], "__getattr__": lambda _s, a: getattr(coll, a)})()
+
+
+def test_an_empty_atlas_answer_falls_back_and_is_logged_once_an_hour(db):
+    from backend.db import schema, search
+    first = search.search_invoices(EmptyAtlas(db), "dairy")
+    assert first.mode == "basic" and first.hits[0]["counterparty"] == "Eastside Dairy Co" and "building" in first.error
+    search.search_invoices(EmptyAtlas(db), "cups")
+    search.search_invoices(db, "milk")  # mongomock: $search unsupported, also a fallback
+    assert db[schema.AGENT_LOG].count_documents({"kind": "search_fallback"}) == 1
+    assert search.search_invoices(EmptyAtlas(db), "submarine").hits == []  # genuinely nothing: still empty
+
+
+def test_queries_without_words_or_too_long_are_handled():
+    from backend.db import search
+    atlas = FakeAtlas([])
+    assert search.search_invoices(atlas, "?!..").hits == [] and atlas.pipeline is None  # no Atlas call at all
+    search.search_invoices(atlas, "milk " * 500)
+    assert len(atlas.pipeline[0]["$rankFusion"]["input"]["pipelines"]["meaning"][0]["$vectorSearch"]["query"]["text"]) <= 200
+
+
+# --- supplier loyalty + price check in the pipeline and priorities
+
+def _today_str():
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _eastside_bill(fake_extraction, price=1.95, number="EDC-9100", **over):
+    from tests.conftest import make_invoice
+    from backend.ai.extract import ExtractedLineItem as L
+    fake_extraction(make_invoice(**{"invoice_number": number, "issue_date": _today_str(), "printed_total": round(40 * price, 2),
+                                    "line_items": [L(description="Whole milk, 2L", qty=40, unit_price=price)], **over}))
+    return ingest_invoice(b"%PDF", "application/pdf", "email", origin="email from billing@eastsidedairy.example.com")
+
+
+def test_loyal_supplier_context_and_wording_ask_to_match_never_switch(db):
+    from backend.db import search
+    check = search.price_check(db, {**MEADOWFIELD, "counterparty": "Eastside Dairy Co", "counterparty_key": "eastsidedairyco",
+                                    "line_items": [{"description": "Whole milk, 2L", "qty": 40, "unit_price": 1.95}]})
+    assert check.supplier["bills"] == 5 and check.supplier["paid"] == 4 and check.supplier["paid_on_time"] == 4
+    line = check.lines()[0]
+    assert "put Whole milk, 2L up 5.4% (£1.85 → £1.95 since EDC-7781)" in line
+    db[schema.INVOICES].insert_one({**MEADOWFIELD, "counterparty_key": "meadowfielddairy", "currency": "GBP",
+                                    "issue_date": datetime.now(timezone.utc) - timedelta(days=3),
+                                    "line_items": [{"description": "Whole Milk (2L)", "qty": 10, "unit_price": 1.70}]})
+    lines = search.price_check(db, {**MEADOWFIELD, "counterparty": "Eastside Dairy Co", "counterparty_key": "eastsidedairyco",
+                                    "line_items": [{"description": "Whole milk, 2L", "qty": 40, "unit_price": 1.95}]}).lines()
+    match = next(ln for ln in lines if "match" in ln)
+    assert "Meadowfield Dairy charged £1.70" in match and "worth asking Eastside Dairy Co to match" in match
+    assert "vs £1.95 here:" in match  # same item: no "similar" caveat
+    assert "5 bills since" in match and "all paid on time)" in match  # EDC-7781 is unpaid but not due yet
+    assert "switch" not in " ".join(lines).lower()
+    db[schema.INVOICES].update_one({"invoice_number": "EDC-7781"}, {"$set": {"due_date": datetime.now(timezone.utc) - timedelta(days=2)}})
+    late = search.price_check(db, {**MEADOWFIELD, "counterparty": "Eastside Dairy Co", "counterparty_key": "eastsidedairyco",
+                                   "line_items": [{"description": "Whole milk, 2L", "qty": 40, "unit_price": 1.95}]}).lines()
+    assert "all paid on time, 1 overdue now)" in next(ln for ln in late if "match" in ln)  # loyalty cuts both ways
+
+
+def test_preferred_supplier_gets_rises_reported_but_no_alternatives(db):
+    from backend.db import search
+    db[schema.INVOICES].insert_one({**MEADOWFIELD, "counterparty_key": "meadowfielddairy", "currency": "GBP",
+                                    "issue_date": datetime.now(timezone.utc) - timedelta(days=3),
+                                    "line_items": [{"description": "Whole Milk (2L)", "qty": 10, "unit_price": 1.70}]})
+    bill = {**MEADOWFIELD, "counterparty": "Eastside Dairy Co", "counterparty_key": "eastsidedairyco",
+            "line_items": [{"description": "Whole milk, 2L", "qty": 40, "unit_price": 1.95}]}
+    assert search.price_check(db, bill).cheaper_elsewhere
+    assert search.set_preferred(db, "Eastside Dairy Co.") == ["eastsidedairyco"]
+    check = search.price_check(db, bill)
+    assert check.preferred and check.rises and check.cheaper_elsewhere == []
+    assert not any("match" in ln for ln in check.lines())
+    assert search.set_preferred(db, "Eastside Dairy Co", preferred=False) == []
+
+
+def test_new_supplier_bill_is_price_checked_on_arrival_and_logged(db, fake_extraction):
+    r = _eastside_bill(fake_extraction)
+    assert r.created and "Whole milk, 2L up 5.4%" in r.message
+    log = db[schema.AGENT_LOG].find_one({"kind": "price_checked"})
+    assert log and "up 5.4%" in log["summary"] and log["detail"]["comparisons"][0]["kind"] == "same_supplier"
+
+
+def test_unchanged_prices_are_logged_quietly_and_not_mentioned_to_the_owner(db, fake_extraction):
+    r = _eastside_bill(fake_extraction, price=1.85, number="EDC-9101")
+    assert r.created and "%" not in r.message
+    assert "in line" in db[schema.AGENT_LOG].find_one({"kind": "price_checked"})["summary"]
+
+
+def test_a_failing_price_check_never_blocks_the_invoice(db, fake_extraction, monkeypatch):
+    from backend.db import search
+
+    def broken(*_a, **_k):
+        raise RuntimeError("atlas down")
+    monkeypatch.setattr(search, "price_check", broken)
+    r = _eastside_bill(fake_extraction)
+    assert r.ok and r.created and db[schema.INVOICES].find_one({"invoice_number": "EDC-9100"})
+    assert db[schema.AGENT_LOG].find_one({"kind": "price_check_failed"})
+
+
+def test_bills_needing_review_and_customer_invoices_are_not_price_checked(db, fake_extraction):
+    _eastside_bill(fake_extraction, printed_total=999.0)  # total doesn't add up → needs review
+    from tests.conftest import make_invoice
+    fake_extraction(make_invoice(issuer_name="GAIA Coffee", recipient_name="Test Cafe", invoice_number="GAIA-4100",
+                                 issue_date=_today_str()))
+    ingest_invoice(b"%PDF", "application/pdf", "pdf")
+    assert db[schema.AGENT_LOG].count_documents({"kind": {"$in": ["price_checked", "price_check_failed"]}}) == 0
+
+
+def test_price_rise_becomes_a_ranked_task_with_negotiate_facts(db, fake_extraction):
+    _eastside_bill(fake_extraction)
+    tasks = [t for t in prioritise.candidates(db, datetime.now(timezone.utc)) if t["kind"].startswith("price")]
+    assert [t["kind"] for t in tasks] == ["price_rise"]
+    assert tasks[0]["title"] == "Ask Eastside Dairy Co about the price rise on Whole milk, 2L (+5.4%)"
+    assert tasks[0]["amount"] == 4.0 and "don't switch" in tasks[0]["facts"]
+    ranked = prioritise.rule_rank(tasks + [{"_id": "x", "kind": "approval", "facts": "£450 overdue", "score": 900}])
+    assert ranked[0]["_id"] == "x"  # a few pounds on milk never outranks an overdue £450
+
+
+def test_adding_missing_seed_invoices_only_adds(db):
+    from data import seed
+    db[schema.INVOICES].delete_one({"invoice_number": "EDC-7702"})
+    db[schema.INVOICES].update_one({"invoice_number": "EDC-7781"}, {"$set": {"status": "paid"}})  # a change made in the demo
+    invoices = seed.build_invoices(seed._today(), datetime.now(timezone.utc))
+    assert seed.add_missing(db, invoices) == 1 and seed.add_missing(db, invoices) == 0
+    assert db[schema.INVOICES].find_one({"invoice_number": "EDC-7781"})["status"] == "paid"  # left alone
+
+
+def test_similar_but_not_identical_items_are_named_so_the_owner_judges_quality(db):
+    from backend.db import search
+    db[schema.INVOICES].insert_one({**MEADOWFIELD, "counterparty_key": "meadowfielddairy", "currency": "GBP",
+                                    "issue_date": datetime.now(timezone.utc) - timedelta(days=3)})
+    lines = search.price_check(db, {**MEADOWFIELD, "counterparty": "Eastside Dairy Co", "counterparty_key": "eastsidedairyco",
+                                    "line_items": [{"description": "Oat milk, 1L", "qty": 36, "unit_price": 2.10}]}).lines()
+    oat = next(ln for ln in lines if "Oat Barista" in ln)
+    assert "vs £2.10 for your Oat milk, 1L (similar, not identical)" in oat
+
+
+# --- weather + events storage (backend/conditions.py), inputs' formats as-is
+
+def _wday(date="2026-10-25", **over):
+    return {"pitch_id": "broadway-market", "date": date, "summary": "Overcast", "weather_code": 3, "temp_max_c": 13.4,
+            "temp_min_c": 9.4, "precip_mm": 0.4, "precip_chance_pct": 98, "wind_max_kmh": 18.0, "source": "open-meteo",
+            "fetched_at": "2026-10-24T17:00:00+00:00", **over}
+
+
+def _event(source_id="E1", date="2026-10-25", **over):
+    return {"source": "test-feed", "source_id": source_id, "name": "Broadway Market Craft Fair", "category": "Arts",
+            "genre": "Market", "date": date, "starts_at": "2026-10-25T09:00:00Z", "status": "onsale", "venue": "London Fields",
+            "lat": 51.54, "lon": -0.06, "distance_km": 0.6, "pitch_id": "broadway-market", "url": None,
+            "fetched_at": "2026-10-24T17:00:00Z", **over}
+
+
+def test_weather_is_stored_once_per_pitch_and_day_and_updated_when_the_forecast_changes(db):
+    from backend import conditions
+    first = conditions.record_weather([_wday(), _wday("2026-10-26", summary="Heavy drizzle", weather_code=55)])
+    assert (first.new, first.updated, first.unchanged) == (2, 0, 0)
+    again = conditions.record_weather([_wday(fetched_at="2026-10-24T18:00:00Z")])  # same forecast, fetched later
+    assert (again.new, again.updated, again.unchanged) == (0, 0, 1)
+    better = conditions.record_weather([_wday(summary="Light rain", weather_code=61, precip_chance_pct=100)])
+    assert better.updated == 1 and db[schema.WEATHER].count_documents({}) == 2
+    assert db[schema.WEATHER].find_one({"date": "2026-10-25"})["summary"] == "Light rain"
+    assert db[schema.AGENT_LOG].count_documents({"kind": "weather_synced"}) == 2  # nothing logged when nothing changed
+
+
+def test_bad_weather_days_are_rejected_and_the_rest_still_stored(db):
+    from backend import conditions
+    r = conditions.record_weather([_wday(), _wday("25/10/2026"), _wday(pitch_id=""), _wday("2026-10-27", temp_max_c="warm"),
+                                   _wday("2026-10-28", weather_code=True), "junk",
+                                   _wday("2026-10-29", temp_max_c=None, precip_chance_pct=None)])  # gaps are fine
+    assert r.new == 2 and len(r.errors) == 5
+    assert db[schema.WEATHER].find_one({"date": "2026-10-29"})["temp_max_c"] is None
+    dup = conditions.record_weather([_wday("2026-10-30"), _wday("2026-10-30", summary="Clear")])  # same day twice
+    assert dup.new == 1 and db[schema.WEATHER].find_one({"date": "2026-10-30"})["summary"] == "Clear"
+
+
+def test_events_are_idempotent_keep_the_nearest_pitch_and_survive_a_garbled_start_time(db):
+    from backend import conditions
+    r = conditions.record_events([_event(), _event(pitch_id="victoria-park", distance_km=2.4),
+                                  _event("E2", starts_at="soon", name="Gig")])
+    assert r.new == 2 and r.errors == []
+    e1 = db[schema.EVENTS].find_one({"source_id": "E1"})
+    assert e1["pitch_id"] == "broadway-market" and e1["distance_km"] == 0.6 and e1["synthetic"] is False
+    assert e1["search_text"] == "Broadway Market Craft Fair | Arts, Market | London Fields"
+    assert db[schema.EVENTS].find_one({"source_id": "E2"})["starts_at"] is None  # time TBA, event kept
+    again = conditions.record_events([_event(), _event("E2", starts_at="soon", name="Gig")])
+    assert (again.new, again.updated, again.unchanged) == (0, 0, 2)
+    assert conditions.record_events([_event(date="2026-10-26")]).updated == 1  # rescheduled
+    assert db[schema.EVENTS].find_one({"source_id": "E1"})["first_seen_at"] == e1["first_seen_at"]
+    assert conditions.record_events([{"source": "test-feed", "name": "No id"}]).errors
+
+
+def test_events_missing_from_a_refetched_window_are_marked_removed_not_deleted(db):
+    from backend import conditions
+    conditions.record_events([_event("E1"), _event("E2", date="2026-10-26"), _event("E3", date="2026-11-20")])
+    window = [("broadway-market", "2026-10-25", "2026-10-31")]
+    r = conditions.record_events([_event("E1")], covered=window)  # E2 cancelled; E3 is outside the window
+    assert r.removed == 1 and db[schema.EVENTS].count_documents({}) == 3
+    assert db[schema.EVENTS].find_one({"source_id": "E2"})["status"] == "removed"
+    assert db[schema.EVENTS].find_one({"source_id": "E3"})["status"] == "onsale"
+    assert conditions.record_events([_event("E1")]).removed == 0  # no window given: nothing assumed gone
+    back = conditions.record_events([_event("E1"), _event("E2", date="2026-10-26")], covered=window)
+    assert back.updated == 1 and db[schema.EVENTS].find_one({"source_id": "E2"})["status"] == "onsale"
+
+
+def test_the_forecast_reads_weather_and_live_events_per_day(db):
+    from backend import conditions
+    conditions.record_weather([_wday()])
+    conditions.record_events([_event("E1"), _event("E2", distance_km=0.2, name="Closer"), _event("E3", date="2026-10-26")])
+    conditions.record_events([_event("E1"), _event("E2", distance_km=0.2, name="Closer")],
+                             covered=[("broadway-market", "2026-10-26", "2026-10-26")])  # E3 removed
+    got = conditions.conditions_for(["2026-10-25", "2026-10-26", "2026-10-27"])
+    assert got["2026-10-25"]["weather"]["summary"] == "Overcast"
+    assert [e["name"] for e in got["2026-10-25"]["events"]] == ["Closer", "Broadway Market Craft Fair"]
+    assert got["2026-10-26"]["events"] == [] and got["2026-10-27"] == {"weather": None, "events": [], "transport": []}
+
+
+def test_timestamps_without_an_offset_are_london_time(db):
+    from backend import conditions
+    conditions.record_events([_event(starts_at="2026-07-01T09:00:00")])  # BST: 09:00 London = 08:00 UTC
+    assert db[schema.EVENTS].find_one({})["starts_at"].hour == 8

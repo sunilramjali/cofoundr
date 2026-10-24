@@ -4,6 +4,7 @@ Usage (from the repo root):
     python -m data.seed --dry-run   # print what would be inserted, no DB needed
     python -m data.seed             # insert (refuses if data already exists)
     python -m data.seed --reset     # delete existing synthetic demo data, then insert
+    python -m data.seed --add-missing  # only insert seed invoices that aren't there yet (deletes and changes nothing)
 
 Dates are relative to today, so overdue invoices stay overdue whenever you run it.
 All names and emails are fictional; every document has synthetic=True.
@@ -30,6 +31,7 @@ def build_business(now: datetime) -> dict:
         "business_type": "Mobile coffee truck",
         "location": "East London",
         "currency": "GBP",
+        "preferred_suppliers": [],
         "synthetic": True,
         "created_at": now,
     }
@@ -52,6 +54,15 @@ _INVOICES = [
     ("GAIA-1029", "receivable", "Hackney Hub Coworking", "accounts@hackneyhub.example.com", 62, -32, True, 0,
      [("Office coffee cart, 1 day", 1, 180.00)]),
     # Payables: GAIA owes suppliers.
+    # Eastside Dairy history (all paid on time): a loyal supplier whose whole milk crept from £1.75 to £1.85.
+    ("EDC-7702", "payable", "Eastside Dairy Co", "billing@eastsidedairy.example.com", 110, -96, True, 0,
+     [("Whole milk, 2L", 40, 1.75), ("Oat milk, 1L", 30, 1.95)]),
+    ("EDC-7725", "payable", "Eastside Dairy Co", "billing@eastsidedairy.example.com", 82, -68, True, 0,
+     [("Whole milk, 2L", 40, 1.75), ("Oat milk, 1L", 36, 1.95)]),
+    ("EDC-7748", "payable", "Eastside Dairy Co", "billing@eastsidedairy.example.com", 54, -40, True, 0,
+     [("Whole milk, 2L", 44, 1.80), ("Oat milk, 1L", 36, 2.10)]),
+    ("EDC-7764", "payable", "Eastside Dairy Co", "billing@eastsidedairy.example.com", 33, -19, True, 0,
+     [("Whole milk, 2L", 40, 1.85), ("Oat milk, 1L", 36, 2.10)]),
     ("EDC-7781", "payable", "Eastside Dairy Co", "billing@eastsidedairy.example.com", 12, 2, False, 0,
      [("Whole milk, 2L", 40, 1.85), ("Oat milk, 1L", 36, 2.10)]),
     ("BLR-2209", "payable", "Bow Lane Roasters", "orders@bowlaneroasters.example.com", 20, 10, False, 0,
@@ -93,7 +104,19 @@ def build_invoices(today: datetime, now: datetime) -> list:
             "synthetic": True,
             "created_at": now,
         })
+        docs[-1]["search_text"] = schema.invoice_search_text(docs[-1])
     return docs
+
+
+def add_missing(db, invoices: list) -> int:
+    """Insert the seed invoices that aren't there yet (same supplier + number + direction). Never deletes or edits."""
+    added = 0
+    for inv in invoices:
+        identity = {k: inv[k] for k in ("business_id", "direction", "counterparty_key", "invoice_number")}
+        if not db[schema.INVOICES].find_one(identity):
+            db[schema.INVOICES].insert_one(inv)
+            added += 1
+    return added
 
 
 def main() -> None:
@@ -101,6 +124,7 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--dry-run", action="store_true", help="print documents, don't touch the DB")
     group.add_argument("--reset", action="store_true", help="delete existing synthetic data first")
+    group.add_argument("--add-missing", action="store_true", help="insert only seed invoices not in the DB yet")
     args = parser.parse_args()
 
     now = datetime.now(timezone.utc)
@@ -118,6 +142,9 @@ def main() -> None:
     from backend.db.client import ensure_indexes, get_db  # only needs MONGODB_URI when writing
 
     db = get_db()
+    if args.add_missing:
+        print(f"Added {add_missing(db, invoices)} missing seed invoice(s); nothing else changed.")
+        return
     if args.reset:
         for name in SEEDED:
             deleted = db[name].delete_many({"synthetic": True}).deleted_count

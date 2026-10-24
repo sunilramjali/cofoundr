@@ -5,10 +5,16 @@
 {% block heading %}Your brief, on WhatsApp{% endblock %}
 {% block lede %}Saint reads this from <code>/brief</code> and sends it to you on WhatsApp. Reply to decide from your phone: the same rules apply as here.{% endblock %}
 {% block body %}
+<form class="chatbar" method="post" action="/saint" style="position:static;margin:0 0 24px">
+  <span class="chatbar__who" aria-hidden="true">S</span><input type="hidden" name="back" value="/whatsapp">
+  <label class="sr" for="saint-msg">Message Saint</label>
+  <input id="saint-msg" name="text" autocomplete="off" placeholder="Message Saint… try “approve 1”">
+  <button class="btn send" aria-label="Send to Saint" data-busy="…"><svg class="ico"><use href="#i-up"/></svg></button>
+</form>
 <div class="phone-layout">
   <div class="phone" aria-label="The brief Saint sends on WhatsApp">
     <div class="phone__screen">
-      <div class="phone__bar"><span class="phone__avatar">C</span><div>CoFoundr<small>via Saint · WhatsApp</small></div></div>
+      <div class="phone__bar"><span class="chatbar__who">S</span><div>Saint<small>your CoFoundr assistant · WhatsApp</small></div></div>
       <div class="phone__chat">
         <div class="bubble" style="--i:0">{{ brief.text }}<time>{{ now.strftime("%H:%M") }}</time></div>
         {% if n %}<div class="bubble bubble--me" style="--i:1">approve {{ pending[0].ref }}</div>{% endif %}

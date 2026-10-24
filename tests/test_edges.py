@@ -88,7 +88,8 @@ def test_token_guard_handles_odd_tokens(db):
 def test_dashboard_renders_with_real_data(db, gemini_down):
     overdue.run()
     home = web.get("/", params={"msg": "<b>hi</b>"})
-    assert home.status_code == 200 and "Your yes" in home.text and 'href="/approvals"' in home.text
+    assert home.status_code == 200 and "Invoice to be paid" in home.text and "reminders ready to send" in home.text
+    assert 'action="/saint"' in home.text and 'href="/inventory"' in home.text  # Saint chat bar + sidebar
     assert "<b>hi</b>" not in home.text and "&lt;b&gt;hi&lt;/b&gt;" in home.text  # flash messages are escaped
     page = web.get("/approvals")
     assert "Waiting for your yes" in page.text and "Approve &amp; send" in page.text and "view-transition-name: m-approvals" in page.text
@@ -97,11 +98,12 @@ def test_dashboard_renders_with_real_data(db, gemini_down):
 @pytest.mark.parametrize("path,text", [
     ("/sales", "Sales &amp; the week ahead"), ("/invoices", "Your invoices"), ("/invoices?show=overdue", "What&#39;s overdue"),
     ("/inbox", "Bring me an invoice"), ("/activity", "What I did on my own"), ("/whatsapp", "Your brief, on WhatsApp"),
+    ("/inventory", "What's on the truck"), ("/settings", "Approval rule"),
 ])
 def test_every_module_opens_into_its_page(db, gemini_down, path, text):
     overdue.run()
     r = web.get(path)
-    assert r.status_code == 200 and text in r.text and 'class="back" href="/"' in r.text
+    assert r.status_code == 200 and text in r.text and 'class="sheet__back" href="/"' in r.text
 
 
 def test_actions_return_to_the_page_they_came_from_and_never_elsewhere(db):
@@ -625,11 +627,19 @@ def test_gmail_reads_html_only_invoice_emails(db, inbox_env, gemini_reads):
     assert "Oat milk x10" in text and "Total £20.00" in text and "color:red" not in text
 
 
-def test_gmail_retries_an_email_when_gemini_is_busy(db, inbox_env, gemini_down):
+def test_gmail_retries_a_busy_email_after_a_wait_not_every_minute(db, inbox_env, gemini_down, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(gmail.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(gmail, "_retry_after", {})
     box = FakeInbox(_mail("Invoice 24/10/2026", "Weekly beans: £20.00"))
     r = gmail.check_inbox(connect=lambda: box)
-    assert not r.ok and "couldn't be read" in r.message and box.labelled() == []  # left for the next check
-    assert gmail.check_inbox(connect=lambda: box).emails  # ...which tries it again
+    assert not r.ok and "couldn't be read" in r.message and box.labelled() == []  # left for later
+    clock[0] += 60
+    assert gmail.check_inbox(connect=lambda: box).message == "Inbox checked: nothing new." and box.fetched == [b"1"]  # not yet
+    clock[0] += gmail.RETRY_WAIT
+    assert gmail.check_inbox(connect=lambda: box).emails and box.fetched == [b"1", b"1"]  # retried after the wait
+    fails = db[schema.AGENT_LOG].count_documents({"kind": "ingest_failed"})
+    assert fails == 2  # one per real attempt, not one per minute
 
 
 def test_gmail_not_an_invoice_after_all_is_labelled_not_retried(db, inbox_env, gemini_reads):
@@ -736,7 +746,7 @@ def test_weather_outage_never_breaks_the_page(db, monkeypatch):
     monkeypatch.setattr(weather, "forecast", lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("down")))
     assert view.weather_by_date() == {}
     r = web.get("/")
-    assert r.status_code == 200 and "Nothing needs your yes right now" in r.text and "Forecast appears once" in r.text
+    assert r.status_code == 200 and "No forecast yet" in r.text and "All clear" in r.text
     assert "No forecast yet" in web.get("/sales").text
 
 
@@ -745,3 +755,146 @@ def test_ago(secs, expected):
     now = datetime(2026, 10, 24, 12, tzinfo=timezone.utc)
     assert view.ago(now - timedelta(seconds=secs), now) == expected
     assert view.ago(None) == "never"
+
+
+# ---------------------------------------------------------------- home feed: Saint chat bar, stock, opportunities, chart
+def test_saint_chat_bar_decides_like_whatsapp_and_never_guesses(db, gemini_down, sent):
+    overdue.run()
+    r = web.post("/saint", data={"text": "approve 4", "back": "/"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/?msg=") and "#4 approved" in _flash(r)
+    assert db[schema.APPROVALS].find_one({"ref": 4})["decided_via"] == "dashboard"
+    for text, expected in [("don't approve 1", "nothing was sent"), ("tell me a joke", "nothing was sent"), ("", "Type a message"),
+                           ("what's waiting?", "3 waiting for your yes: #1 Shoreditch Design Studio £288.00"),
+                           ("brief", "Reply “approve 1”"), ("approve 99", "no #99"), ("approve 4", "already")]:
+        assert expected in _flash(web.post("/saint", data={"text": text, "back": "/"}, follow_redirects=False)), text
+    assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "pending"  # the negated message changed nothing
+
+
+def _count(cid, kind, day, **qty):
+    return {"_id": cid, "kind": kind, "counted_at": datetime(2026, 9, day, 8, tzinfo=timezone.utc),
+            "items": [{"sku": k, "item_name": k.title(), "unit": "unit", "qty": v} for k, v in qty.items()]}
+
+
+def test_stock_estimate_flags_what_runs_out_and_suggests_orders():
+    counts = [_count("o", "opening", 1, napkins=300, cups=200, cake=10), _count("c", "closing", 11, napkins=100, cups=150, cake=10),
+              _count("o2", "opening", 12, napkins=60, cups=150, cake=10)]
+    est = view.stock_estimate(counts, datetime(2026, 9, 14, 8, tzinfo=timezone.utc))  # 2 days after the last count
+    rows = {r["sku"]: r for r in est["rows"]}
+    assert rows["napkins"]["per_day"] == 20 and rows["napkins"]["estimate"] == 20 and rows["napkins"]["cover"] == 1 and rows["napkins"]["low"]
+    assert rows["napkins"]["order"] == 20 * 14 - 20 and not rows["cups"]["low"] and rows["cake"]["cover"] is None
+    assert [r["sku"] for r in est["low"]] == ["napkins"] and est["days_since"] == 2 and "01 Sep" in est["basis"]
+    gone = view.stock_estimate(counts, datetime(2026, 9, 30, tzinfo=timezone.utc))["rows"][0]
+    assert gone["sku"] == "napkins" and gone["out"] and gone["estimate"] == 0
+    assert view.stock_estimate([], datetime.now(timezone.utc))["rows"] == []
+    only_one = view.stock_estimate([_count("o", "opening", 1, napkins=5)], datetime(2026, 9, 2, tzinfo=timezone.utc))
+    assert only_one["rows"][0]["cover"] is None and not only_one["low"]  # no usage known: never "low"
+
+
+def test_opportunities_come_from_set_aside_emails_once():
+    logs = [{"at": datetime(2026, 10, 24, tzinfo=timezone.utc), "detail": {"emails": [
+        {"subject": "Partnership Idea – Flow State Pilates x GAIA Coffee", "from": "a@x.com"},
+        {"subject": "Invoice 24/10/2026", "from": "b@x.com"}, {"subject": "", "from": "c@x.com"},
+        {"subject": "Collaboration Opportunity – Sunday Run Club x GAIA Coffee", "from": "d@x.com"}]}},
+        {"at": datetime(2026, 10, 23, tzinfo=timezone.utc), "detail": {"emails": [{"subject": "partnership idea – flow state pilates x gaia coffee"}]}}]
+    opps = view.opportunities(logs)
+    assert [o["who"] for o in opps] == ["Flow State Pilates", "Sunday Run Club"] and opps[0]["sender"] == "a@x.com"
+    assert view.opportunities([{"detail": None}]) == []
+
+
+def test_trend_chart_geometry():
+    sales = {"days": [{"orders": 1, "revenue": r} for r in (500, 600, 550)]}
+    wk = {"days": [{"trading": True, "revenue": 580}, {"trading": False, "revenue": 0}]}
+    t = view.trend(sales, wk)
+    assert t["actual"].startswith("M0.0,") and t["forecast"].startswith(f"M{t['split']},") and t["area"].endswith("Z")
+    assert t["split"] == round(100 * 2 / 3, 2) and t["dot"][0] == t["split"]
+    assert view.trend({"days": []}, {"days": []})["actual"] == ""
+
+
+# ---------------------------------------------------------------- CSRF: other websites can't act for the owner
+@pytest.mark.parametrize("path,data", [("/saint", {"text": "approve 1"}), ("/check-inbox", {}), ("/run-check", {}),
+                                       ("/approvals/x/decide", {"decision": "approve"})])
+@pytest.mark.parametrize("headers", [{"Origin": "https://evil.example.com"}, {"Origin": "null"},
+                                     {"Referer": "https://evil.example.com/page"}, {"Origin": "http://testserver.evil.com"}])
+def test_cross_site_posts_are_blocked(db, path, data, headers):
+    r = web.post(path, data=data, headers=headers, follow_redirects=False)
+    assert r.status_code == 403 and "Blocked" in r.text
+
+
+def test_same_site_and_server_to_server_posts_still_work(db, gemini_down, sent):
+    overdue.run()
+    same = web.post("/saint", data={"text": "approve 4"}, headers={"Origin": "http://testserver"}, follow_redirects=False)
+    assert same.status_code == 303 and "#4 approved" in _flash(same)
+    referer = web.post("/run-check", headers={"Referer": "http://testserver/approvals"}, follow_redirects=False)
+    assert referer.status_code == 303
+    saint = web.post("/approve", params={"token": TOKEN}, json={"text": "reject 1"})  # Saint's server: no Origin
+    assert saint.status_code == 200 and saint.json()["status"] == "rejected"
+
+
+# ---------------------------------------------------------------- local sandbox: never writes to the real database
+def test_sandbox_copies_the_data_and_keeps_writes_local(db, monkeypatch):
+    from backend.outputs import email
+    from tools import sandbox
+    for mod, attr in [(sandbox, "_mock"), (dbclient, "get_client"), (gmail, "check_inbox"), (gmail, "start_polling"), (email, "send_reminder")]:
+        monkeypatch.setattr(mod, attr, getattr(mod, attr))  # restored after the test
+    monkeypatch.setattr(sandbox, "_mock", None)
+    real_count = db[schema.INVOICES].count_documents({})
+    sandbox.install()
+    local = dbclient.get_db()
+    assert sandbox.active() and local[schema.INVOICES].count_documents({}) == real_count  # same data...
+    local[schema.INVOICES].delete_many({})
+    assert db[schema.INVOICES].count_documents({}) == real_count  # ...but deleting locally leaves the real one alone
+    assert gmail.check_inbox().error == "not_configured" and "NOT sent" in email.send_reminder({"to_email": "a@b.c"})
+
+
+def test_weather_never_makes_a_page_wait_on_a_refresh(monkeypatch):
+    import threading
+    clock = [10_000.0]
+    monkeypatch.setattr(view.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(view, "_weather", {"at": 0.0, "ttl": 0, "days": {}, "refreshing": False})
+    calls, release = [], threading.Event()
+
+    def slow_forecast(pitch, days, timeout):
+        calls.append(timeout)
+        if len(calls) > 1:
+            release.wait(2)  # the background refresh is slow...
+        return [{"date": "2026-10-24", "summary": f"v{len(calls)}"}]
+    monkeypatch.setattr(weather, "forecast", slow_forecast)
+    assert view.weather_by_date()["2026-10-24"]["summary"] == "v1" and calls == [view.WEATHER_TIMEOUT]  # first fetch inline, short timeout
+    clock[0] += view.WEATHER_TTL + 1  # stale now
+    assert view.weather_by_date()["2026-10-24"]["summary"] == "v1"  # ...but the page gets the old weather straight away
+    assert view.weather_by_date()["2026-10-24"]["summary"] == "v1" and len(calls) == 2  # only one refresh in flight
+    release.set()
+    for _ in range(50):
+        if not view._weather["refreshing"]:
+            break
+        threading.Event().wait(.02)
+    assert view.weather_by_date()["2026-10-24"]["summary"] == "v2"
+
+
+def test_opportunities_ignore_lookalikes_and_automated_senders():
+    logs = [{"detail": {"emails": [
+        {"subject": "Security event on your account", "from": "no-reply@accounts.google.com"},
+        {"subject": "New partnership offer", "from": "noreply@spam.example.com"},
+        {"subject": "Events this weekend", "from": "news@x.com"},
+        {"subject": "Pop-up at Broadway Market?", "from": "hello@market.example.com"}]}}]
+    assert [o["subject"] for o in view.opportunities(logs)] == ["Pop-up at Broadway Market?"]
+
+
+def test_first_time_supplier_payments_are_flagged(db, gemini_down, fake_extraction):
+    from backend.pipeline import ingest_invoice
+    fake_extraction(make_invoice(issuer_name="Totally Real Supplies Ltd", invoice_number="TRS-1", issue_date="2025-12-01", due_date="2026-01-01",
+                                 printed_total=20.0))
+    ingest_invoice(b"%PDF", "application/pdf", "email", origin="email from scam@example.com")
+    overdue.run()
+    pending = list(db[schema.APPROVALS].find({"status": "pending"}))
+    invoices = list(db[schema.INVOICES].find())
+    checks = view.payment_checks(pending, invoices)
+    scam = next(a for a in pending if a["counterparty"] == "Totally Real Supplies Ltd")
+    seeded = next(a for a in pending if a["action_type"] == "supplier_payment" and a is not scam)
+    assert checks[str(scam["_id"])]["new_sender"] and checks[str(scam["_id"])]["source"] == "email"
+    assert not checks[str(seeded["_id"])]["new_sender"] and checks[str(seeded["_id"])]["source"] == "demo"
+    home = web.get("/").text
+    assert "First invoice ever from this supplier" in home and f'href="/approvals#a{scam["ref"]}"' in home
+    assert 'value="approve"' not in home.split("Invoice to be paid")[1].split("</div>")[0]  # no one-click pay from home
+    page = web.get("/approvals").text
+    assert "First invoice we've ever had from Totally Real Supplies Ltd" in page and f'id="a{scam["ref"]}"' in page
