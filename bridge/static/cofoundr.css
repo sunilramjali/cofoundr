@@ -445,3 +445,12 @@ html.js .ask.is-edited .js-edited { display: inline-flex; animation: pop .35s va
   .chart .fc { opacity: 1; }
   @view-transition { navigation: none; }
 }
+
+/* payment safety: first-time suppliers + arriving from "Pay now" */
+.warn { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0 0; padding: 12px 14px; border-radius: 14px; background: var(--amber-bg); color: #6b4512; font-size: 14px; }
+.warn .ico { width: 18px; height: 18px; color: var(--amber); margin-top: 1px; }
+.warn b { display: block; color: #4d300a; }
+.warn-line { display: flex; gap: 6px; align-items: center; color: var(--amber) !important; font-weight: 500; }
+.warn-line .ico { width: 15px; height: 15px; }
+.ask:target, .ask.is-focus { background: var(--glass-strong); box-shadow: 0 0 0 2px var(--accent), var(--lift-2); animation: pulse-ring 1.6s var(--ease) 2; }
+@keyframes pulse-ring { 50% { box-shadow: 0 0 0 6px rgba(192, 122, 69, .25), var(--lift-2); } }
