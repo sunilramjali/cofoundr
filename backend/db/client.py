@@ -8,7 +8,7 @@ import os
 from functools import lru_cache
 
 from dotenv import load_dotenv
-from pymongo import ASCENDING, MongoClient
+from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.database import Database
 
 from backend.db import schema
@@ -38,7 +38,34 @@ def ping() -> bool:
 
 
 def ensure_indexes(db: Database) -> None:
-    """Create the indexes the app relies on. Safe to run repeatedly."""
-    db[schema.INVOICES].create_index([("business_id", ASCENDING), ("status", ASCENDING), ("due_date", ASCENDING)])
-    db[schema.INVOICES].create_index([("business_id", ASCENDING), ("invoice_number", ASCENDING)], unique=True)
-    db[schema.APPROVALS].create_index([("business_id", ASCENDING), ("status", ASCENDING), ("created_at", ASCENDING)])
+    """Create the indexes the app relies on. Safe to run repeatedly (also migrates older data)."""
+    invoices, approvals = db[schema.INVOICES], db[schema.APPROVALS]
+    invoices.create_index([("business_id", ASCENDING), ("status", ASCENDING), ("due_date", ASCENDING)])
+
+    # Invoice numbers are only unique per counterparty ("INV-001" from two suppliers is two invoices).
+    if "business_id_1_invoice_number_1" in invoices.index_information():
+        invoices.drop_index("business_id_1_invoice_number_1")
+    for doc in invoices.find({"counterparty_key": {"$exists": False}}, {"counterparty": 1}):
+        invoices.update_one({"_id": doc["_id"]}, {"$set": {"counterparty_key": schema.counterparty_key(doc.get("counterparty"))}})
+    invoices.create_index([("business_id", ASCENDING), ("direction", ASCENDING), ("counterparty_key", ASCENDING),
+                           ("invoice_number", ASCENDING)], unique=True, name="invoice_identity")
+
+    approvals.create_index([("business_id", ASCENDING), ("status", ASCENDING), ("created_at", ASCENDING)])
+    # One pending action per invoice, even if two overdue checks run at the same moment
+    approvals.create_index([("target_id", ASCENDING)], unique=True, name="one_pending_per_invoice",
+                           partialFilterExpression={"status": "pending"})
+    # "approve 5" must mean exactly one action
+    approvals.create_index([("business_id", ASCENDING), ("ref", ASCENDING)], unique=True, name="unique_ref",
+                           partialFilterExpression={"ref": {"$exists": True}})
+
+
+def next_refs(db: Database, business_id: str, n: int) -> list:
+    """Atomically reserve n approval reference numbers (safe under concurrent overdue checks)."""
+    if n <= 0:
+        return []
+    key = f"{business_id}:approval_ref"
+    # First use on an existing database: start after the highest ref already in use
+    last = db[schema.APPROVALS].find_one({"business_id": business_id, "ref": {"$exists": True}}, sort=[("ref", -1)])
+    db[schema.COUNTERS].update_one({"_id": key}, {"$max": {"seq": last["ref"] if last else 0}}, upsert=True)
+    seq = db[schema.COUNTERS].find_one_and_update({"_id": key}, {"$inc": {"seq": n}}, return_document=ReturnDocument.AFTER)["seq"]
+    return list(range(seq - n + 1, seq + 1))

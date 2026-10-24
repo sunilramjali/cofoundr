@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from bson import ObjectId
+from bson.errors import InvalidId
 
 from backend.db import activity, schema
 from backend.db.client import get_db
@@ -32,12 +33,16 @@ def recent_decided(limit: int = 10) -> list:
 
 
 def find(ref: Optional[int] = None, approval_id: Optional[str] = None) -> Optional[dict]:
+    """None for unknown or malformed ids/refs (never raises on bad input)."""
     query = {"business_id": BUSINESS_ID}
-    if approval_id:
-        query["_id"] = ObjectId(approval_id)
-    elif ref is not None:
-        query["ref"] = int(ref)
-    else:
+    try:
+        if approval_id:
+            query["_id"] = ObjectId(approval_id)
+        elif ref is not None and not isinstance(ref, bool):
+            query["ref"] = int(ref)
+        else:
+            return None
+    except (InvalidId, TypeError, ValueError):
         return None
     return get_db()[schema.APPROVALS].find_one(query)
 
@@ -52,19 +57,42 @@ def decide(approval: dict, decision: str, via: str, edited_draft: Optional[str] 
 
     db = get_db()
     now = datetime.now(timezone.utc)
+    approvals = db[schema.APPROVALS]
+    invoice_id = ObjectId(approval["target_id"])
+
+    if decision in ("approve", "edit"):
+        # The world may have changed since the draft: never chase or pay an invoice that's already settled
+        inv = db[schema.INVOICES].find_one({"_id": invoice_id}, {"status": 1})
+        if not inv or inv["status"] == "paid":
+            why = "invoice already paid" if inv else "invoice no longer exists"
+            if approvals.update_one({"_id": approval["_id"], "status": "pending"}, {"$set": {
+                    "status": "cancelled", "decided_via": "system", "decided_at": now, "cancel_reason": why}}).modified_count:
+                activity.log("approval_cancelled", f"#{approval['ref']} withdrawn: {approval['title']} ({why}; nothing sent)",
+                             approval_id=str(approval["_id"]))
+            raise DecisionError(f"#{approval['ref']} withdrawn: {why}, so nothing was sent.")
+
     update = {"status": DECISIONS[decision], "decided_via": via, "decided_at": now}
     if decision == "edit":
         update["original_draft"] = approval["draft"]
         update["draft"] = edited_draft.strip()
-    result = db[schema.APPROVALS].update_one({"_id": approval["_id"], "status": "pending"}, {"$set": update})
-    if result.modified_count == 0:  # someone decided it in the meantime
+    # Claim it atomically: of two simultaneous decisions (dashboard + WhatsApp), only one wins
+    result = approvals.update_one({"_id": approval["_id"], "status": "pending"}, {"$set": update})
+    if result.modified_count == 0:
         raise DecisionError(f"#{approval['ref']} is no longer pending.")
 
     effect = "no action taken"
     if decision in ("approve", "edit"):
-        invoice_id = ObjectId(approval["target_id"])
         if approval["action_type"] == "invoice_reminder":
-            effect = email.send_reminder({**approval, **update})  # Jade's output channel; only runs after approval
+            try:
+                effect = email.send_reminder({**approval, **update})  # Jade's output channel; only runs after approval
+            except Exception as e:
+                # Put it back in the queue rather than pretend it was sent
+                approvals.update_one({"_id": approval["_id"], "status": update["status"]},
+                                     {"$set": {"status": "pending", "decided_via": None, "decided_at": None,
+                                               "draft": approval["draft"]}, "$unset": {"original_draft": ""}})
+                activity.log("send_failed", f"#{approval['ref']} couldn't be sent ({type(e).__name__}); back in the queue",
+                             approval_id=str(approval["_id"]))
+                raise DecisionError(f"#{approval['ref']} couldn't be sent ({type(e).__name__}). It's back in the queue.") from e
             db[schema.INVOICES].update_one({"_id": invoice_id}, {"$inc": {"reminders_sent": 1}, "$set": {"last_reminder_at": now}})
         elif approval["action_type"] == "supplier_payment":
             db[schema.INVOICES].update_one({"_id": invoice_id}, {"$set": {"status": "paid", "paid_at": now}})

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from backend.db import schema
 
 BUSINESS_ID = "gaia-coffee"
-SEEDED = [schema.BUSINESSES, schema.INVOICES, schema.APPROVALS, schema.AGENT_LOG]
+SEEDED = [schema.BUSINESSES, schema.INVOICES, schema.APPROVALS, schema.AGENT_LOG]  # + cursors and counters on --reset
 
 
 def _today() -> datetime:
@@ -76,6 +76,7 @@ def build_invoices(today: datetime, now: datetime) -> list:
             "invoice_number": number,
             "direction": direction,
             "counterparty": party,
+            "counterparty_key": schema.counterparty_key(party),
             "counterparty_email": email,
             "amount": round(sum(li["qty"] * li["unit_price"] for li in line_items), 2),
             "currency": "GBP",
@@ -122,6 +123,7 @@ def main() -> None:
             print(f"reset: removed {deleted} synthetic docs from {name}")
         cleared = db[schema.CURSORS].delete_many({"_id": {"$regex": f"^{BUSINESS_ID}:"}}).deleted_count
         print(f"reset: cleared {cleared} /updates cursor(s)")
+        db[schema.COUNTERS].delete_many({"_id": {"$regex": f"^{BUSINESS_ID}:"}})
     elif db[schema.BUSINESSES].find_one({"_id": BUSINESS_ID}):
         raise SystemExit("Demo data already exists. Re-run with --reset to replace it.")
 

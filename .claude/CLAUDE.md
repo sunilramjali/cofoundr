@@ -66,7 +66,8 @@ jade  ──┘
 - **CI** (`.github/workflows/ci.yml`): every PR into `stage`/`main` installs deps, compiles, runs `pytest tests` (fast, no MongoDB/Gemini needed). The `checks` job is a **required status check**: a red PR can't merge.
 - **CD** (`.github/workflows/deploy.yml`): every push to `main` (= every approved release PR) runs `fly deploy`, then checks `/health`. **Live app = `main`.** Don't `fly deploy` by hand from feature branches, except to hotfix during the demo.
 - Needs GitHub secret `FLY_API_TOKEN` (Fly deploy token scoped to the `cofoundr` app, 30-day expiry).
-- Add a test to `tests/` for any new logic that can run without network.
+- **Tests:** `.venv/bin/python -m pytest -q tests` (65+ tests, ~0.3 s). They use an in-memory MongoDB (`mongomock`) and a fake Gemini from `tests/conftest.py` (`db`, `gemini_down`, `fake_extraction`, `sent` fixtures); an autouse guard makes any test that touches the real Atlas or Gemini fail. Tools: `pip install -r requirements-dev.txt`. CI also runs `pyflakes`.
+- **Every new feature ships with a scenario test** for its obvious edge cases (see `docs/postmortem-2026-10-24.md`: 10 of 13 bugs would have been caught that way). Middle → `tests/test_middle.py`, edges → `tests/test_edges.py`.
 
 ### Commit messages
 Format: **`MVP<n>: <one sentence of what changed>`**, where `<n>` is the MVP stage the change serves (see "Current stage" in `MVP.md`).

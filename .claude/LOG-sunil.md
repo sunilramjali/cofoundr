@@ -12,6 +12,21 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — Post-mortem + 13 bug fixes + 65 tests
+- **Did:** code review → 13 bugs (3 serious: negated WhatsApp reply approved a payment; same invoice number from 2 suppliers dropped; concurrent checks could reuse #refs). All fixed; see `docs/postmortem-2026-10-24.md`
+- **Tests:** in-memory Mongo (`mongomock`) + fake Gemini fixtures in `tests/conftest.py`; autouse guard blocks real Atlas/Gemini; 65 tests (33 middle, 32 edges); CI installs `requirements-dev.txt` and runs pyflakes
+- **Atlas migrated:** dropped `business_id_1_invoice_number_1`; added `invoice_identity`, `one_pending_per_invoice`, `unique_ref`; backfilled `counterparty_key`
+- **Contract change (`schema.py`):** `Invoice.counterparty_key`; `Approval.status` + `cancelled`, `decided_via` + `system`; `counters` collection; `counterparty_key()` helper
+- **Edge files touched (Jade's area, agreed as safety fixes):** `bridge/main.py` (strict reply parser, html escape, token bytes, ref validation), `outputs/brief.py` (reply hint), `outputs/updates.py` (lookup by invoice_id)
+- **Next:** Fly Gemini key; Jade reviews edge fixes + PR #3
+
+## Sat 24 Oct — Gemini working again; upload retest + demo reset done (MVP1)
+- **Gemini:** new paid-tier key (`AIza…3RbE`) works. Lessons: `gcplab.me` lab key = spend cap (organisers' billing); a fresh free-tier key = 0 quota for `gemini-4-argon`
+- **Upload retest (real `/upload` route, Atlas):** supplier_clean → EDC-7802 checked ✓ 1st attempt; gaia_overdue → GAIA-1050 ✓ + 1 draft; supplier_messy → BLR-2231 flagged for review (£263 vs £237)
+- **Demo reset:** `seed --reset` + overdue run → 10 invoices, 4 pending (#1–#4), 3 reminders drafted by Gemini, clean log
+- **Fix:** double full stop in the pipeline's review message
+- **Blocker:** Claude can't write secrets → **Sunil must run `fly secrets set GEMINI_API_KEY=…`** for the live app
+
 ## Sat 24 Oct — Conflict prevention for parallel work
 - **Did:** ownership guard in hook (🟠 PARTNER'S AREA ask before editing the other's folders); SessionStart `sync-check.sh` (warns on main/stage, behind stage, uncommitted changes); `.gitattributes` union merge for `requirements.txt` + `.env.example`; tests split into `test_middle.py` (Sunil) + `test_edges.py` (Jade); CLAUDE.md "Avoiding conflicts" section; CODEOWNERS for tests
 - **Tested:** 12 hook cases (own area allow, partner area ask, shared docs, log block) + sync check; 8 tests pass

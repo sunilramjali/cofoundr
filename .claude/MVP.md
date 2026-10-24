@@ -48,7 +48,7 @@ Forecasting, prioritisation, events/weather, WhatsApp photo input, Atlas Search/
 | **Gmail autonomous intake** (demo Gmail account + `backend/inputs/gmail.py` → `pipeline.ingest_invoice`) | **Jade** (input) |
 | **Saint test** (WhatsApp → `/brief`, `/approve`) | **Jade** (input/output) |
 | **WhatsApp automatic updates**: `/updates` feed ✓ built (Sunil); Saint polling it / Twilio fallback | **Jade** (output) |
-| **Upload retest + demo reset** (when Gemini's cap lifts) | **Sunil** (middle) |
+| ~~Upload retest + demo reset~~ ✓ done Sat 15:05 (3 samples via `/upload`: clean ✓, overdue ✓ + draft, messy → review; demo reset with Gemini drafts) | **Sunil** (middle) |
 | **Review PR #3** | **Jade** |
 
 Items above the bold rows were built by Sunil solo. From now on: **Jade = inputs + outputs, Sunil = the middle** (see `CLAUDE.md` → Code layout & ownership).

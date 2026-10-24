@@ -37,7 +37,10 @@ def messages_for(event: dict, db) -> List[dict]:
     """Turn one activity-log event into zero or more owner messages."""
     kind, detail = event["kind"], event.get("detail") or {}
     if kind == "invoice_extracted":
-        inv = db[schema.INVOICES].find_one({"business_id": BUSINESS_ID, "invoice_number": detail.get("invoice_number")})
+        # By _id: invoice numbers alone aren't unique across suppliers
+        query = {"_id": ObjectId(detail["invoice_id"])} if detail.get("invoice_id") else \
+            {"business_id": BUSINESS_ID, "invoice_number": detail.get("invoice_number")}
+        inv = db[schema.INVOICES].find_one(query)
         return [{"kind": kind, "needs_reply": False, "message": invoice_message(inv)}] if inv else []
     if kind == "overdue_check":
         refs = detail.get("refs") or []

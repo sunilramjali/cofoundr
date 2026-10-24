@@ -139,4 +139,4 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 - [ ] Ask Saint team: can Saint send WhatsApp messages unprompted (business-initiated), run on a schedule, or receive a webhook? (needed for automatic updates)
 - [ ] Confirm GAIA owner is OK with the name being used
 - [x] Front end: server-rendered dashboard in the FastAPI app on Fly.io (Streamlit dropped)
-- [ ] Gemini 4 Argon API key (Sunil adding)
+- [x] Gemini 4 Argon API key: working paid-tier key (`AIza…`) since Sat 15:00; lab key (`gcplab.me`) hit its spend cap, a new free-tier key had 0 Argon quota

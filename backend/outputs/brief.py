@@ -24,7 +24,8 @@ def build_brief(dashboard_url: str = "") -> dict:
         for a in todo:
             tone = f" ({LEVELS[a['escalation_level']]})" if a.get("escalation_level") is not None else ""
             lines.append(f"#{a['ref']} {a['title']}{tone}")
-        lines += ["", 'Reply "approve 1" or "reject 1".']
+        first = todo[0]["ref"]
+        lines += ["", f'Reply "approve {first}" or "reject {first}".']
     else:
         lines.append("Nothing waiting for approval. ✅")
     lines.append("")

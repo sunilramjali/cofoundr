@@ -18,7 +18,7 @@ import argparse
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
-from google.genai import errors, types
+from google.genai import types
 from pydantic import BaseModel
 
 from backend.ai.gemini import MODEL, get_client
@@ -43,6 +43,7 @@ class Drafts(BaseModel):
 
 
 REMINDER_GAP = timedelta(days=3)  # don't chase the same customer again within 3 days of the last reminder
+MAX_REMINDERS = 3  # friendly → firm → final notice; after that a human should call, not another email
 
 
 def _level(reminders_sent: int) -> int:
@@ -50,9 +51,13 @@ def _level(reminders_sent: int) -> int:
 
 
 def due_for_action(inv: dict, today: datetime) -> bool:
-    """Receivables wait REMINDER_GAP after the last reminder; supplier bills are always actionable."""
+    """Receivables: stop after MAX_REMINDERS, and wait REMINDER_GAP after the last one. Supplier bills: always."""
+    if inv["direction"] != "receivable":
+        return True
+    if inv.get("reminders_sent", 0) >= MAX_REMINDERS:
+        return False
     last = inv.get("last_reminder_at")
-    return not (inv["direction"] == "receivable" and last and today - last < REMINDER_GAP)
+    return not (last and today - last < REMINDER_GAP)
 
 
 def _template(inv: dict, days: int) -> Draft:
@@ -89,12 +94,31 @@ def draft_reminders(invoices: List[dict], today: datetime) -> Dict[str, tuple]:
             config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=Drafts),
         )
         got = {d.invoice_number: (d, "gemini") for d in Drafts.model_validate_json(response.text).drafts}
-    except (errors.APIError, ValueError) as e:
-        print(f"Gemini unavailable ({getattr(e, 'code', type(e).__name__)}); using template drafts.")
+    except Exception as e:  # quota, bad JSON, network: the flow must still work on stage
+        print(f"Gemini unavailable ({getattr(e, 'code', None) or type(e).__name__}); using template drafts.")
         got = {}
     # Fill any gaps (failed call or a missing invoice in the response) with a template
     return {inv["invoice_number"]: got.get(inv["invoice_number"]) or (_template(inv, (today - inv["due_date"]).days), "template")
             for inv in invoices}
+
+
+def cancel_stale(db, now: datetime) -> int:
+    """Withdraw pending actions whose invoice was paid or removed since they were drafted. Nothing is sent."""
+    from bson import ObjectId
+
+    from backend.db import activity
+
+    cancelled = 0
+    for a in db[schema.APPROVALS].find({"business_id": BUSINESS_ID, "status": "pending"}):
+        inv = db[schema.INVOICES].find_one({"_id": ObjectId(a["target_id"])}, {"status": 1})
+        if inv and inv["status"] != "paid":
+            continue
+        why = "invoice already paid" if inv else "invoice no longer exists"
+        if db[schema.APPROVALS].update_one({"_id": a["_id"], "status": "pending"}, {"$set": {
+                "status": "cancelled", "decided_via": "system", "decided_at": now, "cancel_reason": why}}).modified_count:
+            cancelled += 1
+            activity.log("approval_cancelled", f"#{a['ref']} withdrawn: {a['title']} ({why}; nothing sent)", approval_id=str(a["_id"]))
+    return cancelled
 
 
 def run(dry_run: bool = False) -> List[dict]:
@@ -112,6 +136,9 @@ def run(dry_run: bool = False) -> List[dict]:
         ).modified_count
         if flipped:
             print(f"Marked {flipped} invoice(s) overdue.")
+        cancelled = cancel_stale(db, now)
+        if cancelled:
+            print(f"Withdrew {cancelled} pending action(s) whose invoice is paid or gone.")
 
     overdue = list(invoices.find({"business_id": BUSINESS_ID, "status": "overdue", "needs_review": {"$ne": True}}).sort("due_date", 1))
     pending_targets = {a["target_id"] for a in approvals.find({"business_id": BUSINESS_ID, "status": "pending"}, {"target_id": 1})}
@@ -163,17 +190,21 @@ def run(dry_run: bool = False) -> List[dict]:
                         "drafted_by": "rule"})
 
     if not dry_run:
-        # Short numbers the owner can reply with on WhatsApp ("approve 3"); backfill any missing
-        last = approvals.find_one({"business_id": BUSINESS_ID, "ref": {"$exists": True}}, sort=[("ref", -1)])
-        next_ref = (last["ref"] if last else 0) + 1
-        for old in approvals.find({"business_id": BUSINESS_ID, "ref": {"$exists": False}}).sort("created_at", 1):
-            approvals.update_one({"_id": old["_id"]}, {"$set": {"ref": next_ref}})
-            next_ref += 1
-        for a in new:
-            a["ref"], next_ref = next_ref, next_ref + 1
-        if new:
-            approvals.insert_many(new)
+        from pymongo.errors import DuplicateKeyError
+
         from backend.db import activity
+        from backend.db.client import next_refs
+
+        # Short numbers the owner replies with on WhatsApp ("approve 3"), reserved atomically
+        saved = []
+        for a, ref in zip(new, next_refs(db, BUSINESS_ID, len(new))):
+            a["ref"] = ref
+            try:
+                approvals.insert_one(a)
+                saved.append(a)
+            except DuplicateKeyError:  # another check drafted this invoice at the same moment; keep theirs
+                pass
+        new = saved
         activity.log("overdue_check", f"Overdue check: {len(overdue)} overdue, {len(new)} new action(s) drafted for approval",
                      refs=[a["ref"] for a in new])
     print(f"{len(overdue)} overdue invoice(s): {len(new)} new approval(s) "

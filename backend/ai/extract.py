@@ -36,15 +36,15 @@ class ExtractedLineItem(BaseModel):
 
 class Extraction(BaseModel):
     """Exactly what is printed on the document. Missing values are null, never invented."""
-    issuer_name: str = Field(description="Business that issued (sent) the invoice")
+    issuer_name: Optional[str] = Field(None, description="Business that issued (sent) the invoice")
     issuer_email: Optional[str] = None
-    recipient_name: str = Field(description="Business the invoice is billed to")
+    recipient_name: Optional[str] = Field(None, description="Business the invoice is billed to")
     recipient_email: Optional[str] = None
     invoice_number: Optional[str] = None
     issue_date: Optional[str] = Field(None, description="YYYY-MM-DD")
     due_date: Optional[str] = Field(None, description="YYYY-MM-DD")
-    currency: str = Field("GBP", description="ISO code, e.g. GBP")
-    line_items: List[ExtractedLineItem]
+    currency: Optional[str] = Field("GBP", description="ISO code, e.g. GBP")
+    line_items: List[ExtractedLineItem] = Field(default_factory=list)
     printed_total: Optional[float] = Field(None, description="The total amount due exactly as printed")
     notes: Optional[str] = Field(None, description="Anything unclear or unreadable")
 
@@ -73,6 +73,8 @@ def _ask_gemini(data: bytes, mime_type: str, prompt: str) -> Extraction:
         contents=[types.Part.from_bytes(data=data, mime_type=mime_type), prompt],
         config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=Extraction),
     )
+    if not response.text:  # e.g. blocked by safety filters
+        raise ValueError("Gemini returned an empty response.")
     return Extraction.model_validate_json(response.text)
 
 
@@ -93,6 +95,10 @@ def check(ex: Extraction) -> List[str]:
         issues.append("No total amount found.")
     elif abs(items_sum - ex.printed_total) > TOLERANCE:
         issues.append(f"Line items add up to {items_sum:.2f} but the printed total is {ex.printed_total:.2f}.")
+    if ex.printed_total is not None and ex.printed_total <= 0:
+        issues.append(f"Total is {ex.printed_total:.2f}: looks like a credit note, not something to chase or pay.")
+    if (ex.currency or "GBP").upper() != "GBP":
+        issues.append(f"Currency is {ex.currency}; CoFoundr assumes GBP.")
     if not ex.invoice_number:
         issues.append("No invoice number found.")
     issue_date, due_date = _parse_date(ex.issue_date), _parse_date(ex.due_date)
@@ -102,9 +108,17 @@ def check(ex: Extraction) -> List[str]:
         issues.append("Issue date is not a valid date.")
     if issue_date and due_date and due_date < issue_date:
         issues.append("Due date is before the issue date.")
-    if BUSINESS_NAME.lower() not in f"{ex.issuer_name} {ex.recipient_name}".lower():
+    ours = [BUSINESS_NAME.lower() in (name or "").lower() for name in (ex.issuer_name, ex.recipient_name)]
+    if not any(ours):
         issues.append(f"Neither issuer nor recipient is {BUSINESS_NAME}.")
+    elif all(ours):
+        issues.append(f"Both issuer and recipient look like {BUSINESS_NAME}; can't tell who owes whom.")
     return issues
+
+
+def looks_like_invoice(ex: Extraction) -> bool:
+    """False for documents with nothing invoice-like on them (a photo, a menu): those are never saved."""
+    return bool(ex.line_items or ex.printed_total or ex.invoice_number)
 
 
 def extract_invoice(data: bytes, mime_type: str) -> Tuple[Extraction, List[str], int]:
@@ -120,7 +134,8 @@ def extract_invoice(data: bytes, mime_type: str) -> Tuple[Extraction, List[str],
 def to_invoice_doc(ex: Extraction, issues: List[str], attempts: int, source: str) -> dict:
     now = datetime.now(timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    receivable = BUSINESS_NAME.lower() in ex.issuer_name.lower()
+    receivable = BUSINESS_NAME.lower() in (ex.issuer_name or "").lower()
+    counterparty = (ex.recipient_name if receivable else ex.issuer_name) or "Unknown counterparty"
     due_date = _parse_date(ex.due_date)
     items = [li.model_dump() for li in ex.line_items]
     amount = ex.printed_total if ex.printed_total is not None else round(sum(li["qty"] * li["unit_price"] for li in items), 2)
@@ -130,7 +145,8 @@ def to_invoice_doc(ex: Extraction, issues: List[str], attempts: int, source: str
         "business_id": BUSINESS_ID,
         "invoice_number": ex.invoice_number or f"UNKNOWN-{now:%Y%m%d%H%M%S}",
         "direction": "receivable" if receivable else "payable",
-        "counterparty": ex.recipient_name if receivable else ex.issuer_name,
+        "counterparty": counterparty,
+        "counterparty_key": schema.counterparty_key(counterparty),
         "counterparty_email": ex.recipient_email if receivable else ex.issuer_email,
         "amount": amount,
         "currency": ex.currency or "GBP",
@@ -151,14 +167,20 @@ def to_invoice_doc(ex: Extraction, issues: List[str], attempts: int, source: str
 
 
 def save_invoice(doc: dict) -> Tuple[dict, bool]:
-    """Insert unless this invoice number already exists. Returns (stored doc, created)."""
+    """Insert unless the same invoice (same counterparty + number + direction) exists. Returns (stored doc, created)."""
+    from pymongo.errors import DuplicateKeyError
+
     from backend.db.client import get_db
 
     invoices = get_db()[schema.INVOICES]
-    existing = invoices.find_one({"business_id": doc["business_id"], "invoice_number": doc["invoice_number"]})
+    identity = {k: doc[k] for k in ("business_id", "direction", "counterparty_key", "invoice_number")}
+    existing = invoices.find_one(identity)
     if existing:
         return existing, False
-    doc["_id"] = invoices.insert_one(doc).inserted_id
+    try:
+        doc["_id"] = invoices.insert_one(doc).inserted_id
+    except DuplicateKeyError:  # the same invoice arrived twice at once (e.g. email + upload)
+        return invoices.find_one(identity), False
     return doc, True
 
 

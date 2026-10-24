@@ -21,3 +21,4 @@
 /README.md            @sunilramjali @JadeAlpay
 /tests/test_middle.py @sunilramjali
 /tests/test_edges.py  @JadeAlpay
+/tests/conftest.py     @sunilramjali @JadeAlpay
