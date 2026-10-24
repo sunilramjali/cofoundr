@@ -17,6 +17,16 @@ EVENTS = "events"
 FORECASTS = "forecasts"
 TASKS = "tasks"
 APPROVALS = "approvals"
+AGENT_LOG = "agent_log"  # every agent action / decision, for the "clear record" judging criterion
+
+
+class AgentLogEntry(TypedDict):
+    business_id: str
+    kind: str  # e.g. "invoice_extracted", "overdue_check", "approval_decided", "brief_served"
+    summary: str  # one human-readable line
+    actor: Literal["agent", "owner", "saint"]
+    detail: dict
+    at: datetime
 
 
 class Business(TypedDict):
@@ -62,6 +72,7 @@ class Invoice(TypedDict):
 
 class Approval(TypedDict):
     business_id: str
+    ref: int  # short number the owner uses on WhatsApp: "approve 3"
     action_type: Literal["invoice_reminder", "supplier_payment"]
     target_id: str  # str(_id) of the related invoice
     invoice_number: str

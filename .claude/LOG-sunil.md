@@ -12,6 +12,15 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — Fly.io web app live (MVP1)
+- **Did:** `bridge/main.py` + `templates/index.html` (dashboard: approval queue with Approve/Edit/Reject, upload, invoices, brief, activity), `backend/approvals.py` (single decision path for dashboard + Saint), `backend/brief.py`, `backend/db/activity.py` (agent_log), approval `ref` numbers; `Dockerfile`, `fly.toml`, `.dockerignore`
+- **Live:** https://cofoundr.fly.dev (lhr, health passing). Secrets set via `fly secrets`; access log off (token in URLs); BRIEF_TOKEN rotated before deploy
+- **Tested locally:** WhatsApp "Approve 3 please" → paid; repeat → 409; dashboard edit → reminders_sent+1; bad text → 400; no token → 403. Live: health, dashboard, brief ✓
+- **Contract change (`schema.py`):** `agent_log` collection + `AgentLogEntry`; `Approval.ref`
+- **Status:** done. Demo state: #3, #4 decided during testing (reset: `python -m data.seed --reset && python -m backend.ai.overdue`)
+- **Next:** Saint test against live `/brief` + `/approve`; dashboard upload test once Gemini 429 clears
+- **Blockers / notes for partner:** Gemini spend cap (429) blocked upload test
+
 ## Sat 24 Oct — Overdue check + reminder drafts (MVP1)
 - **Did:** `backend/ai/overdue.py`: flips open→overdue past due date; for each overdue invoice without a pending approval, Gemini drafts a reminder (one batched call; tone friendly → firm → final by `reminders_sent`), suppliers get a pay reminder; saved as `pending` approvals. Skips `needs_review` invoices. Template fallback if Gemini fails
 - **Tested:** 4 overdue → 4 pending approvals (3 Gemini reminders + 1 supplier payment); rerun adds 0 (idempotent); 429 fallback produced template drafts

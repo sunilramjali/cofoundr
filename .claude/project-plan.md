@@ -70,9 +70,11 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 - The token in the URL is OK only because all data is synthetic demo data.
 
 **Fly.io deployment:**
-- `bridge/` holds `main.py`, `requirements.txt`, `Dockerfile` and `fly.toml` (app `cofoundr`, region `lhr`, internal port 8080, health check on `/health`).
-- Secrets are set with `fly secrets set MONGODB_URI=… BRIEF_TOKEN=… GEMINI_API_KEY=…` and are never committed.
-- Deploy: `cd bridge && fly deploy`.
+- **Live: https://cofoundr.fly.dev** (app `cofoundr`, region `lhr`, internal port 8080, health check on `/health`, 1 machine kept warm).
+- `Dockerfile` and `fly.toml` live at the **repo root** (the image needs `backend/` as well as `bridge/`). Access logging is off so the `/brief` token never appears in `fly logs`.
+- Secrets are set with `fly secrets set MONGODB_URI=… BRIEF_TOKEN=… GEMINI_API_KEY=…` and are never committed. Non-secret config (`GEMINI_MODEL`, `MONGODB_DB`, `PUBLIC_URL`) is in `fly.toml`.
+- Deploy: `fly deploy` from the repo root.
+- Saint calls `GET /brief?token=…` (or header `X-Token`), and `POST /approve` with `{"text": "approve 1"}` or `{"ref": 1, "decision": "approve"}`.
 - MongoDB Atlas network access must allow Fly.io's outbound IPs (or `0.0.0.0/0` for the hackathon, demo data only).
 - **Deploy a stub first** (hard-coded `/brief` text) and test that Saint can read it **before** building real logic.
 

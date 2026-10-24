@@ -110,12 +110,18 @@ CoFoundr isn't a chatbot or a bookkeeping tool. It's an agent that does the work
 3. **Check it and tap confirm.** Nothing is saved until you confirm.
 
 ### Running it locally (for judges)
+**Live demo:** https://cofoundr.fly.dev
+
 ```bash
-git clone <repo-url> && cd encode-hackathon
-cp .env.example .env        # fill in your keys
-pip install -r requirements.txt
-uvicorn bridge.main:app --reload   # dashboard + Saint endpoints at http://localhost:8000 (TBD)
+git clone https://github.com/sunilramjali/cofoundr.git && cd cofoundr
+cp .env.example .env                  # fill in MONGODB_URI, GEMINI_API_KEY, BRIEF_TOKEN
+python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python -m data.seed         # load synthetic GAIA Coffee data into MongoDB Atlas
+.venv/bin/python -m backend.ai.overdue  # find overdue invoices, draft actions for approval
+.venv/bin/uvicorn bridge.main:app --reload   # dashboard + Saint endpoints at http://localhost:8000
 ```
+
+Deploy: `fly deploy` (from the repo root).
 
 ---
 

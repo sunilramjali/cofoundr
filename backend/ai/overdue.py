@@ -153,8 +153,20 @@ def run(dry_run: bool = False) -> List[dict]:
                                  f"(due {inv['due_date']:%d %b %Y}).",
                         "drafted_by": "rule"})
 
-    if new and not dry_run:
-        approvals.insert_many(new)
+    if not dry_run:
+        # Short numbers the owner can reply with on WhatsApp ("approve 3"); backfill any missing
+        last = approvals.find_one({"business_id": BUSINESS_ID, "ref": {"$exists": True}}, sort=[("ref", -1)])
+        next_ref = (last["ref"] if last else 0) + 1
+        for old in approvals.find({"business_id": BUSINESS_ID, "ref": {"$exists": False}}).sort("created_at", 1):
+            approvals.update_one({"_id": old["_id"]}, {"$set": {"ref": next_ref}})
+            next_ref += 1
+        for a in new:
+            a["ref"], next_ref = next_ref, next_ref + 1
+        if new:
+            approvals.insert_many(new)
+        from backend.db import activity
+        activity.log("overdue_check", f"Overdue check: {len(overdue)} overdue, {len(new)} new action(s) drafted for approval",
+                     refs=[a["ref"] for a in new])
     print(f"{len(overdue)} overdue invoice(s): {len(new)} new approval(s) "
           f"{'drafted (dry run, not saved)' if dry_run else 'saved as pending'}, {skipped} already pending.")
     return new
@@ -165,7 +177,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="print drafts, write nothing")
     args = parser.parse_args()
     for a in run(dry_run=args.dry_run):
-        print(f"\n▶ {a['title']}  [{a['action_type']}, drafted by {a['drafted_by']}]\n  why: {a['reason']}")
+        print(f"\n▶ #{a.get('ref', '?')} {a['title']}  [{a['action_type']}, drafted by {a['drafted_by']}]\n  why: {a['reason']}")
         if a["draft_subject"]:
             print(f"  to: {a['to_email']}\n  subject: {a['draft_subject']}")
         print("  " + a["draft"].replace("\n", "\n  "))
