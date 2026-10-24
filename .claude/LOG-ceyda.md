@@ -12,6 +12,13 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, 18:00 — Dashboard redesign: modular home + glass (MVP2) · Gmail intake ran live
+- **Did:** dashboard rebuilt in 3 rounds (feedback-driven): dark editorial (#24) → light **modular home** (#26) → **living backdrop + frosted glass** (#28). Now: home = 7 modules (Your yes, Sales & the week, Overdue to you, Inbox, What I did on my own, Invoices, On WhatsApp); each opens into its own page (`/approvals`, `/sales`, `/invoices[?show=overdue]`, `/inbox`, `/activity`, `/whatsapp`) with a module→page morph (cross-document View Transitions). Slow WebGL gradient backdrop (continuous across pages, reduced-motion + no-WebGL fallbacks), glass surfaces, Instrument Serif + Inter. New: `bridge/view.py` (read-only helpers incl. 28-day sales history, weather cached 30 min), `bridge/static/`, `templates/base|page|home|…`. Actions return to their page via a whitelisted `back` field (no open redirect). Pages server-rendered, work without JS (Saint can read them). Tests → 175 pass
+- **Gmail intake ran live** (via "Check inbox now"): 2 email-body invoices read by Gemini, both checked ✓ on attempt 2 (Ember & Oak GR-2026-1048 £91.00, Meadowfield MF-2087 £54.10), saved to Atlas; 6 other emails labelled only; approvals #1–#4 untouched, none new
+- **Status:** design merged into `stage`; local only until release #19 is approved
+- **Next:** design feedback round; weather/events storage + Gemini forecast reasons; Saint wiring
+- **Blockers / notes for partner:** Sunil, the live Gmail run answers the "OK a real Gmail run?" item in #22 (Atlas now has 12 invoices). Release #19 now also contains the redesign
+
 ## Sat 24 Oct, 17:30 — Gmail autonomous intake (MVP1)
 - **Did:** `backend/inputs/gmail.py`: demo inbox over IMAP (app password). Reads PDF/image attachments, and invoices written in the email body when the subject mentions an invoice (the demo inbox's 2 invoices are body-only). Gmail label `CoFoundr/processed` = handled once; Gemini-busy → retried next check; nothing marked read. Background poll every `GMAIL_POLL_SECONDS` (60 in `fly.toml`) + **Check inbox now** button (`POST /check-inbox`). 13 tests (fake IMAP + fake Gemini) → 149 pass. Read-only preview on the real inbox: 2 invoices would be read, 6 other emails only labelled. PR #21 merged into `stage`
 - **Edits in Sunil's area:** `backend/pipeline.py` (`text/plain` allowed), `tests/test_middle.py` (unsupported example → zip), `fly.toml` (`GMAIL_POLL_SECONDS`)
