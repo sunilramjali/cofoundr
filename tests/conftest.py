@@ -37,7 +37,7 @@ def no_real_services(monkeypatch):
     monkeypatch.setattr(fees, "get_client", no_gemini)
     monkeypatch.setattr(gemini, "_sleep", lambda _s: None)  # retries back off instantly in tests
     if "bridge.main" in sys.modules:  # rate limits (board meetings, fee uploads) start fresh in every test
-        monkeypatch.setattr(sys.modules["bridge.main"], "_last_run", {"board": 0.0, "fees": 0.0})
+        monkeypatch.setattr(sys.modules["bridge.main"], "_last_run", {})
 
 
 @pytest.fixture

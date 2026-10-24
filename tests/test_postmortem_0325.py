@@ -95,3 +95,11 @@ def test_a_renamed_insight_on_the_recheck_counts_as_corrected(db, monkeypatch):
     answers = [Memo(headline="h", insights=[ins("Cash stuck", owed + 9)]), Memo(headline="h", insights=[ins("Cash stuck in catering", owed)])]
     monkeypatch.setattr(board, "ask_gemini", lambda p: (answers.pop(0), None))
     assert board.write_memo(db, NOW)["insights"][0]["status"] == "corrected"
+
+
+def test_the_first_board_meeting_after_a_restart_is_never_refused(db, monkeypatch):
+    """time.monotonic() starts near 0 when a machine boots (CI runner, Fly after a deploy): "never run" must mean go."""
+    from bridge import main
+    monkeypatch.setattr(main.time, "monotonic", lambda: 5.0)  # 5 seconds after boot
+    assert main._too_soon("board", main.BOARD_EVERY) is None
+    assert main._too_soon("board", main.BOARD_EVERY) > 0  # but a second one straight after is

@@ -263,12 +263,12 @@ def check_inbox(back: str = Form("/inbox")):
 _board_running = threading.Lock()
 BOARD_EVERY = 600  # seconds between board meetings: each one reads ~170k tokens, so a public button must not be spammable
 FEES_EVERY = 60  # seconds between fee summary uploads (one Gemini read each)
-_last_run = {"board": 0.0, "fees": 0.0}
+_last_run: dict = {}  # what → time.monotonic() of its last run; absent = never (monotonic starts near 0 after a reboot)
 
 
 def _too_soon(what: str, every: int) -> Optional[int]:
     """Seconds left before `what` may run again, or None (and the clock restarts now)."""
-    left = int(_last_run[what] + every - time.monotonic())
+    left = int(_last_run[what] + every - time.monotonic()) if what in _last_run else 0
     if left > 0:
         return left
     _last_run[what] = time.monotonic()
