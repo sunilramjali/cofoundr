@@ -1,0 +1,22 @@
+{% extends "page.html" %}
+{% block title %}Activity{% endblock %}
+{% block vt %}m-activity{% endblock %}
+{% block eyebrow %}<svg class="ico"><use href="#i-spark"/></svg>Activity{% endblock %}
+{% block heading %}What I did on my own{% endblock %}
+{% block lede %}Every step I take is written down: what I read, what I checked, what I drafted, and every decision you made.{% endblock %}
+{% block body %}
+<ol class="timeline">
+  {% for e in timeline %}
+  <li class="event{% if e.actor == 'owner' %} event--owner{% endif %}{% if e.icon == 'alert' %} event--alert{% endif %}">
+    <span class="event__ico"><svg class="ico"><use href="#i-{{ e.icon }}"/></svg></span>
+    <div>
+      <div class="event__head"><span class="event__label">{{ "You · " if e.actor == "owner" else "" }}{{ e.label }}</span>
+        <time class="event__ago" datetime="{{ e.at.isoformat() if e.at else '' }}">{{ e.ago }}{% if e.at %} · {{ e.at|stamp }}{% endif %}</time></div>
+      <p class="event__text">{{ e.summary }}</p>
+    </div>
+  </li>
+  {% else %}
+  <li class="empty"><svg class="ico"><use href="#i-spark"/></svg><div><b>Nothing yet.</b>My first steps will show up here.</div></li>
+  {% endfor %}
+</ol>
+{% endblock %}

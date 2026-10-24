@@ -87,9 +87,29 @@ def test_token_guard_handles_odd_tokens(db):
 # --- dashboard
 def test_dashboard_renders_with_real_data(db, gemini_down):
     overdue.run()
-    r = web.get("/", params={"msg": "<b>hi</b>"})
-    assert r.status_code == 200 and "Waiting for your yes" in r.text and "Approve &amp; send" in r.text
-    assert "<b>hi</b>" not in r.text and "&lt;b&gt;hi&lt;/b&gt;" in r.text  # flash messages are escaped
+    home = web.get("/", params={"msg": "<b>hi</b>"})
+    assert home.status_code == 200 and "Your yes" in home.text and 'href="/approvals"' in home.text
+    assert "<b>hi</b>" not in home.text and "&lt;b&gt;hi&lt;/b&gt;" in home.text  # flash messages are escaped
+    page = web.get("/approvals")
+    assert "Waiting for your yes" in page.text and "Approve &amp; send" in page.text and "view-transition-name: m-approvals" in page.text
+
+
+@pytest.mark.parametrize("path,text", [
+    ("/sales", "Sales &amp; the week ahead"), ("/invoices", "Your invoices"), ("/invoices?show=overdue", "What&#39;s overdue"),
+    ("/inbox", "Bring me an invoice"), ("/activity", "What I did on my own"), ("/whatsapp", "Your brief, on WhatsApp"),
+])
+def test_every_module_opens_into_its_page(db, gemini_down, path, text):
+    overdue.run()
+    r = web.get(path)
+    assert r.status_code == 200 and text in r.text and 'class="back" href="/"' in r.text
+
+
+def test_actions_return_to_the_page_they_came_from_and_never_elsewhere(db):
+    r = web.post("/approvals/not-an-id/decide", data={"decision": "approve", "back": "/approvals"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/approvals?msg=")
+    for evil in ("https://evil.example.com", "//evil.example.com", "/approvals/../admin", "/nope"):
+        r = web.post("/approvals/not-an-id/decide", data={"decision": "approve", "back": evil}, follow_redirects=False)
+        assert r.headers["location"].startswith("/?msg="), evil
 
 
 def test_dashboard_decision_with_a_bad_id_does_not_crash(db):
@@ -658,7 +678,7 @@ def test_check_inbox_button(db, inbox_env, gemini_reads, monkeypatch):
     monkeypatch.setattr(gmail, "_connect", lambda: box)
     r = web.post("/check-inbox", follow_redirects=False)
     assert r.status_code == 303 and _flash(r) == "Inbox checked: 1 new email(s), 1 invoice(s) added."
-    assert "Check inbox now" in web.get("/").text
+    assert "Check inbox now" in web.get("/inbox").text
 
 
 def test_gmail_poller_checks_now_and_stops(monkeypatch):
@@ -716,7 +736,8 @@ def test_weather_outage_never_breaks_the_page(db, monkeypatch):
     monkeypatch.setattr(weather, "forecast", lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("down")))
     assert view.weather_by_date() == {}
     r = web.get("/")
-    assert r.status_code == 200 and "No forecast yet" in r.text and "Nothing needs your yes" in r.text
+    assert r.status_code == 200 and "Nothing needs your yes right now" in r.text and "Forecast appears once" in r.text
+    assert "No forecast yet" in web.get("/sales").text
 
 
 @pytest.mark.parametrize("secs,expected", [(5, "just now"), (240, "4 min ago"), (3 * 3600, "3 h ago"), (30 * 3600, "yesterday")])

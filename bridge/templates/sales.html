@@ -1,0 +1,65 @@
+{% extends "page.html" %}
+{% block title %}Sales{% endblock %}
+{% block vt %}m-sales{% endblock %}
+{% block eyebrow %}<svg class="ico"><use href="#i-till"/></svg>Sales &amp; the week{% endblock %}
+{% block heading %}Sales &amp; the week ahead{% endblock %}
+{% block lede %}What the till took recently, and what I expect it to take next, from your own history and the weather at your pitch.{% endblock %}
+{% block stats %}
+<div class="stats">
+  {% if sales.last %}<div class="stat"><b class="num">{{ sales.last.revenue|money0 }}</b><span>{{ sales.last.date.strftime("%A") }}'s takings</span></div>{% endif %}
+  <div class="stat"><b class="num">{{ sales.average|money0 }}</b><span>average trading day</span></div>
+  <div class="stat"><b class="num">{{ week.total|money0 }}</b><span>expected next {{ week.trading_days }} days</span></div>
+</div>
+{% endblock %}
+{% block body %}
+<section class="block">
+  <h2>The week ahead <small>point at a day for what usually sells</small></h2>
+  {% if week.days %}
+  <div class="week">
+    {% for d in week.days %}
+    <div class="day{% if not d.trading %} day--closed{% endif %}{% if d.is_today %} day--today{% endif %}" tabindex="0" style="--i:{{ loop.index0 }}"
+         aria-label="{{ d.date.strftime('%A') }}: {{ (d.revenue|money0 ~ ' expected') if d.trading else 'closed' }}{% if d.wx %}, {{ d.wx.summary }}{% endif %}">
+      {% if d.is_today %}<span class="day__badge">Today</span>{% endif %}
+      <span class="day__name">{{ d.date.strftime("%a") }}</span>
+      <span class="day__date">{{ d.date.day }} {{ d.date.strftime("%b") }}</span>
+      <span class="day__wx" title="{{ d.wx.summary if d.wx else 'No weather data' }}"><svg class="ico"><use href="#i-{{ d.wx_icon }}"/></svg></span>
+      <span class="day__temp">{% if d.wx and d.wx.temp_max_c is not none %}<b>{{ d.wx.temp_max_c|round|int }}°</b> {{ d.wx.temp_min_c|round|int }}°{% else %}&nbsp;{% endif %}</span>
+      <div class="bar" style="--h:{{ d.bar }}%;--lo:{{ d.low_pct }}%;--hi:{{ d.high_pct }}%">
+        {% if d.trading %}<span class="bar__range" aria-hidden="true"></span>{% endif %}<span class="bar__fill"></span>
+      </div>
+      <span class="day__value num">{{ d.revenue|money0 if d.trading else "Closed" }}</span>
+      {% if d.trading %}
+      <div class="tip" role="tooltip">
+        <b>{{ d.date.strftime("%A") }} · {{ d.revenue|money0 }}</b>
+        <span class="muted">Range {{ d.low|money0 }}–{{ d.high|money0 }} · ~{{ d.orders|round|int }} orders</span>
+        {% if d.wx %}<br><span class="muted">{{ d.wx.summary }}{% if d.wx.precip_chance_pct is not none %}, {{ d.wx.precip_chance_pct|round|int }}% chance of rain{% endif %}</span>{% endif %}
+        {% if d.products %}<ul>{% for p in d.products %}<li><span>{{ p.name }}</span><span class="num">~{{ p.expected_qty|round|int }}</span></li>{% endfor %}</ul>{% endif %}
+        {% if d.adjustment %}<p class="muted" style="margin:6px 0 0">{{ d.adjustment.reason }}</p>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>Baseline from the same weekday over recent weeks; the striped band is the usual range. Weather from Open-Meteo. Next: Gemini adjusts each day for the weather and nearby events, and says why.</span></p>
+  {% else %}
+  <div class="empty"><svg class="ico"><use href="#i-chart"/></svg><div><b>No forecast yet.</b>Once the till has a few weeks of sales, I'll plan the week here.</div></div>
+  {% endif %}
+</section>
+
+<section class="block">
+  <h2>The last four weeks <small>{{ sales.total|money0 }} over {{ sales.trading_days }} trading days</small></h2>
+  {% if sales.trading_days %}
+  <div class="hist" role="img" aria-label="Daily takings for the last 28 days">
+    {% for d in sales.days %}
+    <div class="hist__col{% if not d.orders %} hist__col--off{% endif %}" style="--i:{{ loop.index0 }}">
+      <span class="hist__bar" style="--h:{{ d.bar }}%"></span>
+      <div class="tip"><b>{{ d.date.strftime("%a %-d %b") }}</b>{% if d.orders %}<span class="muted">{{ d.revenue|money0 }} · {{ d.orders }} orders</span>{% else %}<span class="muted">Not trading</span>{% endif %}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="hist__axis"><span>{{ sales.days[0].date.strftime("%-d %b") }}</span><span>yesterday</span></div>
+  {% else %}
+  <div class="empty"><svg class="ico"><use href="#i-till"/></svg><div><b>No till data yet.</b>Sales show up here once the till syncs.</div></div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+{%- set wk = week -%}
+{%- set overdue_n = invoices|selectattr("status", "equalto", "overdue")|list|length -%}
+{%- set open_n = invoices|selectattr("status", "equalto", "open")|list|length -%}
+{%- set paid_n = invoices|selectattr("status", "equalto", "paid")|list|length -%}
+<section class="intro">
+  <div>
+    <h1><em>{{ greeting }}.</em></h1>
+    <p>{{ headline }}</p>
+  </div>
+  <div class="intro__date">{{ now.strftime("%A") }} {{ now.day }} {{ now.strftime("%B") }}<br>Broadway Market</div>
+</section>
+
+<div class="bento">
+  <!-- Your yes -->
+  <a class="mod mod--2x2" href="/approvals" style="view-transition-name: m-approvals; --i:0">
+    <div class="mod__head"><span class="mod__label"><svg class="ico"><use href="#i-yes"/></svg>Your yes</span><span class="mod__open"><svg class="ico"><use href="#i-open"/></svg></span></div>
+    <div class="mod__big num"><span data-count="{{ n }}">{{ n }}</span><small>{{ "waiting for you" if n else "all clear" }}</small></div>
+    {% if pending %}
+    <ul class="mini-list">
+      {% for a in pending[:4] %}
+      <li><span class="ref">{{ a.ref }}</span>
+        <span style="min-width:0"><b>{{ a.counterparty or a.title }}</b>
+          <span class="sub">{{ "Chase" if a.action_type == "invoice_reminder" else "Pay" }}{% if a.days_overdue is not none %} · {{ a.days_overdue }} days overdue{% endif %}{% if a.escalation_level is not none %} · {{ tones[a.escalation_level]|lower }}{% endif %}</span></span>
+        <span class="amt num">{{ a.amount|money0 }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}<p class="mod__sub">Nothing needs your yes right now. I'll ask the moment something does.</p>{% endif %}
+    <div class="mod__foot"><svg class="ico"><use href="#i-check"/></svg>Nothing involving money happens until you say yes</div>
+  </a>
+
+  <!-- Sales -->
+  <a class="mod mod--2x1" href="/sales" style="view-transition-name: m-sales; --i:1">
+    <div class="mod__head"><span class="mod__label"><svg class="ico"><use href="#i-till"/></svg>Sales &amp; the week</span><span class="mod__open"><svg class="ico"><use href="#i-open"/></svg></span></div>
+    <div class="sales-mod">
+      <div>
+        {% if sales.last %}
+        <div class="mod__big num" style="font-size:clamp(40px,3.6vw,54px)">{{ sales.last.revenue|money0 }}</div>
+        <div class="mod__sub">{{ sales.last.date.strftime("%A") }}'s takings · {{ sales.last.orders }} orders</div>
+        {% else %}<div class="mod__sub">No till data yet.</div>{% endif %}
+      </div>
+      {% if wk.days %}
+      <div class="spark" aria-label="Forecast for the next 7 days">
+        {% for d in wk.days %}
+        <div class="spark__col{% if d.is_today %} spark__col--today{% endif %}{% if not d.trading %} spark__col--closed{% endif %}" style="--i:{{ loop.index0 }}">
+          <span class="spark__bar" style="--h:{{ [d.bar, 4]|max }}%"></span><span class="spark__day">{{ d.date.strftime("%a")[:1] }}</span></div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    <div class="mod__foot">{% if wk.days %}{{ wk.total|money0 }} expected over the next {{ wk.trading_days }} trading days{% if wk.next and wk.next.wx %} · {{ wk.next.wx.summary|lower }} {{ "today" if wk.next.is_today else wk.next.date.strftime("%A") }}{% endif %}{% else %}Forecast appears once there's enough history{% endif %}</div>
+  </a>
+
+  <!-- Cash -->
+  <a class="mod" href="/invoices?show=overdue" style="view-transition-name: m-cash; --i:2">
+    <div class="mod__head"><span class="mod__label"><svg class="ico"><use href="#i-pound"/></svg>Overdue to you</span><span class="mod__open"><svg class="ico"><use href="#i-open"/></svg></span></div>
+    <div class="mod__big num"><span data-count="{{ brief.overdue_receivable_total|round(0) }}" data-prefix="£">{{ brief.overdue_receivable_total|money0 }}</span></div>
+    <div class="mod__sub">You owe {{ brief.overdue_payable_total|money0 }} overdue</div>
+    <div class="mod__foot">{{ overdue_n }} overdue invoice{{ "s" if overdue_n != 1 }}</div>
+  </a>
+
+  <!-- Inbox -->
+  <a class="mod" href="/inbox" style="view-transition-name: m-inbox; --i:3">
+    <div class="mod__head"><span class="mod__label"><svg class="ico"><use href="#i-mail"/></svg>Inbox</span><span class="mod__open"><svg class="ico"><use href="#i-open"/></svg></span></div>
+    <div class="mod__big" style="font-size:clamp(34px,3vw,44px)">{{ "Watching" if inbox.configured and inbox.polling else ("Connected" if inbox.configured else "Off") }}</div>
+    {% if inbox.address %}<div class="addr">{{ inbox.address }}</div>{% endif %}
+    <div class="mod__foot"><i class="dot {{ 'dot--live' if inbox.configured and inbox.polling else '' }}"></i>{% if inbox.last %}Checked {{ inbox.last.at|ago }}{% elif inbox.configured %}Drop or email invoices{% else %}Not connected yet{% endif %}</div>
+  </a>
+
+  <!-- Activity -->
+  <a class="mod mod--2x1" href="/activity" style="view-transition-name: m-activity; --i:4">
+    <div class="mod__head"><span class="mod__label"><svg class="ico"><use href="#i-spark"/></svg>What I did on my own</span><span class="mod__open"><svg class="ico"><use href="#i-open"/></svg></span></div>
+    <ul class="events-mini">
+      {% for e in timeline[:3] %}
+      <li><span class="eico"><svg class="ico"><use href="#i-{{ e.icon }}"/></svg></span><span style="min-width:0"><b>{{ e.label }}</b><p>{{ e.summary }}</p></span><time>{{ e.ago }}</time></li>
+      {% else %}<li><span class="mod__sub">Nothing yet. My first steps will show up here.</span></li>{% endfor %}
+    </ul>
+  </a>
+
+  <!-- Invoices -->
+  <a class="mod" href="/invoices" style="view-transition-name: m-invoices; --i:5">
+    <div class="mod__head"><span class="mod__label"><svg class="ico"><use href="#i-doc"/></svg>Invoices</span><span class="mod__open"><svg class="ico"><use href="#i-open"/></svg></span></div>
+    <div class="mod__big num">{{ invoices|length }}</div>
+    {% if invoices %}
+    <div class="seg" aria-hidden="true">{% if overdue_n %}<i class="c-rust" style="--w:{{ overdue_n }}"></i>{% endif %}{% if open_n %}<i class="c-sky" style="--w:{{ open_n }}"></i>{% endif %}{% if paid_n %}<i class="c-sage" style="--w:{{ paid_n }}"></i>{% endif %}</div>
+    <div class="legend"><span><i class="c-rust"></i>{{ overdue_n }} overdue</span><span><i class="c-sky"></i>{{ open_n }} open</span><span><i class="c-sage"></i>{{ paid_n }} paid</span></div>
+    {% endif %}
+    {% if review %}<div class="mod__foot" style="color:var(--amber)"><svg class="ico"><use href="#i-alert"/></svg>{{ review|length }} need{{ "s" if review|length == 1 }} a second look</div>{% endif %}
+  </a>
+
+  <!-- WhatsApp -->
+  <a class="mod" href="/whatsapp" style="view-transition-name: m-whatsapp; --i:6">
+    <div class="mod__head"><span class="mod__label"><svg class="ico"><use href="#i-chat"/></svg>On WhatsApp</span><span class="mod__open"><svg class="ico"><use href="#i-open"/></svg></span></div>
+    <div class="wa-mini"><p>{{ brief.text }}</p></div>
+  </a>
+</div>
+{% endblock %}

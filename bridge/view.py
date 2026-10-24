@@ -1,7 +1,7 @@
 """Read-only helpers that turn MongoDB documents into what the dashboard shows. No writes, never raises on bad data."""
 import threading
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time as dtime, timezone
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
@@ -34,6 +34,11 @@ TONES = {0: "Friendly nudge", 1: "Firm reminder", 2: "Final notice"}
 
 def london_now() -> datetime:
     return datetime.now(LONDON)
+
+
+def days_ago(now: datetime, days: int) -> datetime:
+    """London midnight `days` days before `now`'s date (for "since" queries)."""
+    return datetime.combine(date.fromordinal(now.date().toordinal() - days), dtime.min, tzinfo=LONDON)
 
 
 def greeting(now: datetime) -> str:
@@ -166,3 +171,27 @@ def due_label(invoice: dict, today: date) -> str:
     if days <= 7:
         return f"Due in {days} day{'s' if days != 1 else ''}"
     return f"Due {due.astimezone(LONDON):%d %b}"
+
+
+def sales_history(orders: List[dict], today: date, days: int = 28) -> dict:
+    """Till takings per London day for the last `days` days (today excluded: it's still trading)."""
+    by_day: Dict[date, dict] = {}
+    for o in orders:
+        at = o.get("placed_at")
+        if not isinstance(at, datetime):
+            continue
+        day = (at if at.tzinfo else at.replace(tzinfo=timezone.utc)).astimezone(LONDON).date()
+        if 0 < (today - day).days <= days:
+            d = by_day.setdefault(day, {"revenue": 0.0, "orders": 0})
+            d["revenue"] += o.get("total") or 0
+            d["orders"] += 1
+    peak = max([d["revenue"] for d in by_day.values()] + [1])
+    out = []
+    for i in range(days, 0, -1):
+        day = date.fromordinal(today.toordinal() - i)
+        d = by_day.get(day, {"revenue": 0.0, "orders": 0})
+        out.append({"date": day, "revenue": round(d["revenue"], 2), "orders": d["orders"], "bar": round(100 * d["revenue"] / peak)})
+    trading = [d for d in out if d["orders"]]
+    return {"days": out, "total": round(sum(d["revenue"] for d in trading), 2), "trading_days": len(trading),
+            "last": trading[-1] if trading else None,
+            "average": round(sum(d["revenue"] for d in trading) / len(trading), 2) if trading else 0}
