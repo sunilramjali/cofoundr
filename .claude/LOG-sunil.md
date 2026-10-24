@@ -12,6 +12,11 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — CI/CD (MVP1)
+- **Did:** `tests/test_core.py` (5 fast tests: verification checks, direction, /health, token guard), `.github/workflows/ci.yml` (PRs to stage/main), `.github/workflows/deploy.yml` (push to main → fly deploy + health check); `checks` is now a required status check on stage + main
+- **Status:** CI live; CD waiting on GitHub secret `FLY_API_TOKEN` (Sunil to set; Claude was blocked from writing secrets)
+- **Next:** merge via PR; after PR #3 merges, main deploys automatically
+
 ## Sat 24 Oct — Jade joined: formal PR flow (MVP1)
 - **Did:** docs updated for 2 people (CLAUDE.md branch table + 6-step PR flow, plan team line, MVP owners); CODEOWNERS adds @JadeAlpay on shared docs; hook now blocks Claude pushing to `main` **and** `stage`; GitHub: `stage` ruleset (PR required), `main` needs 1 approval
 - **Status:** done
