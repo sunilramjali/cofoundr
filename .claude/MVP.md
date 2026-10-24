@@ -11,14 +11,15 @@ Each stage must be **demo-able end to end** before starting the next. If time ru
 **Target:** Sat 24 Oct, 18:00
 
 ### Goal
-One invoice goes all the way through CoFoundr: **photo in → Gemini reads and checks it → stored in MongoDB → flagged overdue → reminder drafted → owner approves → status updated**, visible in the dashboard. Saint can read a `/brief` from the bridge on Fly.io.
+One invoice goes all the way through CoFoundr **with no human step until the approval**: **invoice emailed in → CoFoundr picks it up from Gmail on its own → Gemini reads and checks it → stored in MongoDB → flagged overdue → reminder drafted → owner approves → status updated**, visible in the dashboard. Dashboard upload stays as a **manual fallback**. Saint can read a `/brief` from the bridge on Fly.io.
 
-This is the smallest slice that proves the core story: *an agent that does a real job and stops to ask before touching money.*
+This is the smallest slice that proves the core story: *an agent that does a real job on its own and stops to ask before touching money.*
 
 ### Must have (done criteria)
 - [x] **Data:** MongoDB Atlas cluster live; `businesses`, `invoices`, `approvals` collections seeded with synthetic GAIA Coffee data (incl. 2–3 overdue invoices), labelled synthetic
 - [ ] **Contract:** `backend/db/schema.py` shapes for `Business`, `Invoice`, `Approval` agreed and used by all code
-- [x] **Extraction:** upload an invoice photo/PDF → `gemini-4-argon` returns supplier, amount, due date, line items as JSON
+- [ ] **Autonomous intake (Gmail):** a dedicated demo Gmail inbox is checked automatically (about every minute, running on Fly.io). Each new email's invoice attachments (PDF/image) are extracted, verified and saved, then the overdue check runs, with no clicks. Each email is processed once (by Message-ID) and every step is logged in `agent_log`. A "Check inbox now" button exists for the live demo. Dashboard upload remains as the fallback.
+- [x] **Extraction:** an invoice photo/PDF (from email or upload) → `gemini-4-argon` returns supplier, amount, due date, line items as JSON
 - [x] **Verification loop:** line items sum to total and due date is valid; otherwise `extraction_confidence` is low and the invoice is flagged for owner review (not guessed)
 - [x] **Overdue + draft:** overdue invoices get a drafted reminder saved as a `pending` approval
 - [x] **Approval:** dashboard shows the queue with Approve / Edit / Reject; decision updates MongoDB (`status`, `decided_via`, `decided_at`)
@@ -29,7 +30,7 @@ This is the smallest slice that proves the core story: *an agent that does a rea
 Forecasting, prioritisation, events/weather, WhatsApp photo input, `/approve` via WhatsApp, Atlas Search/Vector Search, Treg, heatmap, waste, partnerships, voice orders.
 
 ### MVP1 demo (≤ 60 s)
-1. Upload an invoice photo in the dashboard → extracted fields appear (with confidence).
+1. Email an invoice to the CoFoundr inbox → within a minute it appears in the dashboard, read and checked, with nobody touching it (agent activity shows each step). Fallback: upload it in the dashboard.
 2. It's overdue → a drafted reminder appears in the approval queue.
 3. Click Approve → status changes in MongoDB and the dashboard.
 4. Show Saint reading `/brief` with the overdue invoice listed.
@@ -41,9 +42,12 @@ Forecasting, prioritisation, events/weather, WhatsApp photo input, `/approve` vi
 | Gemini extraction + verification loop (needs Argon API key) | Sunil |
 | Overdue check + reminder draft | Sunil |
 | Dashboard pages on Fly.io: upload + approval queue | Sunil |
-| `/brief` on Fly.io + Saint test | Sunil |
+| `/brief` on Fly.io | Sunil |
+| **Gmail autonomous intake** (`backend/`) | **Sunil** (proposed) |
+| **Saint test** (WhatsApp → `/brief`, `/approve`) | **Jade** (proposed) |
+| **Upload retest + demo reset + review PR #3** | **Jade** (proposed) |
 
-Built by Sunil solo; Jade (Ceyda) has now joined: assign remaining MVP1 items (Saint test, upload retest) and MVP2 work between you.
+Items above the bold rows were built by Sunil solo. The bold rows are the proposed split now that Jade has joined; confirm or swap.
 
 ---
 

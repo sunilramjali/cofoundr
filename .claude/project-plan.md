@@ -84,7 +84,8 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 
 **Must ship**
 1. **Invoice chaser** — ingest invoices, flag overdue, draft escalating reminders (approval-gated).
-   Inputs, in build order: WhatsApp photo → PDF upload → email (forward to Saint's inbox) → manual form. Gemini extracts supplier, amount, due date and line items to JSON.
+   Inputs, in build order: **Gmail inbox, autonomous (MVP1)** → dashboard upload, manual fallback (built) → WhatsApp photo via Saint (MVP2). Gemini extracts supplier, amount, due date and line items to JSON.
+   **Gmail intake design:** a dedicated demo Gmail account (not anyone's personal inbox) with 2-step verification and an **app password**; the Fly.io app polls it over IMAP about every minute, processes new emails with PDF/image attachments once (tracked by Message-ID), labels them processed, and logs each step in `agent_log`. Secrets: `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` (Fly secrets + `.env`).
 2. **Revenue forecaster** — Python baseline (statsmodels/Prophet) on POS history; Gemini adjusts for events + weather and explains why (e.g. "+28% Sat: market nearby + sunny").
 3. **Approval flow** — Approve / Edit / Reject queue for all finance actions. Never cut this — it's the trust story.
 4. **Auto-prioritise & schedule** — Gemini ranks open tasks via function calling over MongoDB, with a one-line reason each; produces a weekly plan.
