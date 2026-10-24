@@ -10,3 +10,26 @@ result = ingest_invoice(data, mime_type, source="email", origin="email from bill
 # result.ok, result.message (show/log it), result.invoice, result.needs_review, result.drafted, result.error
 ```
 Don't call Gemini, save to MongoDB or run the overdue check yourself; the pipeline does it.
+
+## Weather + events (for the forecast)
+Both return plain dicts and never write MongoDB; storing them is the middle's job (shapes to agree in `schema.py`).
+Failures raise `fetch.FetchError` with a plain-English message (API keys never appear in it).
+
+| File | Source | Call | One dict per |
+|---|---|---|---|
+| `pitches.py` | where the truck trades (**assumption: Broadway Market only**, to confirm) | `PITCHES` | pitch |
+| `weather.py` | Open-Meteo, no key | `forecast(pitch, days=7)`, `forecast_all()` | pitch per London day |
+| `events.py` | Ticketmaster Discovery, `TICKETMASTER_API_KEY` | `nearby(pitch, days=7, radius_km=3)`, `nearby_all()` | event (cancelled ones left out) |
+
+```python
+# weather day
+{"pitch_id": "broadway-market", "date": "2026-10-25", "summary": "Light drizzle", "weather_code": 51,
+ "temp_max_c": 13.5, "temp_min_c": 9.4, "precip_mm": 1.2, "precip_chance_pct": 97, "wind_max_kmh": 18.0,
+ "source": "open-meteo", "fetched_at": "<ISO UTC>"}           # any value can be None if Open-Meteo has no data
+# event
+{"source": "ticketmaster", "source_id": "...", "name": "...", "category": "Music", "genre": "Rock",
+ "date": "2026-10-25", "starts_at": "2026-10-25T18:30:00Z" or None (time TBA), "status": "onsale",
+ "venue": "...", "lat": 51.545, "lon": -0.055, "distance_km": 1.1, "pitch_id": "broadway-market",
+ "url": "...", "fetched_at": "<ISO UTC>"}
+```
+Try them: `python -m backend.inputs.weather`, `python -m backend.inputs.events`.
