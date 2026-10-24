@@ -20,7 +20,7 @@ Framed for small businesses generally. Demo business: **GAIA Coffee** (East Lond
 | Layer | Tool | Role |
 |---|---|---|
 | Database | MongoDB Atlas | Single source of truth: invoices, sales, products, events, tasks, approvals |
-| AI | Gemini | Multimodal extraction, reasoning, prioritisation, forecast adjustment, drafting, **and the owner's conversation** (read-only assistant on WhatsApp and in the dashboard chat bar) |
+| AI | Gemini | Multimodal extraction (invoices, card fee summaries), reasoning, prioritisation, forecast adjustment + lessons from its own grades, the 1M-context board meeting, drafting, **and the owner's conversation** (read-only assistant on WhatsApp and in the dashboard chat bar) |
 | WhatsApp channel | Twilio (WhatsApp sandbox) | Owner talks to CoFoundr on WhatsApp: messages and invoice photos in (signed webhook), replies and unprompted updates out (REST API) |
 | Web app | FastAPI on Fly.io | **One app.** Server-rendered HTML dashboard (owner's control panel + approval queue), the Twilio webhook and the background workers (Gmail poll, WhatsApp push). The only thing that talks to Gemini, Twilio and MongoDB. (Streamlit dropped.) |
 
@@ -86,7 +86,7 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 - Deploy: `fly deploy` from the repo root.
 - MongoDB Atlas network access must allow Fly.io's outbound IPs (or `0.0.0.0/0` for the hackathon, demo data only).
 
-**Twilio setup:** WhatsApp sandbox (Console → Messaging → Try it out → Send a WhatsApp message). Sender `TWILIO_WHATSAPP_FROM=+14155238886`; the owner's phone joins with `join <code>`. Sandbox "When a message comes in" → `https://cofoundr.fly.dev/whatsapp/twilio` (POST). `PUBLIC_URL` must match that URL or signatures won't verify. Local dev (`COFOUNDR_SANDBOX=1`) never sends WhatsApp messages.
+**Twilio setup:** WhatsApp sandbox (Console → Messaging → Try it out → Send a WhatsApp message). Sender `TWILIO_WHATSAPP_FROM=+447723317807` (our account's sandbox number, shown on that page; not the US `+14155238886` some accounts get); the owner's phone joins with `join twilio-trial`. Sandbox "When a message comes in" → `https://cofoundr.fly.dev/whatsapp/twilio` (POST). `PUBLIC_URL` must match that URL or signatures won't verify. Local dev (`COFOUNDR_SANDBOX=1`) never sends WhatsApp messages.
 
 ## 4. Modules (priority order)
 
@@ -97,6 +97,12 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 2. **Revenue forecaster** — Python baseline (statsmodels/Prophet) on POS history; Gemini adjusts for events + weather and explains why (e.g. "+28% Sat: market nearby + sunny").
 3. **Approval flow** — Approve / Edit / Reject queue for all finance actions. Never cut this — it's the trust story.
 4. **Auto-prioritise & schedule** — Gemini ranks open tasks via function calling over MongoDB, with a one-line reason each; produces a weekly plan.
+
+**Built beyond the original plan (Sat night, Sunil, live since release #43)**
+- **Card payments in:** EVO CSV upload on `/sales` (`POST /import/evo`; EVO has no merchant API), Square + SumUp read-only connectors (`backend/inputs/evo|square|sumup.py` → `backend/payments.py record_payments()`). Card data stripped, salted-hash ids, idempotent. The forecast uses card takings when there are no till orders.
+- **Self-grading forecast** (`backend/ai/review.py`): stored forecasts graded against actual takings; Gemini writes ≤3 checked lessons that go into the next forecast; Gemini's adjustment cap is **earned** (±10/20/35% by how often its adjustments helped). `--backtest N` replays past days with observed weather. Collections `forecast_reviews`, `lessons`.
+- **Board meeting** (`backend/ai/board.py`, page `/board`): Gemini reads every till line, invoice, approval, forecast, weather, transport and agent action in **one ~169k-token call** (Argon's 1M context); every number in the memo is a typed claim that code recomputes from MongoDB, wrong ones are corrected or withdrawn. Rate-limited (one per 10 min). Collection `board_memos`.
+- **Card fee audit** (`backend/ai/fees.py`, `POST /import/fees`): Gemini reads the card provider's fee summary image, the page's own worked example checks the reading, then code checks every card payment; overcharges become a `fee_overcharge` task. Collection `fee_audits`.
 
 **Nice to have**
 5. **Events heatmap** — events API → map of demand spikes by location/date.
@@ -111,16 +117,22 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 - Forecast adjustment + plain-English explanation
 - Task prioritisation with visible reasoning in the UI
 - Waste analysis + drafting reminders/outreach
+- Board meeting: the whole business in one 1M-context call, every claimed number recomputed by code
+- Self-grading: forecasts graded against actual takings, lessons checked against the measured errors
+- Fee summary image → rates, checked against the summary's own worked example
 
 ## 6. Data
-- **POS:** synthetic GAIA sales, ~6 months (product, qty, price, timestamp, location)
+- **POS:** synthetic GAIA till export (Sep–Nov 2026, 3,969 orders) via `backend/sales.py`, loaded up to today
+- **Card payments:** synthetic EVO CSV (`data/samples/evo_transactions_synthetic.csv`, with planted fee overcharges) + synthetic fee summary (`data/samples/card_fees_synthetic.png`)
+- **Real GAIA data:** never in the repo, never in the demo DB (`cofoundr-db` refuses it). Only in a separate DB (`MONGODB_DB=gaia-real` + `PAYMENT_ID_SALT`); no real figures in logs, tests or docs. A business uses real data only, never mixed with synthetic
 - **Invoices:** synthetic set incl. a few overdue + sample photos/PDFs for the demo
 - **Events:** via API (e.g. Ticketmaster Discovery)
 - **Weather:** Open-Meteo (free, no key)
+- **Transport:** TfL disruptions near the pitches during trading hours (`transport`); TfL keeps no history, so ours builds up from now
 - **Foot traffic:** parked for now (option later: TfL station entry/exit open data)
 
 ### MongoDB collections
-`businesses`, `products`, `sales`, `invoices`, `events`, `forecasts`, `tasks`, `approvals`
+`businesses`, `products`, `orders`, `sales` (time-series), `stock_counts`, `payments`, `invoices`, `events`, `weather`, `transport`, `forecasts`, `forecast_reviews`, `lessons`, `tasks`, `approvals`, `fee_audits`, `board_memos`, `agent_log`, `cursors`, `counters` (names live in `backend/db/schema.py`)
 
 ## 7. Timeline
 
@@ -139,10 +151,13 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 2. Owner asks on WhatsApp "what's waiting?" → Gemini answers from the data.
 3. Dashboard shows forecast with Gemini's reasoning + prioritised tasks.
 4. A reminder is drafted → the owner's phone buzzes unprompted → owner replies "approve 4" → status updates live in the dashboard.
+5. `/board`: the board memo, every number checked (one struck through and corrected); `/sales`: upload the fee summary → the audit finds the planted overcharges → a task appears in priorities.
+
+**Sunday-morning demo prep** (writes the demo DB, tell Jade first): `python -m backend.ai.review --backtest 21` → `python -m backend.ai.forecast` → `python -m backend.ai.board` (~70 s) → on `/sales` upload the synthetic EVO CSV, then the fee summary PNG → `python -m backend.ai.prioritise`.
 
 ## 9. Open questions
 - [x] WhatsApp channel: **Twilio WhatsApp sandbox** (Saint dropped Sat 22:45: it couldn't POST to our app)
-- [ ] Twilio live: owner's phone joined the sandbox, sandbox webhook set, Fly secrets set, released to `main`
+- [ ] Twilio live: owner's phone joined the sandbox, sandbox webhook set, Fly secrets set (`TWILIO_*`, `OWNER_WHATSAPP` still missing). Code released to `main` with #43 (deployed Sat 24 Oct)
 - [ ] Confirm GAIA owner is OK with the name being used
 - [x] Front end: server-rendered dashboard in the FastAPI app on Fly.io (Streamlit dropped)
 - [x] Gemini 4 Argon API key: working paid-tier key (`AIza…`) since Sat 15:00; lab key (`gcplab.me`) hit its spend cap, a new free-tier key had 0 Argon quota
