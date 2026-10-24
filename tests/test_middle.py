@@ -1,8 +1,7 @@
-"""Fast checks that need no MongoDB or Gemini (run in CI on every PR)."""
-from fastapi.testclient import TestClient
+"""Middle (owner: Sunil): extraction checks, pipeline, overdue rules. Fast, no MongoDB/Gemini needed."""
+from datetime import datetime, timedelta, timezone
 
 from backend.ai.extract import ExtractedLineItem as L, Extraction, check, to_invoice_doc
-from bridge.main import app
 
 BASE = dict(issuer_name="Bow Lane Roasters", recipient_name="GAIA Coffee", invoice_number="BLR-1",
             issue_date="2026-10-20", due_date="2026-10-30",
@@ -34,32 +33,7 @@ def test_direction_from_issuer():
     assert receivable["direction"] == "receivable" and receivable["counterparty"] == "Hackney Hub"
 
 
-def test_health_and_token_guard():
-    client = TestClient(app)
-    assert client.get("/health").json() == {"ok": True}
-    assert client.get("/brief").status_code == 403
-    assert client.post("/approve", json={"text": "approve 1"}).status_code == 403
-
-
-def test_update_messages_are_whatsapp_ready():
-    from datetime import datetime, timezone
-    from backend.outputs.updates import approval_message, invoice_message
-    ok = invoice_message({"invoice_number": "EDC-1", "counterparty": "Eastside Dairy Co", "amount": 176.7,
-                          "due_date": datetime(2026, 11, 7, tzinfo=timezone.utc), "needs_review": False})
-    assert "EDC-1" in ok and "£176.70" in ok and "07 Nov" in ok and "✓" in ok
-    bad = invoice_message({"invoice_number": "BLR-1", "counterparty": "Bow Lane", "amount": 263.0, "needs_review": True,
-                           "verification_issues": ["Line items add up to 237.00 but the printed total is 263.00."]})
-    assert bad.startswith("⚠️") and "237.00" in bad
-    msg = approval_message({"ref": 4, "title": "Chase Hackney Hub Coworking: £450.00, 3 days overdue"})
-    assert 'approve 4' in msg and 'reject 4' in msg
-
-
-def test_updates_requires_token():
-    assert TestClient(app).get("/updates").status_code == 403
-
-
 def test_reminder_gap_prevents_same_day_nagging():
-    from datetime import datetime, timedelta, timezone
     from backend.ai.overdue import due_for_action
     today = datetime(2026, 10, 24, tzinfo=timezone.utc)
     assert due_for_action({"direction": "receivable"}, today)  # never reminded

@@ -50,6 +50,18 @@ jade  ──┘
 - The hook also **blocks Claude from pushing to `main` or `stage`** (🚫🔴 BLOCKED: direct push). Claude pushes only to the person's own branch and opens PRs.
 - Don't create `sunil/...` or `stage/...` sub-branches: git can't have both `sunil` and `sunil/x`.
 
+### Avoiding conflicts (working in parallel)
+1. **Start synced.** A SessionStart hook (`hooks/sync-check.sh`) warns if you're on `main`/`stage`, behind `stage`, or have uncommitted changes. If it says you're behind: `git pull origin stage` before editing anything.
+2. **Stay in your area.** Claude asks before editing the partner's folders (🟠 PARTNER'S AREA). Need a change there? Tell them, or ask them to make it.
+3. **Small PRs, merged fast.** One feature per PR into `stage`; merge as soon as CI is green, then tell your partner to pull. Long-lived branches are what conflict.
+4. **Pull again before opening a PR:** `git pull origin stage`, fix anything locally, re-run tests, then push.
+5. **Shared files, by design:**
+   - `requirements.txt`, `.env.example`: append-only; `.gitattributes` `merge=union` keeps both sides when you both add lines (local merges/pulls).
+   - Tests: `tests/test_middle.py` (Sunil) and `tests/test_edges.py` (Jade). Never a shared test file.
+   - `schema.py`: Sunil edits; Jade asks for new shapes.
+   - Shared docs: tick only **your own** checkboxes; keep edits small; commit them on their own.
+6. **If a conflict happens anyway:** don't force-push. Resolve on your branch (`git pull origin stage`, fix the marked sections, run tests, commit), and ask your partner when it's their code.
+
 ### CI/CD
 - **CI** (`.github/workflows/ci.yml`): every PR into `stage`/`main` installs deps, compiles, runs `pytest tests` (fast, no MongoDB/Gemini needed). The `checks` job is a **required status check**: a red PR can't merge.
 - **CD** (`.github/workflows/deploy.yml`): every push to `main` (= every approved release PR) runs `fly deploy`, then checks `/health`. **Live app = `main`.** Don't `fly deploy` by hand from feature branches, except to hotfix during the demo.
@@ -85,7 +97,7 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 | `data/` | Synthetic seed data, sample invoices | **Sunil** |
 | `backend/outputs/` | Owner-facing output: `brief.py` (WhatsApp brief), `updates.py` (`/updates` messages), `email.py` (sending after approval) | **Jade** |
 | `bridge/` | **The Fly.io web app**: routes in `main.py`, dashboard UI in `templates/` | **Jade** |
-| `tests/` | Fast tests, no network | Whoever changes the code |
+| `tests/test_middle.py` / `tests/test_edges.py` | Fast tests, no network: middle / edges | **Sunil** / **Jade** |
 | `Dockerfile`, `fly.toml`, `.github/workflows/` | Deploy + CI/CD | **Sunil** |
 | `.claude/` | Shared docs (protected by the hook) | Both |
 
