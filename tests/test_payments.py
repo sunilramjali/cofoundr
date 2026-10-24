@@ -321,3 +321,15 @@ def test_synthetic_data_hashes_the_same_whatever_the_local_salt(db, monkeypatch)
     monkeypatch.setenv("PAYMENT_ID_SALT", "sunils-real-salt")
     again = payments.record_payments(sample, origin="laptop with a salt", synthetic=True, now=NOW)
     assert again.duplicates == 3 and again.new == 0
+
+
+def test_forecast_never_mixes_real_and_synthetic_history(db, salt):
+    sales.record_orders(PosClient(now="2026-12-01").iter_sales(until="2026-10-24"), origin="test", now=NOW)  # synthetic till
+    synthetic_only = forecast.run(now=NOW, use_gemini=False)
+    assert synthetic_only[0]["synthetic"] is True and synthetic_only[0]["expected_revenue"] > 0
+    real = evo.parse(make_evo_sample.OUT.read_bytes().replace(b"GAIA COFFEE (SYNTHETIC)", b"EXAMPLE TRADING LTD"))
+    payments.record_payments(real.payments, origin="test", synthetic=False, now=NOW)
+    out = forecast.run(now=NOW, use_gemini=False)
+    assert all(f["synthetic"] is False for f in out)
+    assert [f["weekday"] for f in out if f["trading"]] == ["Saturday", "Sunday", "Thursday", "Friday"]  # real Thu-Sun, not the till's days
+    assert "real data" in db[schema.AGENT_LOG].find_one({"kind": "forecast_updated"}, sort=[("at", -1)])["summary"]

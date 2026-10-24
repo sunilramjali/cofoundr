@@ -83,7 +83,7 @@ Rules:
 Trading days to adjust:
 {days}
 
-GAIA's daily takings so far (synthetic demo data):
+GAIA's daily takings so far ({data_label}):
 {history}"""
 
 RECHECK = """Automatic checks rejected your adjustment for some days:
@@ -226,7 +226,7 @@ def ask_gemini(prompt: str) -> List[DayAdjustment]:
     return Adjustments.model_validate_json(response.text).days
 
 
-def adjust(forecasts: List[dict], conditions: Dict[str, dict], history: Dict[date, dict]) -> dict:
+def adjust(forecasts: List[dict], conditions: Dict[str, dict], history: Dict[date, dict], synthetic: bool = True) -> dict:
     """Adjust trading days in place (adjustment + final_revenue). Returns a summary for the log:
     {"adjusted": [dates], "kept": {date: problems}, "skipped": [dates without conditions], "attempts", "error"}."""
     summary = {"adjusted": [], "kept": {}, "skipped": [], "attempts": 0, "error": None}
@@ -246,7 +246,8 @@ def adjust(forecasts: List[dict], conditions: Dict[str, dict], history: Dict[dat
                 "conditions": [{"ref": r, "kind": c["kind"], **c["facts"]} for r, c in refs.items()]} for d, (f, refs) in days.items()]
     takings = [{"date": d.isoformat(), "weekday": DAYS[d.weekday()][:3], "gbp": round(v["revenue"], 2)} for d, v in sorted(history.items())]
     prompt = PROMPT.format(max_pct=MAX_PCT, max_factor=MAX_FACTOR_PCT, days=json.dumps(listing, indent=1, default=str),
-                           history=json.dumps(takings, separators=(",", ":")))
+                           history=json.dumps(takings, separators=(",", ":")),
+                           data_label="synthetic demo data" if synthetic else "the business's real takings")
     accepted: Dict[str, DayAdjustment] = {}
     answers: Dict[str, DayAdjustment] = {}
     problems: Dict[str, List[str]] = {d: ["no answer for this day"] for d in days}
@@ -297,8 +298,12 @@ def run(days: int = 7, now: Optional[datetime] = None, dry_run: bool = False, us
     since = datetime.combine(today - timedelta(weeks=LOOKBACK_WEEKS + 1), datetime.min.time(), LONDON)
     until = datetime.combine(today, datetime.min.time(), LONDON)  # only complete days: today isn't over yet
     window = {"$gte": since, "$lt": until}
-    orders = list(db[schema.ORDERS].find({"business_id": BUSINESS_ID, "placed_at": window}, {"placed_at": 1, "total": 1}))
-    sales = list(db[schema.SALES].find({"meta.business_id": BUSINESS_ID, "ts": window}, {"ts": 1, "meta.sku": 1, "qty": 1}))
+    # Never mix synthetic and real history: once any real till data or card payments exist, only real data is used
+    real = bool(db[schema.ORDERS].find_one({"business_id": BUSINESS_ID, "synthetic": False}, {"_id": 1})
+                or db[schema.PAYMENTS].find_one({"business_id": BUSINESS_ID, "synthetic": False}, {"_id": 1}))
+    kind = {"synthetic": False} if real else {"synthetic": {"$ne": False}}
+    orders = list(db[schema.ORDERS].find({"business_id": BUSINESS_ID, "placed_at": window, **kind}, {"placed_at": 1, "total": 1}))
+    sales = list(db[schema.SALES].find({"meta.business_id": BUSINESS_ID, "ts": window, **kind}, {"ts": 1, "meta.sku": 1, "qty": 1}))
     names = {p["_id"]: p["name"] for p in db[schema.PRODUCTS].find({"business_id": BUSINESS_ID}, {"name": 1})}
 
     history = daily_history(orders)
@@ -306,12 +311,14 @@ def run(days: int = 7, now: Optional[datetime] = None, dry_run: bool = False, us
     # would count twice): use whichever source covers more days, e.g. a till connected last week vs months of EVO.
     from backend.payments import daily_takings
     days_window = {"$gte": since.date().isoformat(), "$lt": until.date().isoformat()}
-    card = daily_takings(db[schema.PAYMENTS].find({"business_id": BUSINESS_ID, "date": days_window}, {"date": 1, "amount": 1, "kind": 1}))
+    card = daily_takings(db[schema.PAYMENTS].find({"business_id": BUSINESS_ID, "date": days_window, **kind}, {"date": 1, "amount": 1, "kind": 1}))
     source = "card payments" if len(card) > len(history) else f"{len(orders)} orders"
     if len(card) > len(history):
         history, sales = card, []
     forecasts = baseline(history, daily_product_qty(sales), names, today, days)
-    summary = adjust(forecasts, conditions.conditions_for([f["date"] for f in forecasts]), history) if use_gemini else None
+    for f in forecasts:
+        f["synthetic"] = not real
+    summary = adjust(forecasts, conditions.conditions_for([f["date"] for f in forecasts]), history, synthetic=not real) if use_gemini else None
     if not dry_run:
         for f in forecasts:
             f["generated_at"] = now
@@ -319,7 +326,7 @@ def run(days: int = 7, now: Optional[datetime] = None, dry_run: bool = False, us
         trading = [f for f in forecasts if f["trading"]]
         activity.log("forecast_updated", f"Forecast for {forecasts[0]['date']}–{forecasts[-1]['date']}: "
                      f"{len(trading)} trading day(s), £{sum(f['expected_revenue'] for f in trading):,.0f} expected "
-                     f"(baseline from {source})", days=[f["date"] for f in forecasts])
+                     f"(baseline from {source}, {'real' if real else 'synthetic'} data)", days=[f["date"] for f in forecasts])
         if summary:
             log_adjustment(forecasts, summary)
     return forecasts

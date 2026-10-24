@@ -25,6 +25,8 @@ Newest entry at the top. Format:
   9. Refund on a closed day made it a trading day → only days with a sale count
   10. Till connected yesterday hid months of card payments → forecast uses whichever source covers more days (never both: double count)
 - **Not fixed (notes):** forecast only runs from the CLI (nothing refreshes it on Fly); Square refunds ignored (takings slightly high); the "(SYNTHETIC)" mark could be added to a real file by hand; `*.csv` in `.gitignore` would also hide a future synthetic CSV unless named `*_synthetic.csv`
+- **Also fixed:** the forecast mixed synthetic + real history and always said "synthetic". Now: any real orders/payments → real only, else synthetic only; forecast docs + Gemini prompt labelled to match
+- **Decision:** real business forecasts use real data only; public data (weather, holidays) as conditions, never as sales history
 - **Next:** push + PR `sunil` → stage
 
 ## Sat 24 Oct, ~23:00 — Card payments: EVO CSV upload, Square + SumUp read-only, privacy (MVP2)
