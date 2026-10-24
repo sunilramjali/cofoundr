@@ -1,0 +1,150 @@
+{
+  "record_type": "physical_inventory_count",
+  "data_type": "synthetic_mock_data",
+  "count_id": "GAIA-COUNT-OPENING-20261002",
+  "location_id": "GAIA-TRUCK-01",
+  "counted_at": "2026-10-02T07:10:00+01:00",
+  "count_method": "manual_physical_count",
+  "recorded_by": "Mock GAIA team member",
+  "items": [
+    {
+      "sku": "INV-001",
+      "item_name": "Espresso Coffee Beans",
+      "unit": "kg",
+      "counted_quantity": 11.1
+    },
+    {
+      "sku": "INV-002",
+      "item_name": "Whole Milk",
+      "unit": "litre",
+      "counted_quantity": 31.3
+    },
+    {
+      "sku": "INV-003",
+      "item_name": "Semi-skimmed Milk",
+      "unit": "litre",
+      "counted_quantity": 7.1
+    },
+    {
+      "sku": "INV-004",
+      "item_name": "Oat Milk",
+      "unit": "litre",
+      "counted_quantity": 37.9
+    },
+    {
+      "sku": "INV-005",
+      "item_name": "Matcha Powder",
+      "unit": "g",
+      "counted_quantity": 1450
+    },
+    {
+      "sku": "INV-006",
+      "item_name": "Breakfast Tea Bags",
+      "unit": "bag",
+      "counted_quantity": 81
+    },
+    {
+      "sku": "INV-007",
+      "item_name": "Green Tea Bags",
+      "unit": "bag",
+      "counted_quantity": 63
+    },
+    {
+      "sku": "INV-008",
+      "item_name": "Peppermint Tea Bags",
+      "unit": "bag",
+      "counted_quantity": 49
+    },
+    {
+      "sku": "INV-009",
+      "item_name": "Fresh Croissants",
+      "unit": "unit",
+      "counted_quantity": 30
+    },
+    {
+      "sku": "INV-010",
+      "item_name": "Pain au Chocolat",
+      "unit": "unit",
+      "counted_quantity": 27
+    },
+    {
+      "sku": "INV-011",
+      "item_name": "Almond Croissants",
+      "unit": "unit",
+      "counted_quantity": 22
+    },
+    {
+      "sku": "INV-012",
+      "item_name": "Fresh Cookies",
+      "unit": "unit",
+      "counted_quantity": 38
+    },
+    {
+      "sku": "INV-013",
+      "item_name": "Guinness Cake Slices",
+      "unit": "slice",
+      "counted_quantity": 50
+    },
+    {
+      "sku": "INV-014",
+      "item_name": "8oz Takeaway Cups",
+      "unit": "unit",
+      "counted_quantity": 149
+    },
+    {
+      "sku": "INV-015",
+      "item_name": "12oz Takeaway Cups",
+      "unit": "unit",
+      "counted_quantity": 369
+    },
+    {
+      "sku": "INV-016",
+      "item_name": "Cold Drink Cups",
+      "unit": "unit",
+      "counted_quantity": 288
+    },
+    {
+      "sku": "INV-017",
+      "item_name": "Cup Lids - 8oz",
+      "unit": "unit",
+      "counted_quantity": 177
+    },
+    {
+      "sku": "INV-018",
+      "item_name": "Cup Lids - 12oz",
+      "unit": "unit",
+      "counted_quantity": 466
+    },
+    {
+      "sku": "INV-019",
+      "item_name": "Cold Cup Lids",
+      "unit": "unit",
+      "counted_quantity": 202
+    },
+    {
+      "sku": "INV-020",
+      "item_name": "Napkins",
+      "unit": "unit",
+      "counted_quantity": 381
+    },
+    {
+      "sku": "INV-021",
+      "item_name": "Sugar Sachets",
+      "unit": "unit",
+      "counted_quantity": 275
+    },
+    {
+      "sku": "INV-022",
+      "item_name": "Stirrers",
+      "unit": "unit",
+      "counted_quantity": 214
+    },
+    {
+      "sku": "INV-023",
+      "item_name": "Pastry Bags",
+      "unit": "unit",
+      "counted_quantity": 90
+    }
+  ],
+  "notes": "Independent fictional physical snapshot; not reconciled with sales. No inferred consumption, deliveries, wastage or variances."
+}
