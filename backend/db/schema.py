@@ -62,13 +62,24 @@ class Invoice(TypedDict):
 
 class Approval(TypedDict):
     business_id: str
-    action_type: str  # e.g. "invoice_reminder", "supplier_payment"
-    target_id: str  # _id of the related document
-    draft: str
+    action_type: Literal["invoice_reminder", "supplier_payment"]
+    target_id: str  # str(_id) of the related invoice
+    invoice_number: str
+    counterparty: str
+    amount: float
+    days_overdue: int
+    title: str  # one line for the queue, e.g. "Chase X: £450.00, 3 days overdue"
+    reason: str  # why the agent proposes this (shown to the owner)
+    escalation_level: Optional[int]  # 0 friendly, 1 firm, 2 final (reminders only)
+    to_email: Optional[str]
+    draft_subject: Optional[str]
+    draft: str  # email body, or the payment instruction
+    drafted_by: Literal["gemini", "template", "rule"]
     status: Literal["pending", "approved", "edited", "rejected"]
     decided_via: Optional[Literal["dashboard", "whatsapp"]]
     created_at: datetime
     decided_at: Optional[datetime]
+    synthetic: bool
 
 
 # TODO(Sunil, MVP2): Product, Sale, Event, Forecast, Task shapes

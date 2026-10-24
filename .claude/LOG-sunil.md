@@ -12,6 +12,14 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — Overdue check + reminder drafts (MVP1)
+- **Did:** `backend/ai/overdue.py`: flips open→overdue past due date; for each overdue invoice without a pending approval, Gemini drafts a reminder (one batched call; tone friendly → firm → final by `reminders_sent`), suppliers get a pay reminder; saved as `pending` approvals. Skips `needs_review` invoices. Template fallback if Gemini fails
+- **Tested:** 4 overdue → 4 pending approvals (3 Gemini reminders + 1 supplier payment); rerun adds 0 (idempotent); 429 fallback produced template drafts
+- **Contract change (`schema.py`):** `Approval` gains title, reason, escalation_level, to_email, draft_subject, drafted_by, invoice_number, counterparty, amount, days_overdue, synthetic
+- **Status:** done; 4 pending approvals live in Atlas
+- **Next:** Fly.io web app: dashboard (upload + approval queue) + `/brief`
+- **Blockers / notes for partner:** Gemini 429 spend cap still intermittent
+
 ## Sat 24 Oct — Gemini invoice extraction + verification loop (MVP1)
 - **Did:** `backend/ai/gemini.py` (shared client), `backend/ai/extract.py` (Gemini 4 Argon structured extraction → checks → one re-check → `needs_review`), `data/make_samples.py` + 3 synthetic invoice images in `data/samples/`
 - **Tested:** clean supplier ✓ 1st try; GAIA-issued overdue ✓ receivable/overdue; messy (total £263 vs items £237) → re-checked, kept printed value, confidence 0.4, flagged for review. Save + duplicate detection ✓ (test doc removed)
