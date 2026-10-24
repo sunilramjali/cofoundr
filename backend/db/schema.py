@@ -18,6 +18,7 @@ FORECASTS = "forecasts"
 TASKS = "tasks"
 APPROVALS = "approvals"
 AGENT_LOG = "agent_log"  # every agent action / decision, for the "clear record" judging criterion
+CURSORS = "cursors"  # per-consumer read position in agent_log for /updates, _id = "<business_id>:<consumer>"
 
 
 class AgentLogEntry(TypedDict):
