@@ -10,10 +10,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/static/cofoundr.css?v=5">
+<link rel="stylesheet" href="/static/cofoundr.css?v=6">
 <script>document.documentElement.classList.add("js");</script>
 </head>
 <body>
+<div class="backdrop" aria-hidden="true"><canvas></canvas></div>
+<div class="grain" aria-hidden="true"></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-open" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
@@ -64,6 +66,6 @@
   {% block content %}{% endblock %}
   <footer><span>CoFoundr for GAIA Coffee · synthetic demo data</span><span>MongoDB Atlas · Gemini · Saint</span></footer>
 </div>
-<script src="/static/cofoundr.js?v=5" defer></script>
+<script src="/static/cofoundr.js?v=7" defer></script>
 </body>
 </html>

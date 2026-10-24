@@ -385,3 +385,52 @@ footer { padding: 4px 0 36px; display: flex; justify-content: space-between; gap
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
   @view-transition { navigation: none; }
 }
+
+/* ======================================================================================
+   Living backdrop + frosted glass (Unicorn Studio-style finish)
+   A slow WebGL gradient sits behind everything; surfaces are glass so it glows through.
+   ====================================================================================== */
+:root {
+  --glass: rgba(255, 255, 255, .62); --glass-strong: rgba(255, 255, 255, .78); --glass-soft: rgba(255, 255, 255, .42);
+  --glass-edge: inset 0 0 0 1px rgba(255, 255, 255, .75), inset 0 1px 0 rgba(255, 255, 255, .9);
+  --glass-shadow: 0 1px 2px rgba(60, 40, 20, .04), 0 14px 34px -20px rgba(60, 40, 20, .22);
+  --glass-shadow-hover: 0 2px 6px rgba(60, 40, 20, .05), 0 26px 50px -22px rgba(60, 40, 20, .3);
+  --blur: blur(26px) saturate(1.5);
+}
+body { background: #f4f1eb; }
+.backdrop { position: fixed; inset: 0; z-index: -2; pointer-events: none; view-transition-name: backdrop;
+  background:
+    radial-gradient(60vw 50vh at 12% 8%, #f3d2b3 0%, transparent 60%),
+    radial-gradient(55vw 55vh at 88% 18%, #dfe7ef 0%, transparent 60%),
+    radial-gradient(60vw 60vh at 70% 92%, #d9e5d6 0%, transparent 62%),
+    radial-gradient(50vw 50vh at 20% 85%, #efd9d3 0%, transparent 60%), #f4f1eb; }
+.backdrop canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.grain { position: fixed; inset: -50%; z-index: -1; pointer-events: none; opacity: .07; mix-blend-mode: multiply; view-transition-name: grain;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+/* the backdrop and grain stay put while a module morphs into its page */
+::view-transition-group(backdrop), ::view-transition-group(grain) { animation: none; }
+::view-transition-old(backdrop), ::view-transition-old(grain) { display: none; }
+::view-transition-new(backdrop), ::view-transition-new(grain) { animation: none; }
+
+.mod, .sheet { background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); box-shadow: var(--glass-edge), var(--glass-shadow); }
+.mod:hover { background: var(--glass-strong); box-shadow: var(--glass-edge), var(--glass-shadow-hover); }
+.mod::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, 0) 38%); opacity: .7; }
+.mod::before { background: radial-gradient(380px circle at var(--mx) var(--my), rgba(255, 255, 255, .7), transparent 60%); }
+.pill, .back { background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); box-shadow: var(--glass-edge), 0 6px 18px -12px rgba(60, 40, 20, .25); }
+.back:hover { background: var(--glass-strong); box-shadow: var(--glass-edge), var(--glass-shadow-hover); }
+.mod__open { background: rgba(255, 255, 255, .7); box-shadow: inset 0 0 0 1px rgba(21, 18, 15, .06); }
+.mini-list li, .sheet__head, .row { border-color: rgba(21, 18, 15, .07); }
+.eico, .addr { background: rgba(255, 255, 255, .6); box-shadow: inset 0 0 0 1px rgba(21, 18, 15, .05); }
+.wa-mini { background: rgba(239, 234, 226, .7); }
+.ask, .mail, .cmd, .empty, .drop { background: var(--glass-soft); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .8), inset 0 0 0 2px rgba(21, 18, 15, .03); }
+.drop { border-color: rgba(21, 18, 15, .14); }
+.ask:hover { background: var(--glass-strong); box-shadow: var(--glass-edge), var(--glass-shadow-hover); }
+.row:hover, .day:hover, .day:focus-visible, .day--today { background: rgba(255, 255, 255, .55); }
+.filters label { background: rgba(255, 255, 255, .5); }
+.intro h1 em { background: linear-gradient(100deg, #b5703f 0%, #d79a6a 35%, #b77a8e 65%, #b5703f 100%); background-size: 220% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; animation: sheen-text 9s ease-in-out infinite; padding-right: .06em; }
+@keyframes sheen-text { 50% { background-position: 100% 0; } }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .mod, .sheet, .pill, .back { background: rgba(255, 255, 255, .92); }
+}
