@@ -1,13 +1,12 @@
 # Each folder has one owner who must review PRs touching it.
-# TODO: replace @CEYDA_GITHUB and @TBD with real GitHub usernames.
+# TODO: add (Jade) when she joins.
 # Enforced only with GitHub branch protection on main ("Require review from Code Owners").
 
 /backend/db/   @sunilramjali
 /data/         @sunilramjali
-/backend/ai/   @TBD
-/bridge/       @TBD
-/dashboard/    @TBD
+/backend/ai/   @sunilramjali
+/bridge/       @sunilramjali
 
-# Shared docs: both review
-/.claude/      @sunilramjali @CEYDA_GITHUB
-/README.md     @sunilramjali @CEYDA_GITHUB
+# Shared docs (add Jade when she joins)
+/.claude/      @sunilramjali
+/README.md     @sunilramjali

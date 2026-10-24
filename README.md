@@ -30,7 +30,7 @@ A big company would hire an ops manager, a bookkeeper and an analyst. A one-truc
 | **Auto-prioritise & schedule** | Ranks open tasks by impact, with a one-line reason each, and builds a weekly plan |
 | **Morning brief** | Owner asks on WhatsApp, "what's my day?", and gets the top priorities, forecast and pending approvals |
 
-**Stack:** MongoDB Atlas (single source of truth + search) · Gemini 4 Argon (multimodal extraction + reasoning) · Saint (WhatsApp AI employee) · Treg (tool gateway) · FastAPI · Streamlit
+**Stack:** MongoDB Atlas (single source of truth + search) · Gemini 4 Argon (multimodal extraction + reasoning) · Saint (WhatsApp AI employee) · Treg (tool gateway) · FastAPI web app on Fly.io (dashboard + Saint bridge)
 
 ## How it's different
 
@@ -114,7 +114,7 @@ CoFoundr isn't a chatbot or a bookkeeping tool. It's an agent that does the work
 git clone <repo-url> && cd encode-hackathon
 cp .env.example .env        # fill in your keys
 pip install -r requirements.txt
-# commands: TBD (FastAPI bridge + Streamlit dashboard)
+uvicorn bridge.main:app --reload   # dashboard + Saint endpoints at http://localhost:8000 (TBD)
 ```
 
 ---

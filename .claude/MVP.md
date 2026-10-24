@@ -22,8 +22,8 @@ This is the smallest slice that proves the core story: *an agent that does a rea
 - [ ] **Verification loop:** line items sum to total and due date is valid; otherwise `extraction_confidence` is low and the invoice is flagged for owner review (not guessed)
 - [ ] **Overdue + draft:** overdue invoices get a drafted reminder saved as a `pending` approval
 - [ ] **Approval:** dashboard shows the queue with Approve / Edit / Reject; decision updates MongoDB (`status`, `decided_via`, `decided_at`)
-- [ ] **Bridge:** FastAPI on Fly.io with `GET /health` and `GET /brief?token=…` (plain text from MongoDB: overdue invoices + pending approvals)
-- [ ] **Saint test:** Saint successfully reads `/brief` (answers the open question on Saint's capabilities)
+- [ ] **Web app on Fly.io:** one FastAPI app serving the dashboard pages (upload + approval queue) and `GET /health`, `GET /brief?token=…` (plain text from MongoDB: overdue invoices + pending approvals)
+- [ ] **Saint test:** Saint reads `/brief` from the Fly.io app and relays it on WhatsApp
 
 ### Out of scope for MVP1
 Forecasting, prioritisation, events/weather, WhatsApp photo input, `/approve` via WhatsApp, Atlas Search/Vector Search, Treg, heatmap, waste, partnerships, voice orders.
@@ -38,10 +38,12 @@ Forecasting, prioritisation, events/weather, WhatsApp photo input, `/approve` vi
 | Task | Owner |
 |---|---|
 | Atlas cluster, collections, `schema.py`, synthetic seed data | Sunil |
-| Gemini extraction + verification loop | TBD |
-| Overdue check + reminder draft | TBD |
-| Streamlit upload + approval queue | TBD |
-| Bridge stub on Fly.io + Saint test | TBD |
+| Gemini extraction + verification loop (needs Argon API key) | Sunil |
+| Overdue check + reminder draft | Sunil |
+| Dashboard pages on Fly.io: upload + approval queue | Sunil |
+| `/brief` on Fly.io + Saint test | Sunil |
+
+Sunil is solo for now; tasks can move to Jade (Ceyda) when she joins.
 
 ---
 

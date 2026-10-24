@@ -57,9 +57,11 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 | `backend/db/` | MongoDB Atlas: connection, collections, indexes, search | **Sunil** |
 | `backend/db/schema.py` | **Shared data contract**: collection names + document shapes | **Sunil** |
 | `data/` | Synthetic seed data | **Sunil** |
-| `backend/ai/` | Gemini, forecast, invoice extraction, prioritisation | TBD |
-| `bridge/` | FastAPI `/brief`, `/approve` for Saint (Fly.io) | TBD |
-| `dashboard/` | Streamlit | TBD |
+| `backend/ai/` | Gemini, forecast, invoice extraction, prioritisation | Sunil |
+| `bridge/` | **The Fly.io web app** (FastAPI): dashboard pages (`templates/`) + Saint endpoints `/brief`, `/approve` | Sunil (→ Jade later) |
+
+- **Sunil is solo for now** and owns everything. Ownership gets split when Jade (Ceyda) joins.
+- No Streamlit. The dashboard is server-rendered HTML in the same Fly.io app, so Saint can read it too.
 | `.claude/` | Shared docs (protected by the hook) | Both |
 
 - **Each folder has one owner.** To change something in your partner's folder, tell them first or ask them to make the change.
