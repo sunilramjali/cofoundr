@@ -86,7 +86,7 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 - Deploy: `fly deploy` from the repo root.
 - MongoDB Atlas network access must allow Fly.io's outbound IPs (or `0.0.0.0/0` for the hackathon, demo data only).
 
-**Twilio setup:** WhatsApp sandbox (Console → Messaging → Try it out → Send a WhatsApp message). Sender `TWILIO_WHATSAPP_FROM=+14155238886`; the owner's phone joins with `join <code>`. Sandbox "When a message comes in" → `https://cofoundr.fly.dev/whatsapp/twilio` (POST). `PUBLIC_URL` must match that URL or signatures won't verify. Local dev (`COFOUNDR_SANDBOX=1`) never sends WhatsApp messages.
+**Twilio setup:** WhatsApp sandbox (Console → Messaging → Try it out → Send a WhatsApp message). Sender `TWILIO_WHATSAPP_FROM=+447723317807` (our account's sandbox number, shown on that page; not the US `+14155238886` some accounts get); the owner's phone joins with `join twilio-trial`. Sandbox "When a message comes in" → `https://cofoundr.fly.dev/whatsapp/twilio` (POST). `PUBLIC_URL` must match that URL or signatures won't verify. Local dev (`COFOUNDR_SANDBOX=1`) never sends WhatsApp messages.
 
 ## 4. Modules (priority order)
 

@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, 23:40 — Twilio sandbox number corrected
+- **Did:** our sandbox number is **+44 7723 317807** (join code `join twilio-trial`), not the US +1 415 523 8886 I'd assumed earlier. Fixed `.env`, `.env.example`, `project-plan.md`. Release #47 is live with the Twilio secrets
+- **Status:** `TWILIO_WHATSAPP_FROM` Fly secret needs resetting to the +44 number
+- **Next:** owner joins the sandbox, sandbox webhook → `/whatsapp/twilio`, live test
+- **Blockers / notes for partner:** none in your area
+
 ## Sat 24 Oct, 23:15 — Saint code removed
 - **Did:** removed the Saint email channel from `backend/inputs/gmail.py` (`SAINT_EMAIL`, sender verification, email decisions) + its tests; removed `POST /approve` (only Saint called it; WhatsApp decisions now come through the signed Twilio webhook). Its edge cases (unknown #, negation, already decided) re-tested on the WhatsApp path; new test: an "approve 4" email never decides. `SAINT_API_KEY`/`SAINT_EMAIL` gone from `.env.example`. Saint wording replaced in READMEs, `docs/architecture.html`, comments. `/brief` and `/updates` kept (read-only, token). 386 tests pass
 - **Status:** done, PR into `stage`
