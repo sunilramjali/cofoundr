@@ -68,6 +68,11 @@ def ensure_indexes(db: Database) -> None:
     db[schema.SALES].create_index([("order_id", ASCENDING)])
     db[schema.ORDERS].create_index([("business_id", ASCENDING), ("placed_at", ASCENDING)])
     db[schema.STOCK_COUNTS].create_index([("business_id", ASCENDING), ("counted_at", ASCENDING)])
+    # Weather + events around the pitches (backend/conditions.py): read by date for the forecast
+    db[schema.WEATHER].create_index([("business_id", ASCENDING), ("pitch_id", ASCENDING), ("date", ASCENDING)])
+    db[schema.EVENTS].create_index([("business_id", ASCENDING), ("date", ASCENDING), ("status", ASCENDING)])
+    db[schema.EVENTS].create_index([("business_id", ASCENDING), ("pitch_id", ASCENDING), ("date", ASCENDING)])
+    db[schema.TRANSPORT].create_index([("business_id", ASCENDING), ("state", ASCENDING), ("dates", ASCENDING)])
 
 
 def next_refs(db: Database, business_id: str, n: int) -> list:
