@@ -12,6 +12,13 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — Sales loaded + baseline forecast (MVP2)
+- **Loaded Jade's POS data into Atlas** via `record_orders` with the real clock: 2,421 orders (£18,811.80), 4,502 sale lines, 15 products, 3 stock counts, 2 Sep → 24 Oct, 0 errors, 0 future orders; re-run idempotent
+- **Did:** `schema.Forecast` (+ `ProductForecast`, `ForecastAdjustment` for Gemini later); `backend/ai/forecast.py`: trading weekdays learned from history (Mon/Wed/Fri/Sat), average of last 6 same weekdays + low–high range, top-8 product quantities, today's partial sales ignored, London-time days (DST-safe); saved 7 days to `forecasts` + `forecast_updated` log
+- **Bug caught by tests:** a new business with <3 weeks of history was "closed" every day → threshold now scales with available history
+- **Tests:** 8 new forecast tests (incl. manual check against Jade's raw export, clock change, one-off days) → 102 pass
+- **Next:** Gemini adjustment once Jade's weather/events data lands; priorities
+
 ## Sat 24 Oct — Product/Sale shapes + `backend/sales.py` for Jade's POS sync (MVP2)
 - **Did:** `schema.py` POS section built on Jade's POS export format as-is: `Product` (per SKU), `Order`, `Sale` (time-series line), `StockCount`/`StockItem` (ingredients: separate `stock_counts`, not products). `backend/sales.py`: `record_orders(orders, now=)` (idempotent via `orders._id`, completed+paid only, validates lines/totals, UTC, rollback if lines fail, products menu upserted, one `sales_synced` log line per sync), `record_stock_count(count)`, `latest_stock()`
 - **Atlas:** `sales` created as time-series (ts / meta, hours) + indexes on sales, orders, stock_counts. Seed `--reset` also clears till data
