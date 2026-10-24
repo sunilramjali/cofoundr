@@ -26,6 +26,18 @@ $LINE"
 
 if [ "$tool" = "Bash" ]; then
   cmd=$(jq -r '.tool_input.command // empty' <<<"$input")
+  # Only inspect the "git push ..." segment(s), not commit messages etc.
+  pushes=$(grep -oE 'git( -C [^ ]+)? push[^;&|"'\''$]*' <<<"$cmd")
+  if [ -n "$pushes" ]; then
+    branch=$(git -C "${CLAUDE_PROJECT_DIR:-.}" branch --show-current 2>/dev/null)
+    if grep -Eq '[ :+]main( |$)' <<<"$pushes" || { [ "$branch" = "main" ] && ! grep -Eq 'push( -[^ ]+)* [^ -][^ ]* [^ ]+' <<<"$pushes"; }; then
+      emit deny "$LINE
+🚫🔴 BLOCKED: direct push to main
+main only changes through a pull request from stage.
+Flow: sunil / jade → stage → PR → main
+$LINE"
+    fi
+  fi
   for owner in sunil ceyda; do
     [ "$owner" = "$me" ] && continue
     if grep -q "LOG-$owner\.md" <<<"$cmd" && grep -Eq '(>|sed -i|perl -[a-z]*i|tee|mv |cp |rm |truncate)' <<<"$cmd"; then

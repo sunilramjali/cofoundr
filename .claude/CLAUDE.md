@@ -21,11 +21,26 @@ All planning docs live in `.claude/`. Read the relevant one before starting work
 
 ## Git workflow
 
-- **`main` = the working version. Nobody commits to it directly.** All changes go through small pull requests.
-- Each person works on their own branches: `sunil/<topic>`, `ceyda/<topic>` (e.g. `sunil/atlas-schema`).
-- **Pull from `main` often, at least every 1–2 hours** (`git pull origin main` into your branch). Small, frequent merges rarely clash.
-- Never keep two separate copies of the project. One repo, one `main`.
-- Before starting work, Claude checks the current branch. If it's `main`, it creates/switches to a personal branch first.
+Repo: https://github.com/sunilramjali/cofoundr
+
+```
+sunil ──┐
+        ├──► stage ──(PR only)──► main
+jade  ──┘
+```
+
+| Branch | Who | Rules |
+|---|---|---|
+| `main` | Nobody directly | **Protected** (GitHub ruleset "main branch"): PR required, no force-push, no deletion. Only updated by a PR from `stage`. |
+| `stage` | Integration branch | **For now Sunil may push directly** (Jade hasn't started). Once Jade starts, switch to PRs from `sunil`/`jade` and protect it. |
+| `sunil` | Sunil's working branch | Sunil only |
+| `jade` | Ceyda's working branch (Jade = Ceyda) | Ceyda only |
+
+- **Pull from `stage` often, at least every 1–2 hours** (`git pull origin stage` into your branch). Small, frequent merges rarely clash.
+- Never keep two separate copies of the project. One repo.
+- Before starting work, Claude checks the current branch. If it's `main` or `stage`, it switches to the person's own branch first.
+- The hook also **blocks Claude from pushing to `main`** (🚫🔴 BLOCKED: direct push to main).
+- Don't create `sunil/...` or `stage/...` sub-branches: git can't have both `sunil` and `sunil/x`.
 
 ## Code layout & ownership
 
