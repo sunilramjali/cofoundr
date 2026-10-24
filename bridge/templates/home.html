@@ -43,25 +43,8 @@
 </a>
 
 <div class="feed">
-  {% if opportunities %}{% set o = opportunities[0] %}
-  <div class="card glass tilt" style="view-transition-name: m-inbox; --i:0">
-    <span class="gem gem--lilac"><svg class="ico"><use href="#i-bulb"/></svg></span>
-    <div><h3>I've found a potential opportunity</h3><p>{{ o.who }} wants to work with you{% if opportunities|length > 1 %}, and {{ opportunities|length - 1 }} more{% endif %} · emailed {{ o.at|ago }}</p></div>
-    <a class="btn btn--soft" href="/inbox#opportunities">Review</a>
-  </div>
-  {% endif %}
-
-  {% if stock.low %}{% set s = stock.low[0] %}
-  <div class="card glass tilt" style="view-transition-name: m-inventory; --i:1">
-    <span class="gem gem--rose"><svg class="ico"><use href="#i-box"/></svg></span>
-    <div><h3>You're running low on {{ s.name|lower }}</h3>
-      <p>{{ "Probably out already" if s.out else "About " ~ (s.cover|round|int) ~ " day" ~ ("s" if (s.cover|round|int) != 1 else "") ~ " left" }}{% if stock.low|length > 1 %}, plus {{ stock.low|length - 1 }} more running low{% endif %} · my estimate from your stock counts</p></div>
-    <a class="btn" href="/inventory">Order now <svg class="ico ico--go"><use href="#i-arrow"/></svg></a>
-  </div>
-  {% endif %}
-
   {% for a in payables[:2] %}{% set c = checks.get(a._id|string, {}) %}
-  <div class="card glass tilt" style="--i:{{ loop.index0 + 2 }}">
+  <div class="card glass tilt" style="--i:{{ loop.index0 }}">
     <span class="gem{{ ' gem--rose' if c.new_sender else '' }}"><svg class="ico"><use href="#i-{{ 'alert' if c.new_sender else 'pound' }}"/></svg></span>
     <div><h3>Invoice to be paid</h3><p>{{ a.counterparty }} · {{ a.amount|money }}{% if a.days_overdue is not none %} · {{ a.days_overdue }} days overdue{% endif %} · #{{ a.ref }}</p>
       {% if c.new_sender %}<p class="warn-line"><svg class="ico"><use href="#i-alert"/></svg>First invoice ever from this supplier: check it's genuine</p>{% endif %}</div>
@@ -70,7 +53,7 @@
   {% endfor %}
 
   {% if reminders %}
-  <a class="card glass tilt" href="/approvals" style="view-transition-name: m-approvals; --i:4">
+  <a class="card glass tilt" href="/approvals" style="view-transition-name: m-approvals; --i:2">
     <span class="gem gem--sky"><svg class="ico"><use href="#i-mail"/></svg></span>
     <div><h3>{{ reminders|length }} reminder{{ "s" if reminders|length != 1 }} ready to send</h3>
       <p>Drafted for customers who owe you {{ reminders|sum(attribute="amount")|money0 }} · nothing goes out until you say yes</p></div>
@@ -79,23 +62,55 @@
   {% endif %}
 
   {% if review %}
-  <a class="card glass tilt" href="/invoices" style="view-transition-name: m-invoices; --i:5">
-    <span class="gem"><svg class="ico"><use href="#i-alert"/></svg></span>
-    <div><h3>{{ review|length }} invoice{{ "s" if review|length != 1 }} need{{ "s" if review|length == 1 }} a second look</h3><p>{{ (review[0].verification_issues or ["Needs checking"])[0] }}</p></div>
+  <a class="card glass tilt" href="/invoices" style="view-transition-name: m-invoices; --i:1">
+    <span class="gem gem--rose"><svg class="ico"><use href="#i-alert"/></svg></span>
+    <div><h3>{{ review|length }} invoice{{ "s" if review|length != 1 }} need{{ "s" if review|length == 1 }} a second look</h3><p>{{ (review[0].verification_issues or ["Needs checking"])[0] }}. I didn't guess.</p></div>
     <span class="btn btn--soft">Check</span>
   </a>
   {% endif %}
 
-  {% if not (opportunities or stock.low or payables or reminders or review) %}
+  {% if away %}
+  <section class="card card--list glass" style="view-transition-name: m-activity; --i:2">
+    <span class="gem gem--sage"><svg class="ico"><use href="#i-spark"/></svg></span>
+    <div><h3>While you were away, I…</h3>
+      <ul class="proof">{% for w in away %}<li><a href="{{ w.href }}"><svg class="ico"><use href="#i-{{ w.icon }}"/></svg><span>{{ w.text }}</span></a></li>{% endfor %}</ul></div>
+    <a class="btn btn--text" href="/activity">Everything I did <svg class="ico ico--go"><use href="#i-arrow"/></svg></a>
+  </section>
+  {% endif %}
+
+  {% if tasks %}
+  <section class="card card--list glass" style="--i:3">
+    <span class="gem gem--lilac"><svg class="ico"><use href="#i-bulb"/></svg></span>
+    <div><h3>Do first</h3>
+      <ol class="proof proof--ranked">{% for t in tasks %}<li><span><b>{{ t.title }}</b><br><span class="muted">{{ t.reason }}</span></span></li>{% endfor %}</ol>
+      <p class="muted" style="margin:6px 0 0">Ranked by {{ "Gemini" if tasks[0].ranked_by == "gemini" else "my rules" }} from your records{% if tasks[0].ranked_at %} · {{ tasks[0].ranked_at|ago }}{% endif %}</p></div>
+    <a class="btn btn--text" href="/approvals">Tasks <svg class="ico ico--go"><use href="#i-arrow"/></svg></a>
+  </section>
+  {% endif %}
+
+  {% if not (pending or review or away or tasks) %}
   <div class="empty"><svg class="ico"><use href="#i-check"/></svg><div><b>All clear.</b>Nothing needs you right now. I'll tell you the moment something does.</div></div>
   {% endif %}
 
-  {% if timeline %}
-  <a class="card card--quiet glass tilt" href="/activity" style="view-transition-name: m-activity; --i:6">
-    <span class="gem gem--sage"><svg class="ico"><use href="#i-{{ timeline[0].icon }}"/></svg></span>
-    <div><h3>{{ timeline[0].label }} {{ timeline[0].ago }}</h3><p>{{ timeline[0].summary }}</p></div>
-    <span class="btn btn--text">All activity <svg class="ico ico--go"><use href="#i-arrow"/></svg></span>
-  </a>
+  {% if opportunities or stock.low %}
+  <details class="more">
+    <summary class="muted">More from me{% if stock.low %} · running low on {{ stock.low[0].name|lower }}{% endif %}{% if opportunities %} · {{ opportunities|length }} opportunit{{ "ies" if opportunities|length != 1 else "y" }}{% endif %}</summary>
+    {% if opportunities %}{% set o = opportunities[0] %}
+    <div class="card glass" style="view-transition-name: m-inbox">
+      <span class="gem gem--lilac"><svg class="ico"><use href="#i-bulb"/></svg></span>
+      <div><h3>I've found a potential opportunity</h3><p>{{ o.who }} wants to work with you{% if opportunities|length > 1 %}, and {{ opportunities|length - 1 }} more{% endif %} · emailed {{ o.at|ago }}</p></div>
+      <a class="btn btn--soft" href="/inbox#opportunities">Review</a>
+    </div>
+    {% endif %}
+    {% if stock.low %}{% set s = stock.low[0] %}
+    <div class="card glass" style="view-transition-name: m-inventory">
+      <span class="gem gem--rose"><svg class="ico"><use href="#i-box"/></svg></span>
+      <div><h3>You're running low on {{ s.name|lower }}</h3>
+        <p>{{ "Probably out already" if s.out else "About " ~ (s.cover|round|int) ~ " day" ~ ("s" if (s.cover|round|int) != 1 else "") ~ " left" }}{% if stock.low|length > 1 %}, plus {{ stock.low|length - 1 }} more running low{% endif %} · my estimate from your stock counts</p></div>
+      <a class="btn" href="/inventory">Order now <svg class="ico ico--go"><use href="#i-arrow"/></svg></a>
+    </div>
+    {% endif %}
+  </details>
   {% endif %}
 </div>
 
