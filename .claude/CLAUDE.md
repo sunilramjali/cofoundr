@@ -42,6 +42,14 @@ jade  ──┘
 - The hook also **blocks Claude from pushing to `main`** (🚫🔴 BLOCKED: direct push to main).
 - Don't create `sunil/...` or `stage/...` sub-branches: git can't have both `sunil` and `sunil/x`.
 
+### Commit messages
+Format: **`MVP<n>: <one sentence of what changed>`**, where `<n>` is the MVP stage the change serves (see "Current stage" in `MVP.md`).
+```
+MVP1: Add Gemini invoice extraction with a line-item total check.
+MVP2: Add POST /approve endpoint for WhatsApp approvals.
+```
+Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commit.
+
 ## Code layout & ownership
 
 | Folder | Contents | Owner |
