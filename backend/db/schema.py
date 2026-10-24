@@ -25,6 +25,7 @@ CURSORS = "cursors"  # per-consumer read position in agent_log for /updates, _id
 COUNTERS = "counters"  # atomic sequences, e.g. _id = "<business_id>:approval_ref"
 ORDERS = "orders"  # one doc per till order (idempotency + order totals); its lines live in SALES
 STOCK_COUNTS = "stock_counts"  # physical ingredient counts on the truck (beans, milk, cups), one doc per count
+BOARD_MEMOS = "board_memos"  # Gemini's checked board memo, one per business per day (backend/ai/board.py)
 PAYMENTS = "payments"  # card payments from a card provider with no item detail (EVO CSV, SumUp), card data stripped
 
 
@@ -235,6 +236,44 @@ class Payment(TypedDict):
     entry_mode: Optional[str]
     synthetic: bool
     imported_at: datetime
+
+
+# ---------------------------------------------------------------- board memo (MVP2)
+
+class MemoClaim(TypedDict):
+    kind: str  # sales_revenue | sales_units | order_count | supplier_unit_price | invoice_amount | owed_to_us | owed_by_us
+    value: float  # what Gemini said
+    actual: Optional[float]  # what MongoDB says (None = couldn't be checked, see `why`)
+    ok: bool
+    why: Optional[str]
+    says: str  # the phrase in the finding it backs
+    # plus the parameters Gemini gave: start, end, sku, modifier, supplier, invoice_number, item
+
+
+class MemoInsight(TypedDict):
+    title: str
+    finding: str
+    action: str  # a suggestion: any money action still goes through approvals
+    impact_gbp_per_month: Optional[float]  # Gemini's estimate, always shown as an estimate
+    # verified = all claims matched; corrected = matched after one recheck; withdrawn = Gemini dropped it when shown
+    # the real numbers; failed = still wrong (shown as failed, never silently fixed)
+    status: Literal["verified", "corrected", "withdrawn", "failed"]
+    claims: List[MemoClaim]
+    problems: List[str]  # what's still wrong (failed / withdrawn)
+    first_problems: List[str]  # what the recheck fixed (corrected)
+
+
+class BoardMemo(TypedDict):
+    _id: str  # "<business_id>:<YYYY-MM-DD>", latest run that day wins
+    business_id: str
+    date: str
+    headline: str
+    insights: List[MemoInsight]
+    attempts: int
+    model: str
+    read: dict  # {"tokens", "sales_lines", "invoices"}: how much Gemini read in one go
+    generated_at: datetime
+    synthetic: bool
 
 
 # ---------------------------------------------------------------- forecast (MVP2)

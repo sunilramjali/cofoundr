@@ -10,6 +10,7 @@ import html
 import os
 import re
 import secrets
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -21,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from backend import approvals, payments
-from backend.ai import overdue
+from backend.ai import board, overdue
 from backend.inputs import evo, gmail
 from backend.inputs.replies import parse_reply  # noqa: F401 (also imported from here by tests)
 from backend.outputs.brief import build_brief
@@ -84,7 +85,7 @@ def _public_url(request: Request) -> str:
     return os.environ.get("PUBLIC_URL") or str(request.base_url).rstrip("/")
 
 
-PAGES = {"/", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings"}
+PAGES = {"/", "/board", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings"}
 
 
 def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
@@ -95,7 +96,7 @@ def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
 # ---------- Owner dashboard: a home of modules, each opening into its own page ----------
 
 NAV = [  # sidebar: (label, path, icon); pages not listed here are reached from the home feed
-    ("Home", "/", "home"), ("Insights", "/sales", "chart"), ("Finances", "/invoices", "pound"), ("Inventory", "/inventory", "box"),
+    ("Home", "/", "home"), ("Board", "/board", "bulb"), ("Insights", "/sales", "chart"), ("Finances", "/invoices", "pound"), ("Inventory", "/inventory", "box"),
     ("Saint", "/whatsapp", "chat"), ("Tasks", "/approvals", "yes"),
 ]
 
@@ -131,6 +132,8 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "stock": view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now),
         "opportunities": view.opportunities(gmail_logs),
         "nav": NAV,
+        "memo": db[schema.BOARD_MEMOS].find_one({"business_id": BUSINESS_ID}, sort=[("generated_at", -1)]),
+        "memo_running": _board_running.locked(),
         "checks": view.payment_checks(pending, invoices),
         "sandbox": bool(os.environ.get("COFOUNDR_SANDBOX")),
         "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
@@ -146,7 +149,7 @@ def _page(name: str):
     return render
 
 
-for _path, _name in [("/", "home"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
+for _path, _name in [("/", "home"), ("/board", "board"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
                      ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp"), ("/inventory", "inventory"),
                      ("/settings", "settings")]:
     app.add_api_route(_path, _page(_name), methods=["GET"], response_class=HTMLResponse, name=f"page_{_name}")
@@ -230,6 +233,24 @@ def message_saint(text: str = Form(""), back: str = Form("/")):
 @app.post("/check-inbox")
 def check_inbox(back: str = Form("/inbox")):
     return _back(gmail.check_inbox().message, back)
+
+
+_board_running = threading.Lock()
+
+
+@app.post("/board/run")
+def run_board(back: str = Form("/board")):
+    """Gemini reads everything (about a minute), so it runs in the background; one at a time."""
+    if not _board_running.acquire(blocking=False):
+        return _back("A board meeting is already running. Refresh in a minute.", back)
+
+    def work():
+        try:
+            board.run()
+        finally:
+            _board_running.release()
+    threading.Thread(target=work, daemon=True).start()
+    return _back("Gemini is reading everything the business has recorded (about a minute). Refresh to see the memo.", back)
 
 
 @app.post("/run-check")
