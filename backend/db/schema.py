@@ -223,4 +223,25 @@ class Forecast(TypedDict):
     synthetic: bool
 
 
-# TODO(Sunil, MVP2): Event, Task shapes
+# ---------------------------------------------------------------- priorities (MVP2)
+
+class Task(TypedDict):
+    """One thing the owner should do, ranked by backend.ai.prioritise.run(). Each run replaces the whole list.
+    Tasks are gathered from MongoDB (never invented by Gemini); Gemini only orders them and says why."""
+    _id: str  # "<business_id>:<kind>:<key>", stable across runs
+    business_id: str
+    kind: Literal["approval", "review_invoice", "prep_day"]
+    title: str  # one line, e.g. "Approve #3: chase Hackney Hub, £450.00, 12 days overdue"
+    facts: str  # what the ranking was based on
+    target_id: Optional[str]  # str(_id) of the approval / invoice / forecast it's about
+    approval_ref: Optional[int]  # for kind "approval": the owner replies "approve <ref>"
+    amount: Optional[float]  # GBP at stake (or expected revenue for prep_day)
+    rank: int  # 1 = do first
+    impact: Literal["high", "medium", "low"]
+    reason: str  # one line, shown to the owner
+    ranked_by: Literal["gemini", "rule"]  # "rule" = Gemini unavailable or skipped this task
+    ranked_at: datetime
+    synthetic: bool
+
+
+# TODO(Sunil, MVP2): Event shape
