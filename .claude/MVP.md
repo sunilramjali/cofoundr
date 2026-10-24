@@ -16,7 +16,7 @@ One invoice goes all the way through CoFoundr: **photo in → Gemini reads and c
 This is the smallest slice that proves the core story: *an agent that does a real job and stops to ask before touching money.*
 
 ### Must have (done criteria)
-- [ ] **Data:** MongoDB Atlas cluster live; `businesses`, `invoices`, `approvals` collections seeded with synthetic GAIA Coffee data (incl. 2–3 overdue invoices), labelled synthetic
+- [x] **Data:** MongoDB Atlas cluster live; `businesses`, `invoices`, `approvals` collections seeded with synthetic GAIA Coffee data (incl. 2–3 overdue invoices), labelled synthetic
 - [ ] **Contract:** `backend/db/schema.py` shapes for `Business`, `Invoice`, `Approval` agreed and used by all code
 - [ ] **Extraction:** upload an invoice photo/PDF → `gemini-4-argon` returns supplier, amount, due date, line items as JSON
 - [ ] **Verification loop:** line items sum to total and due date is valid; otherwise `extraction_confidence` is low and the invoice is flagged for owner review (not guessed)
