@@ -87,4 +87,20 @@ $LINE"
       jq -n --arg m "🟢 Your log: LOG-$me.md" '{systemMessage: $m}'
     fi ;;
 esac
+
+# Folder ownership (mirrors CLAUDE.md + CODEOWNERS): Sunil = the middle, Jade/Ceyda = inputs + outputs.
+rel=${f#"${CLAUDE_PROJECT_DIR:-$PWD}"/}
+case "$rel" in
+  backend/db/*|backend/ai/*|backend/pipeline.py|backend/approvals.py|data/*|tests/test_middle.py|Dockerfile|fly.toml|.github/workflows/*) area_owner=sunil ;;
+  backend/inputs/*|backend/outputs/*|bridge/*|tests/test_edges.py) area_owner=ceyda ;;
+  *) area_owner="" ;;
+esac
+if [ -n "$area_owner" ] && [ -n "$me" ] && [ "$area_owner" != "$me" ]; then
+  who=$([ "$area_owner" = ceyda ] && echo "Jade (Ceyda)" || echo "Sunil")
+  emit ask "$LINE
+🟠 PARTNER'S AREA: $rel is owned by $who
+Editing it can clash with their work. Tell them first, or ask them to make the change.
+Only approve if you've agreed it with $who.
+$LINE"
+fi
 exit 0

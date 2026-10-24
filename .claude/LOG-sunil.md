@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — Conflict prevention for parallel work
+- **Did:** ownership guard in hook (🟠 PARTNER'S AREA ask before editing the other's folders); SessionStart `sync-check.sh` (warns on main/stage, behind stage, uncommitted changes); `.gitattributes` union merge for `requirements.txt` + `.env.example`; tests split into `test_middle.py` (Sunil) + `test_edges.py` (Jade); CLAUDE.md "Avoiding conflicts" section; CODEOWNERS for tests
+- **Tested:** 12 hook cases (own area allow, partner area ask, shared docs, log block) + sync check; 8 tests pass
+- **Status:** done
+- **Blockers / notes for partner:** Jade, restart Claude Code after pulling so the new SessionStart hook loads; make sure `COFOUNDR_USER=ceyda` is set
+
 ## Sat 24 Oct — Ownership split + pipeline seam + MVP2 draft
 - **Did:** split agreed: **Jade = inputs + outputs, Sunil = the middle**. Moved `brief.py`, `updates.py` → `backend/outputs/`; new `backend/inputs/` (Jade); new `backend/pipeline.py` `ingest_invoice()` = the single inputs→middle hand-off (upload route now uses it; logs `ingest_failed` on Gemini errors); `backend/outputs/email.py` stub called by `approvals.decide` after approval. CLAUDE.md ownership table, CODEOWNERS, folder READMEs updated. Seed `--reset` now also clears `agent_log` + `/updates` cursors. MVP2 drafted in MVP.md with owners
 - **Status:** done, 9 tests pass. Gemini still 429 → upload retest + demo reset postponed

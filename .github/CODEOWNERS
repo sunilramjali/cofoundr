@@ -19,4 +19,5 @@
 # Shared
 /.claude/             @sunilramjali @JadeAlpay
 /README.md            @sunilramjali @JadeAlpay
-/tests/               @sunilramjali @JadeAlpay
+/tests/test_middle.py @sunilramjali
+/tests/test_edges.py  @JadeAlpay
