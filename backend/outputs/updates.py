@@ -37,6 +37,8 @@ def messages_for(event: dict, db) -> List[dict]:
     """Turn one activity-log event into zero or more owner messages."""
     kind, detail = event["kind"], event.get("detail") or {}
     if kind == "invoice_extracted":
+        if detail.get("source") == "whatsapp_photo":
+            return []  # the owner sent it on WhatsApp and already got the result as a reply
         # By _id: invoice numbers alone aren't unique across suppliers
         query = {"_id": ObjectId(detail["invoice_id"])} if detail.get("invoice_id") else \
             {"business_id": BUSINESS_ID, "invoice_number": detail.get("invoice_number")}
@@ -60,6 +62,13 @@ def _cursor_query(since: Optional[str]) -> dict:
         except InvalidId:
             raise ValueError("`since` must be the `next_since` value from a previous /updates response.")
     return {"at": {"$gte": datetime.now(timezone.utc) - FIRST_CALL_WINDOW}}
+
+
+def advance(consumer: str, last_event_id: str) -> None:
+    """Mark everything up to `last_event_id` as delivered to `consumer` (for senders that peek first)."""
+    get_db()[schema.CURSORS].update_one({"_id": f"{BUSINESS_ID}:{consumer}"},
+                                        {"$set": {"last_event_id": last_event_id, "updated_at": datetime.now(timezone.utc)}},
+                                        upsert=True)
 
 
 def get_updates(since: Optional[str] = None, consumer: str = "saint", peek: bool = False) -> dict:
