@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — Gemini task prioritisation (MVP2)
+- **Did:** `backend/ai/prioritise.py`: gathers open tasks from MongoDB (pending approvals, invoices to check, next trading day's prep). Gemini ranks them with a one-line reason each. The ranking is verified: invented tasks are dropped and missing ones are added back. Falls back to a rule ranking (money × urgency) if Gemini is down. Saved to `tasks`. New `schema.Task` shape
+- **Status:** done. Merged stage into `sunil` (clean, 168 pass); PR #25 → stage
+- **Next:** weather + events storage (issue #22): shapes in `schema.py` + idempotent record functions
+- **Blockers / notes for partner:** Jade, `tasks` is ready for the dashboard/brief (sort by `rank`; show `reason`, and `ranked_by` tells you if Gemini or the rule ranked it)
+
 ## Sat 24 Oct — Gemini retry with backoff (MVP2 error hardening)
 - **Did:** `backend/ai/gemini.with_retry(call)`: retries 429/5xx twice (2 s, 5 s + jitter, ~7 s worst case), raises anything else or the last failure to the caller. Used by extraction (`extract._ask_gemini`) and reminder drafting (`overdue.draft_reminders`). Template fallback in the overdue check is now logged as `gemini_fallback` in `agent_log` (refs listed), not just printed
 - **Tests:** 5 new (busy → success, gives up after 3, no retry on 400, extraction survives one 429, fallback logged once) → 113 pass. `conftest` makes backoff instant in tests
