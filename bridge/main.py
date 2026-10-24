@@ -8,27 +8,29 @@ Endpoints are sync `def` so blocking PyMongo / Gemini calls run in FastAPI's thr
 """
 import html
 import os
-import re
 import secrets
+import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote, urlsplit
 
-from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi import BackgroundTasks, Body, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from backend import approvals
-from backend.ai import overdue
-from backend.inputs import gmail
+from backend import approvals, payments
+from backend.ai import board, fees, overdue, review
+from backend.inputs import evo, gmail, whatsapp as whatsapp_in
 from backend.inputs.replies import parse_reply  # noqa: F401 (also imported from here by tests)
+from backend.outputs import assistant, whatsapp as whatsapp_out
 from backend.outputs.brief import build_brief
 from backend.outputs.updates import get_updates
 from backend.pipeline import ingest_invoice
 from backend.db import activity, schema
-from backend.db.client import get_db
+from backend.db.client import RealDataRefused, get_db
 from bridge import view
 
 if os.environ.get("COFOUNDR_SANDBOX"):  # local development on an in-memory copy of the demo data (tools/sandbox.py)
@@ -39,12 +41,16 @@ if os.environ.get("COFOUNDR_SANDBOX"):  # local development on an in-memory copy
 
 @asynccontextmanager
 async def lifespan(_app):
-    """GMAIL_POLL_SECONDS set (fly.toml) → check the demo inbox in the background; unset (local, tests) → only on click."""
+    """GMAIL_POLL_SECONDS set (fly.toml) → check the demo inbox in the background; unset (local, tests) → only on click.
+    WHATSAPP_PUSH_SECONDS set → push new /updates to the owner's WhatsApp in the background."""
     every = int(os.environ.get("GMAIL_POLL_SECONDS") or 0)
     stop = gmail.start_polling(every) if every > 0 else None
+    push = int(os.environ.get("WHATSAPP_PUSH_SECONDS") or 0)  # same idea: on Fly only, never from a laptop
+    stop_push = whatsapp_out.start_polling(push) if push > 0 and whatsapp_out.configured() else None
     yield
-    if stop:
-        stop.set()
+    for s in (stop, stop_push):
+        if s:
+            s.set()
 
 
 app = FastAPI(title="CoFoundr", lifespan=lifespan)
@@ -84,7 +90,7 @@ def _public_url(request: Request) -> str:
     return os.environ.get("PUBLIC_URL") or str(request.base_url).rstrip("/")
 
 
-PAGES = {"/", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings"}
+PAGES = {"/", "/board", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings"}
 
 
 def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
@@ -95,8 +101,8 @@ def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
 # ---------- Owner dashboard: a home of modules, each opening into its own page ----------
 
 NAV = [  # sidebar: (label, path, icon); pages not listed here are reached from the home feed
-    ("Home", "/", "home"), ("Insights", "/sales", "chart"), ("Finances", "/invoices", "pound"), ("Inventory", "/inventory", "box"),
-    ("Saint", "/whatsapp", "chat"), ("Tasks", "/approvals", "yes"),
+    ("Home", "/", "home"), ("Board", "/board", "bulb"), ("Insights", "/sales", "chart"), ("Finances", "/invoices", "pound"), ("Inventory", "/inventory", "box"),
+    ("Ask", "/whatsapp", "chat"), ("Tasks", "/approvals", "yes"),
 ]
 
 
@@ -131,11 +137,24 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "stock": view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now),
         "opportunities": view.opportunities(gmail_logs),
         "nav": NAV,
+        "memo": db[schema.BOARD_MEMOS].find_one({"business_id": BUSINESS_ID}, sort=[("generated_at", -1)]),
+        "memo_running": _board_running.locked(),
+        "record": _forecast_record(db),
+        "fee_audit": db[schema.FEE_AUDITS].find_one({"business_id": BUSINESS_ID}, sort=[("created_at", -1)]),
         "checks": view.payment_checks(pending, invoices),
         "sandbox": bool(os.environ.get("COFOUNDR_SANDBOX")),
         "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
                   "polling": int(os.environ.get("GMAIL_POLL_SECONDS") or 0), "last": gmail.last_check},
     }
+
+
+def _forecast_record(db) -> dict:
+    """How the forecasts did against actual takings (backend/ai/review.py), for the Sales page."""
+    reviews = list(db[schema.FORECAST_REVIEWS].find({"business_id": BUSINESS_ID}).sort("date", -1).limit(30))
+    cap, why = review.earned_cap(db)
+    return {"overall": review.stats(reviews).get("overall"), "days": reviews[:8], "cap": cap, "why": why,
+            "full_cap": cap >= review.forecast.MAX_PCT,
+            "lessons": list(db[schema.LESSONS].find({"business_id": BUSINESS_ID, "active": True}).sort("created_at", -1))}
 
 
 def _page(name: str):
@@ -146,7 +165,7 @@ def _page(name: str):
     return render
 
 
-for _path, _name in [("/", "home"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
+for _path, _name in [("/", "home"), ("/board", "board"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
                      ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp"), ("/inventory", "inventory"),
                      ("/settings", "settings")]:
     app.add_api_route(_path, _page(_name), methods=["GET"], response_class=HTMLResponse, name=f"page_{_name}")
@@ -158,6 +177,48 @@ def upload(file: UploadFile = File(...), back: str = Form("/inbox")):
     mime = file.content_type or "application/octet-stream"
     result = ingest_invoice(data, mime, "pdf" if mime == "application/pdf" else "manual", origin="dashboard upload")
     return _back(result.message, back)
+
+
+@app.post("/import/evo")
+def import_evo(file: UploadFile = File(...), back: str = Form("/sales")):
+    """EVO's transactions CSV, uploaded by hand (EVO has no API). Card data is never stored (backend.inputs.evo).
+    On the shared demo database only the synthetic sample is accepted; real exports are refused, nothing stored."""
+    data = file.file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        return _back("That file is too big for an EVO export (10 MB max).", back)
+    try:
+        parsed = evo.parse(data)
+        result = payments.record_payments(parsed.payments, origin="EVO CSV (dashboard upload)", synthetic=parsed.synthetic)
+    except RealDataRefused:
+        return _back("That's a real EVO export. This demo only takes synthetic data, so nothing was stored. "
+                     "Import real data on your own machine into your own database.", back)
+    except ValueError as e:
+        return _back(str(e), back)
+    return _back(result.message + (f" {len(parsed.errors)} row(s) couldn't be read." if parsed.errors else ""), back)
+
+
+@app.post("/import/fees")
+def import_fees(file: UploadFile = File(...), back: str = Form("/sales")):
+    """The card provider's fee summary (photo or PDF): Gemini reads it, its own worked examples check the reading,
+    then every stored card payment is audited against it. Nothing is claimed from the provider here."""
+    data = file.file.read(MAX_UPLOAD + 1)
+    mime = file.content_type or "application/octet-stream"
+    if len(data) > MAX_UPLOAD or not (mime.startswith("image/") or mime == "application/pdf"):
+        return _back("Upload the fee summary as a photo or PDF (10 MB max).", back)
+    if _too_soon("fees", FEES_EVERY):
+        return _back("I'm still on the last fee summary. Try again in a minute.", back)
+    try:
+        doc = fees.run(data, mime)
+    except RealDataRefused as e:
+        return _back(str(e), back)
+    except Exception as e:  # Gemini busy after retries, unreadable file: say so, store nothing
+        return _back(f"I couldn't read that fee summary ({getattr(e, 'code', None) or type(e).__name__}). Try again in a minute.", back)
+    if doc["problems"]:
+        return _back("I read the fee summary but its numbers didn't check out against its own example, so I didn't audit "
+                     "anything. Please check it.", back)
+    a = doc["audit"]
+    return _back(f"Checked {a['checked']} card payments: {a['matched']} charged correctly, {len(a['overcharged'])} overcharged "
+                 f"(£{a['extra_total']:.2f}).", back)
 
 
 @app.post("/approvals/{approval_id}/decide")
@@ -173,31 +234,16 @@ def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Op
     return _back(f"#{result['ref']} {result['status']}: {result['effect']}.", back)
 
 
-ASKS_FOR_LIST = re.compile(r"\b(waiting|pending|to ?do|todo|brief|summary|status|today|what'?s (up|new|next|on))\b", re.IGNORECASE)
-
-
-def _chat_answer(text: str) -> str:
-    """Anything that isn't a decision: answer the few questions the data can answer; never guess or act."""
-    if ASKS_FOR_LIST.search(text):
-        todo = approvals.pending()
-        if not todo:
-            return "Nothing is waiting for your yes. I'll tell you the moment something is."
-        items = " · ".join(f"#{a['ref']} {a.get('counterparty') or a['title']} £{a['amount']:,.2f}" for a in todo[:3])
-        more = f" (+{len(todo) - 3} more)" if len(todo) > 3 else ""
-        return f"{len(todo)} waiting for your yes: {items}{more}. Reply “approve {todo[0]['ref']}” or “reject {todo[0]['ref']}”."
-    return ("I can't chat freely here yet, so nothing was sent. Try “what's waiting?”, or decide with “approve 1” / “reject 1”. "
-            "For anything else, message Saint on WhatsApp.")
-
-
-@app.post("/saint")
-def message_saint(text: str = Form(""), back: str = Form("/")):
-    """The chat bar. Decisions ("approve 1", "reject 2") follow exactly the WhatsApp rules; anything else waits for Saint."""
+@app.post("/ask")
+def ask(text: str = Form(""), back: str = Form("/")):
+    """The chat bar. Decisions ("approve 1", "reject 2") follow exactly the WhatsApp rules and never reach Gemini;
+    anything else is a question for the Gemini assistant, which can read the data but not change it."""
     text = text.strip()
     if not text:
-        return _back("Type a message for Saint first.", back)
+        return _back("Type a question first, e.g. “what's waiting?”.", back)
     parsed = parse_reply(text)
     if not parsed:
-        return _back(_chat_answer(text), back)
+        return _back(assistant.answer(text).text, back)
     decision, ref = parsed
     approval = approvals.find(ref=ref)
     if not approval:
@@ -212,6 +258,41 @@ def message_saint(text: str = Form(""), back: str = Form("/")):
 @app.post("/check-inbox")
 def check_inbox(back: str = Form("/inbox")):
     return _back(gmail.check_inbox().message, back)
+
+
+_board_running = threading.Lock()
+BOARD_EVERY = 600  # seconds between board meetings: each one reads ~170k tokens, so a public button must not be spammable
+FEES_EVERY = 60  # seconds between fee summary uploads (one Gemini read each)
+_last_run: dict = {}  # what → time.monotonic() of its last run; absent = never (monotonic starts near 0 after a reboot)
+
+
+def _too_soon(what: str, every: int) -> Optional[int]:
+    """Seconds left before `what` may run again, or None (and the clock restarts now)."""
+    left = int(_last_run[what] + every - time.monotonic()) if what in _last_run else 0
+    if left > 0:
+        return left
+    _last_run[what] = time.monotonic()
+    return None
+
+
+@app.post("/board/run")
+def run_board(back: str = Form("/board")):
+    """Gemini reads everything (about a minute), so it runs in the background; one at a time, at most every 10 minutes."""
+    if _board_running.locked():
+        return _back("A board meeting is already running. Refresh in a minute.", back)
+    left = _too_soon("board", BOARD_EVERY)
+    if left:
+        return _back(f"The last board meeting was just now. The next one can start in {left // 60 + 1} minutes.", back)
+    if not _board_running.acquire(blocking=False):
+        return _back("A board meeting is already running. Refresh in a minute.", back)
+
+    def work():
+        try:
+            board.run()
+        finally:
+            _board_running.release()
+    threading.Thread(target=work, daemon=True).start()
+    return _back("Gemini is reading everything the business has recorded (about a minute). Refresh to see the memo.", back)
 
 
 @app.post("/run-check")
@@ -249,6 +330,35 @@ def updates(token: Optional[str] = Query(None), x_token: Optional[str] = Header(
     if format == "text":
         return PlainTextResponse(data["text"])
     return JSONResponse(data)
+
+
+def _reply_on_whatsapp(params: dict) -> None:
+    """After Twilio got its answer: handle the owner's message (Gemini may take a while) and send the reply."""
+    try:
+        reply = whatsapp_in.handle(params)
+    except Exception as e:  # never silent: the owner hears something went wrong
+        activity.log("whatsapp_failed", f"Couldn't handle a WhatsApp message ({type(e).__name__})", error=type(e).__name__)
+        reply = "Sorry, something went wrong on my side and nothing was changed. Please try again."
+    if reply:
+        sent = whatsapp_out.send(reply)
+        if not sent.ok:
+            activity.log("whatsapp_send_failed", f"Couldn't send a WhatsApp reply: {sent.error}", error=sent.error)
+
+
+@app.post("/whatsapp/twilio")
+async def twilio_webhook(request: Request, background: BackgroundTasks):
+    """Twilio delivers each WhatsApp message here. Signed by Twilio, so nobody else can post as the owner."""
+    if not whatsapp_out.configured():
+        raise HTTPException(503, "WhatsApp is off.")
+    params = [(k, str(v)) for k, v in (await request.form()).multi_items()]
+    url = (os.environ.get("PUBLIC_URL") or str(request.base_url).rstrip("/")) + request.url.path
+    if request.url.query:
+        url += "?" + request.url.query
+    if not whatsapp_in.signature_ok(url, params, request.headers.get("X-Twilio-Signature"), whatsapp_out._config()[1]):
+        activity.log("whatsapp_rejected", "Rejected a WhatsApp webhook call with a bad Twilio signature", actor="agent")
+        raise HTTPException(403, "Bad signature.")
+    background.add_task(_reply_on_whatsapp, dict(params))
+    return Response("<Response/>", media_type="text/xml")  # empty TwiML: the reply is sent separately
 
 
 @app.post("/approve")

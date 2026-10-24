@@ -83,21 +83,21 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 
 ```
  INPUTS (Jade)                 MIDDLE (Sunil)                        OUTPUTS (Jade)
- Gmail, WhatsApp/Saint in,  →  pipeline.ingest_invoice()          →  dashboard UI, Saint outbox on
- external APIs, upload         Gemini read + verify, MongoDB,        WhatsApp (/brief, /updates),
-                               overdue, approval rules, errors       emails sent after approval
+ Gmail, WhatsApp in         →  pipeline.ingest_invoice()          →  dashboard UI, WhatsApp out via
+ (Twilio webhook),             Gemini read + verify, MongoDB,        Twilio (replies, /updates pushed,
+ external APIs, upload         overdue, approval rules, errors       brief), Gemini assistant, emails
 ```
 
 | Folder / file | Contents | Owner |
 |---|---|---|
-| `backend/inputs/` | Input channels: Gmail intake, WhatsApp photos via Saint, external APIs (weather, events, Treg) | **Jade** |
+| `backend/inputs/` | Input channels: Gmail intake, WhatsApp via Twilio (`whatsapp.py`: signed webhook, photos, "approve N"), external APIs (weather, events, Treg) | **Jade** |
 | `backend/pipeline.py` | **Inputs → middle hand-off**: `ingest_invoice(bytes, mime, source, origin)` does extract → verify → save → log → overdue check. Every input calls this, nothing else | **Sunil** |
 | `backend/sales.py` | **POS → database hand-off**: `record_orders(orders)`, `record_stock_count(count)` take the POS connector's format as-is; idempotent; writes `orders`, `sales` (time-series), `products`, `stock_counts` | **Sunil** |
 | `backend/ai/` | Gemini: invoice extraction + verification loop, overdue drafts, forecast, prioritisation | **Sunil** |
 | `backend/approvals.py` | Approval rules; the only place a decision is applied. Calls `outputs.email.send_reminder` after approval | **Sunil** |
 | `backend/db/`, `backend/db/schema.py` | MongoDB connection, activity log, indexes/search; **the shared data contract** | **Sunil** |
 | `data/` | Synthetic seed data, sample invoices | **Sunil** |
-| `backend/outputs/` | Owner-facing output: `brief.py` (WhatsApp brief), `updates.py` (`/updates` messages), `email.py` (sending after approval) | **Jade** |
+| `backend/outputs/` | Owner-facing output: `brief.py` (WhatsApp brief), `updates.py` (`/updates` messages), `whatsapp.py` (Twilio send + unprompted push), `assistant.py` (read-only Gemini answers), `email.py` (sending after approval) | **Jade** |
 | `bridge/` | **The Fly.io web app**: routes in `main.py`, dashboard UI in `templates/` | **Jade** |
 | `tests/test_middle.py` / `tests/test_edges.py` | Fast tests, no network: middle / edges | **Sunil** / **Jade** |
 | `Dockerfile`, `fly.toml`, `.github/workflows/` | Deploy + CI/CD | **Sunil** |
@@ -106,7 +106,8 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 - **The two seams.** Inputs → middle: invoices go through `pipeline.ingest_invoice` (use its `IngestResult`); till data goes through `sales.record_orders` / `sales.record_stock_count` (use its `SyncResult`). Inputs never write MongoDB directly. Middle → outputs: read MongoDB through `schema.py` names; outputs never change data except via `approvals.decide`. Changing either seam = tell your partner first.
 - **Each folder has one owner.** To change something in your partner's folder, tell them first or ask them to make the change.
 - **Data contract:** never hard-code collection names or change document shapes outside `backend/db/schema.py`. Any change there gets announced to the partner and noted in your log *before* merging.
-- No Streamlit. The dashboard is server-rendered HTML in the same Fly.io app, so Saint can read it too.
+- No Streamlit. The dashboard is server-rendered HTML in the same Fly.io app.
+- **No Saint** (dropped Sat 22:45). WhatsApp = Twilio; the conversation = Gemini.
 - `.github/CODEOWNERS` mirrors this table.
 
 ## Edit permissions (to prevent clashes)
@@ -150,7 +151,7 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 
 - **Priorities come from the docs, in this order:** `MVP.md` (current stage) → `project-plan.md` (module priority + cut order) → `winning-criteria.md` (bounty checklists). Don't build nice-to-haves before the current MVP stage is done.
 - **Never cut the approval flow.** Every finance/money action needs owner approval first.
-- **Every sponsor tool must visibly do the job it's best at** (MongoDB Atlas features, Gemini 4 Argon reasoning/multimodal, Saint on WhatsApp, Treg as tool gateway). When a feature ships, tick it in `winning-criteria.md`.
+- **Every sponsor tool must visibly do the job it's best at** (MongoDB Atlas features, Gemini 4 Argon reasoning/multimodal, WhatsApp via Twilio, Treg as tool gateway). When a feature ships, tick it in `winning-criteria.md`.
 - **Synthetic data only**, clearly labelled. No real customer data, no secrets committed.
 - If a change affects scope, stack or timeline, update `project-plan.md` in the same session and note it in the log.
 

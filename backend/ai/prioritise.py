@@ -64,6 +64,7 @@ def candidates(db, now: datetime) -> List[dict]:
             "score": inv["amount"] * REVIEW_WEIGHT,
         })
     tasks += price_tasks(db, now)
+    tasks += fee_tasks(db)
     today = now.astimezone(LONDON).date().isoformat()
     day = db[schema.FORECASTS].find_one({"business_id": BUSINESS_ID, "trading": True, "date": {"$gte": today}}, sort=[("date", 1)])
     if day:
@@ -106,6 +107,22 @@ def price_tasks(db, now: datetime) -> List[dict]:
                 "score": extra * PRICE_WEIGHT,
             })
     return tasks
+
+
+def fee_tasks(db) -> List[dict]:
+    """The latest card fee audit, if the provider charged more than its own fee summary allows."""
+    doc = db[schema.FEE_AUDITS].find_one({"business_id": BUSINESS_ID}, sort=[("created_at", -1)])  # an untrusted newer read wins
+    a = (doc or {}).get("audit") or {}
+    if not a.get("overcharged"):
+        return []
+    provider = doc["schedule"].get("provider") or "your card provider"
+    n, extra = len(a["overcharged"]), a["extra_total"]
+    return [{"_id": f"{BUSINESS_ID}:fee_overcharge:{doc['_id']}", "kind": "fee_overcharge",
+             "title": f"Ask {provider} to refund £{extra:.2f} overcharged on {n} card payment(s)", "target_id": doc["_id"],
+             "approval_ref": None, "amount": extra,
+             "facts": f"{n} of {a['checked']} card payments charged above the fee summary ({a['first_day']} to {a['last_day']}); "
+                      f"small, but it shows the provider isn't applying the contract",
+             "score": max(extra * PRICE_WEIGHT, 60)}]  # a contract breach is worth a call even when the sum is small
 
 
 def rule_rank(tasks: List[dict]) -> List[dict]:

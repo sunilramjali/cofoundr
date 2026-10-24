@@ -25,6 +25,11 @@ CURSORS = "cursors"  # per-consumer read position in agent_log for /updates, _id
 COUNTERS = "counters"  # atomic sequences, e.g. _id = "<business_id>:approval_ref"
 ORDERS = "orders"  # one doc per till order (idempotency + order totals); its lines live in SALES
 STOCK_COUNTS = "stock_counts"  # physical ingredient counts on the truck (beans, milk, cups), one doc per count
+FORECAST_REVIEWS = "forecast_reviews"  # past forecasts graded against actual takings (backend/ai/review.py)
+LESSONS = "lessons"  # what the forecaster learned from its grades; the active ones go into the next forecast
+FEE_AUDITS = "fee_audits"  # card provider's fee summary read by Gemini + every payment checked against it (backend/ai/fees.py)
+BOARD_MEMOS = "board_memos"  # Gemini's checked board memo, one per business per day (backend/ai/board.py)
+PAYMENTS = "payments"  # card payments from a card provider with no item detail (EVO CSV, SumUp), card data stripped
 
 
 def counterparty_key(name: Optional[str]) -> str:
@@ -203,6 +208,109 @@ class StockCount(TypedDict):
     synthetic: bool
 
 
+# ---------------------------------------------------------------- card payments (MVP2)
+# For card providers that know how much was paid but not what was sold (EVO's CSV export, SumUp). A provider that
+# knows the items (Square) goes through the POS format above instead. Privacy (docs/privacy.md): only the fields below
+# are ever stored. No card number (masked or not), cardholder name, auth code, card-network reference, card token or
+# issuer country; the provider's transaction id is stored only as a salted hash, for de-duplication.
+#
+# INPUT format (inputs → backend.payments.record_payments), one dict per payment:
+#   {"source": "evo" | "sumup", "source_id": str (provider's id: hashed, never stored), "paid_at": ISO timestamp with
+#    offset, or "YYYY-MM-DD" when the provider only gives the date, "amount_gbp": float, "fee_gbp": float | None,
+#    "currency": "GBP", "kind": "sale" | "refund" | "other", "status": "successful" | <anything else = skipped>,
+#    "card_product": "debit" | "credit" | None, "card_category": "consumer" | "corporate" | None,
+#    "region": "domestic" | "eea" | "international" | None, "brand": "Visa" | ... | None, "entry_mode": str | None}
+# Any other key is ignored. Real data (synthetic=False) is refused in the shared demo database (DB_NAME).
+
+class Payment(TypedDict):
+    _id: str  # "<business_id>:<source>:<id_hash>": importing the same payment twice is a no-op
+    business_id: str
+    source: Literal["evo", "sumup"]
+    id_hash: str  # HMAC-SHA256 of the provider's transaction id with PAYMENT_ID_SALT (first 24 hex chars)
+    date: str  # London day, "2026-10-24"
+    paid_at: Optional[datetime]  # UTC; None when the provider only gives the date (EVO's CSV)
+    amount: float  # GBP, always positive; `kind` says whether it came in or went back
+    fee: Optional[float]  # what the provider charged for it, GBP (EVO: MSC); None = not given
+    kind: Literal["sale", "refund"]
+    card_product: Optional[Literal["debit", "credit"]]
+    card_category: Optional[Literal["consumer", "corporate"]]
+    region: Optional[Literal["domestic", "eea", "international"]]
+    brand: Optional[str]
+    entry_mode: Optional[str]
+    synthetic: bool
+    imported_at: datetime
+
+
+# ---------------------------------------------------------------- forecast reviews + lessons (MVP2)
+
+class ForecastReview(TypedDict):
+    _id: str  # "<business_id>:<live|backtest>:<YYYY-MM-DD>"
+    business_id: str
+    date: str
+    weekday: str
+    mode: Literal["live", "backtest"]  # backtest = replayed with observed weather, Gemini saw only earlier takings
+    expected: float  # baseline
+    final: float  # after Gemini's adjustment
+    actual: float
+    baseline_error_pct: Optional[float]
+    final_error_pct: Optional[float]
+    adjustment_pct: Optional[float]
+    factors: List[dict]  # [{"kind", "label", "effect_pct"}]
+    helped: Optional[bool]  # measured by code: adjustment moved the forecast closer to actual; None = no adjustment
+    graded_at: datetime
+    synthetic: bool
+
+
+class ForecastLesson(TypedDict):
+    business_id: str
+    text: str  # one sentence, goes into the next forecast's prompt while active
+    about: Literal["weather", "event", "transport", "overall"]
+    direction: Literal["adjust_less", "keep", "adjust_more"]  # checked against `measured`
+    evidence_dates: List[str]
+    measured: dict  # {"days", "baseline_error", "adjusted_error", "helped", "dates"} it was checked against
+    active: bool  # a newer set of lessons deactivates the old one
+    created_at: datetime
+    synthetic: bool
+
+
+# ---------------------------------------------------------------- board memo (MVP2)
+
+class MemoClaim(TypedDict):
+    kind: str  # sales_revenue | sales_units | order_count | supplier_unit_price | invoice_amount | owed_to_us | owed_by_us
+    value: float  # what Gemini said
+    actual: Optional[float]  # what MongoDB says (None = couldn't be checked, see `why`)
+    ok: bool
+    why: Optional[str]
+    says: str  # the phrase in the finding it backs
+    # plus the parameters Gemini gave: start, end, sku, modifier, supplier, invoice_number, item
+
+
+class MemoInsight(TypedDict):
+    title: str
+    finding: str
+    action: str  # a suggestion: any money action still goes through approvals
+    impact_gbp_per_month: Optional[float]  # Gemini's estimate, always shown as an estimate
+    # verified = all claims matched; corrected = matched after one recheck; withdrawn = Gemini dropped it when shown
+    # the real numbers; failed = still wrong (shown as failed, never silently fixed)
+    status: Literal["verified", "corrected", "withdrawn", "failed"]
+    claims: List[MemoClaim]
+    problems: List[str]  # what's still wrong (failed / withdrawn)
+    first_problems: List[str]  # what the recheck fixed (corrected)
+
+
+class BoardMemo(TypedDict):
+    _id: str  # "<business_id>:<YYYY-MM-DD>", latest run that day wins
+    business_id: str
+    date: str
+    headline: str
+    insights: List[MemoInsight]
+    attempts: int
+    model: str
+    read: dict  # {"tokens", "sales_lines", "invoices"}: how much Gemini read in one go
+    generated_at: datetime
+    synthetic: bool
+
+
 # ---------------------------------------------------------------- forecast (MVP2)
 
 class ProductForecast(TypedDict):
@@ -211,11 +319,24 @@ class ProductForecast(TypedDict):
     expected_qty: float  # units expected that day
 
 
+class ForecastFactor(TypedDict):
+    kind: Literal["weather", "event", "transport"]
+    ref: str  # the condition it's based on: "weather:<date>", an Event _id or a TransportDisruption _id
+    label: str  # "Light rain", "Central line severe delays at Bethnal Green"
+    effect_pct: float  # this factor's share of the day's pct
+    why: str  # Gemini's short explanation
+
+
 class ForecastAdjustment(TypedDict):
-    """Gemini's change to the baseline, from weather + events (MVP2, after Jade's weather/events inputs)."""
-    pct: float  # e.g. +28.0
-    reason: str  # one line, e.g. "+28% Sat: Broadway Market nearby + sunny"
-    sources: List[str]  # what it looked at, e.g. ["weather", "events"]
+    """Gemini's change to the baseline from the day's weather, events and transport. Only stored after the checks in
+    backend.ai.forecast.check() pass (factors exist, add up, within limits, sensible direction, reason states the %)."""
+    pct: float  # e.g. +12.0
+    reason: str  # one line for the owner, e.g. "-18% Mon: heavy rain all day"
+    confidence: Literal["high", "medium", "low"]
+    by: Literal["gemini"]
+    sources: List[str]  # kinds of factor used, e.g. ["transport", "weather"]; [] = looked, no change
+    factors: List[ForecastFactor]
+    attempts: int  # 2 = accepted after Gemini fixed what the checks rejected
 
 
 class Forecast(TypedDict):
@@ -229,7 +350,8 @@ class Forecast(TypedDict):
     expected_orders: float
     low_revenue: float  # range from the same weekdays' history (min..max of the lookback)
     high_revenue: float
-    basis: str  # human-readable, e.g. "average of the last 6 Saturdays"
+    basis: str  # human-readable, e.g. "average of the last 6 Saturdays, leaving out 10 Oct (far below a usual Saturday)"
+    left_out: List[str]  # unusual past days not averaged (closed early, rained off, card machine down), "YYYY-MM-DD"
     products: List[ProductForecast]  # top sellers expected that day
     adjustment: Optional[ForecastAdjustment]  # None until Gemini adjusts it
     final_revenue: float  # baseline × (1 + pct/100), or the baseline when not adjusted
@@ -245,7 +367,8 @@ class Task(TypedDict):
     _id: str  # "<business_id>:<kind>:<key>", stable across runs
     business_id: str
     # price_rise = a supplier charged more than last time; price_match = another supplier is cheaper, ask to match
-    kind: Literal["approval", "review_invoice", "prep_day", "price_rise", "price_match"]
+    # fee_overcharge = the card provider charged more than its own fee summary allows (backend/ai/fees.py)
+    kind: Literal["approval", "review_invoice", "prep_day", "price_rise", "price_match", "fee_overcharge"]
     title: str  # one line, e.g. "Approve #3: chase Hackney Hub, £450.00, 12 days overdue"
     facts: str  # what the ranking was based on
     target_id: Optional[str]  # str(_id) of the approval / invoice / forecast it's about

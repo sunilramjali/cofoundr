@@ -69,14 +69,14 @@ Source: Encode London 2026 Luma page (luma.com/encode-london-2026), checked Sat 
 - **Submission:** a **GitHub repository** + a **3-minute demo video** showing the app in action **and MongoDB in use**.
 
 **CoFoundr plan — use as many scored features as fit naturally:**
-- [ ] Atlas as the single source of truth (all collections)
-- [ ] **Atlas Search** — full-text search over invoices/suppliers in the dashboard
-- [ ] **Vector Search** — match events/partnership opportunities to the business profile; find similar past invoices/suppliers
-- [ ] **Hybrid Search** — combine text + vector search (e.g. "invoices from the milk supplier" by keyword + meaning)
-- [ ] **Automated Embedding** — let Atlas generate embeddings on insert (invoices, events, products) instead of us doing it in code
-- [ ] **Voyage AI** — embedding/reranking model behind the search above
+- [x] Atlas as the single source of truth (all collections)
+- [x] **Atlas Search** — full-text search over invoices/suppliers (`backend/db/search.py`, index `invoices_text`, typo-tolerant; used by the price check). *Dashboard search box not built yet*
+- [x] **Vector Search** — find similar past invoices/suppliers (`similar_invoices`, index `invoices_semantic`; powers the cross-supplier price check). *Events matching not built*
+- [x] **Hybrid Search** — combine text + vector search with `$rankFusion` (`search.hybrid`) (e.g. "invoices from the milk supplier" by keyword + meaning)
+- [x] **Automated Embedding** — Atlas embeds invoices' `search_text` on insert (`autoEmbed`), no embedding code of ours
+- [x] **Voyage AI** — `voyage-4` behind Automated Embedding
 - [ ] **Atlas Stream Processing** — trigger the agent when a new invoice/order lands (replaces plain change streams, which aren't on the scored list)
-- [ ] Time-series collection for POS sales (nice, but **not on the scored list**)
+- [x] Time-series collection for POS sales (nice, but **not on the scored list**)
 - [ ] Demo video + README name each Atlas feature explicitly and show it working
 
 ### Google DeepMind — "Build with Gemini 4 Argon"
@@ -100,34 +100,28 @@ Source: Encode London 2026 Luma page (luma.com/encode-london-2026), checked Sat 
 - Anything built before kickoff. Open-source libraries and starter templates are OK, but the demo must only show code written during the hackathon
 
 **CoFoundr plan:**
-- [ ] Use `gemini-4-argon` for all reasoning calls
-- [ ] **Verification loop:** Gemini checks its own extraction (e.g. line items sum to the total, due date is valid) and flags low confidence for human review
-- [ ] Use Argon's **1M context**: feed the full 6-month sales + invoice history in one call for forecasting/prioritisation
+- [x] Use `gemini-4-argon` for all reasoning calls (`GEMINI_MODEL`, `fly.toml`)
+- [x] **Verification loop:** Gemini checks its own extraction (e.g. line items sum to the total, due date is valid) and flags low confidence for human review. Also: forecast adjustments checked (factors exist, add up, direction), board memo claims recomputed from MongoDB, fee summary checked against its own worked example
+- [x] Use Argon's **1M context**: the board meeting (`backend/ai/board.py`) feeds every till line, invoice, approval, forecast and agent action in one call (~169k tokens live)
 - [ ] Consider **multi-agent orchestration** (e.g. invoice agent, forecast agent, planner agent) or Managed Agents if time allows
 - [ ] Named user: the GAIA Coffee owner
 - [ ] Demo rehearsed to run live in **under 3 minutes, no slides**
-- [ ] Multimodal: invoice photo/PDF → structured JSON
-- [ ] Reasoning shown in UI: forecast adjustment explanations, task ranking reasons
+- [x] Multimodal: invoice photo/PDF → structured JSON (+ card fee summary image → rates)
+- [x] Reasoning shown in UI: forecast adjustment explanations, approval reasons, board memo with every number checked, forecast lessons
 - [ ] Function calling over MongoDB for prioritisation
 - [ ] "Real person" story: GAIA Coffee owner (synthetic data, real business)
 
-### Saint — "Best Use of Saint"
-- **Prize:** £200 cash, a Saint for each team member, and 3 months of Saint free.
-- **Rule:** put Saint to work on a **real problem** over the weekend.
+### Saint — not entered
+Dropped Sat 24 Oct, 22:45: Saint couldn't POST to our app. The owner's WhatsApp channel is **Twilio**, and the conversation is **Gemini** (no sponsor bounty for Twilio).
 
-**What they're looking for:**
-- **Cool factor:** would people crowd round to watch it?
-- **Working proof:** Saint actually doing the job in your demo, live or recorded, **with the before and the after**.
-- **Real-world use:** would this still be running on Monday?
-- **Human control:** what Saint does on its own, and where it stops and asks first.
-
-**CoFoundr plan:**
+### WhatsApp (Twilio + Gemini) — scores on the main tracks
+What it shows: the agent acts **unprompted** (Agents That Ship: "not a chatbot") and **stops and asks** before money moves (Safety and control; Gemini's "keeps people in control").
 - [ ] Demo shows a clear **before/after** (e.g. pile of unpaid invoices → chased + approved via WhatsApp)
-- [ ] Be explicit about the split: Saint drafts and briefs **on its own**, and **stops and asks** before any money action
-- [ ] Saint is the owner's WhatsApp interface: send invoice photos in, receive morning brief out
-- [ ] Approvals by WhatsApp reply ("approve") update MongoDB
-- [ ] Saint reads CoFoundr's `/brief` endpoint
-- [ ] Show Saint doing real work in the demo, not a bolt-on
+- [ ] Be explicit about the split: CoFoundr reads, drafts and updates **on its own**, and **stops and asks** before any money action
+- [ ] WhatsApp is the owner's interface: invoice photos in (`POST /whatsapp/twilio`), updates and the morning brief out
+- [ ] Approvals by WhatsApp reply ("approve 4") update MongoDB, never parsed by Gemini
+- [ ] Owner's questions on WhatsApp answered by Gemini from the data (read-only)
+- [ ] Every webhook, reply and failed send is in `agent_log` (forged Twilio signatures rejected)
 
 ---
 
@@ -156,12 +150,11 @@ Source: Encode London 2026 Luma page (luma.com/encode-london-2026), checked Sat 
 |---|---|
 | MongoDB Atlas | Flexible document store + Vector Search / Atlas Search / Voyage AI / time-series / change streams |
 | Gemini 4 Argon | Multimodal understanding + deep reasoning with visible explanations |
-| Saint | A real AI employee the owner talks to on WhatsApp |
+| Twilio + Gemini | The owner's AI co-founder on WhatsApp: messages them unprompted, asks before money moves |
 | Treg | One gateway to thousands of real-world data tools, chosen by the agent |
 
 ## To confirm
 - [x] Submission format: GitHub repo + 3-min demo video (MongoDB); 3-min live demo + 2-min Q&A, no slides (Gemini)
 - [ ] Main hackathon submission format (beyond the sponsor requirements above)
 - [x] Gemini model ID: `gemini-4-argon`
-- [ ] Gemini 4 Argon API access / keys
-- [ ] Saint judging specifics — ask the Saint team
+- [x] Gemini 4 Argon API access / keys

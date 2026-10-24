@@ -1,5 +1,6 @@
 """Shared test fixtures (owners: both). No network: in-memory MongoDB (mongomock) + a fake Gemini."""
 import os
+import sys
 from datetime import datetime, timezone
 
 import mongomock
@@ -15,7 +16,8 @@ TOKEN = os.environ["BRIEF_TOKEN"]
 @pytest.fixture(autouse=True)
 def no_real_services(monkeypatch):
     """Tests never reach the real Atlas cluster or Gemini, even when .env has real keys."""
-    from backend.ai import extract, gemini, overdue, prioritise
+    from backend.ai import board, extract, fees, forecast, gemini, overdue, prioritise, review
+    from backend.outputs import assistant
     from backend.db import client
 
     def no_db():
@@ -28,7 +30,14 @@ def no_real_services(monkeypatch):
     monkeypatch.setattr(extract, "get_client", no_gemini)
     monkeypatch.setattr(overdue, "get_client", no_gemini)
     monkeypatch.setattr(prioritise, "get_client", no_gemini)
+    monkeypatch.setattr(assistant, "get_client", no_gemini)
+    monkeypatch.setattr(forecast, "get_client", no_gemini)
+    monkeypatch.setattr(board, "get_client", no_gemini)
+    monkeypatch.setattr(review, "get_client", no_gemini)
+    monkeypatch.setattr(fees, "get_client", no_gemini)
     monkeypatch.setattr(gemini, "_sleep", lambda _s: None)  # retries back off instantly in tests
+    if "bridge.main" in sys.modules:  # rate limits (board meetings, fee uploads) start fresh in every test
+        monkeypatch.setattr(sys.modules["bridge.main"], "_last_run", {})
 
 
 @pytest.fixture
@@ -50,7 +59,8 @@ def db(monkeypatch):
 @pytest.fixture
 def gemini_down(monkeypatch):
     """Every Gemini call fails with the 429 spend-cap error we saw on Saturday."""
-    from backend.ai import extract, overdue, prioritise
+    from backend.ai import board, extract, fees, forecast, overdue, prioritise, review
+    from backend.outputs import assistant
 
     def boom(*_a, **_k):
         raise genai_errors.ClientError(429, {"error": {"code": 429, "message": "spending cap", "status": "RESOURCE_EXHAUSTED"}})
@@ -58,6 +68,11 @@ def gemini_down(monkeypatch):
     monkeypatch.setattr(extract, "_ask_gemini", boom)
     monkeypatch.setattr(overdue, "get_client", boom)
     monkeypatch.setattr(prioritise, "get_client", boom)
+    monkeypatch.setattr(assistant, "get_client", boom)
+    monkeypatch.setattr(forecast, "get_client", boom)
+    monkeypatch.setattr(board, "get_client", boom)
+    monkeypatch.setattr(review, "get_client", boom)
+    monkeypatch.setattr(fees, "get_client", boom)
 
 
 @pytest.fixture

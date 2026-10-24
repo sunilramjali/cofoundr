@@ -33,6 +33,18 @@ def get_db() -> Database:
     return get_client()[os.environ.get("MONGODB_DB", schema.DB_NAME)]
 
 
+class RealDataRefused(ValueError):
+    """Real business data must never land in the shared, synthetic demo database."""
+
+
+def check_real_data_allowed(db: Database) -> None:
+    """Call before storing anything real (synthetic=False). The demo database is read by /brief through a token in the
+    URL, by both partners' local dev and by demo resets, which is only acceptable for synthetic data."""
+    if db.name == schema.DB_NAME:
+        raise RealDataRefused(f"Real data can't be stored in the shared demo database ({schema.DB_NAME}). "
+                              "Set MONGODB_DB to your own database (e.g. gaia-real) and import again.")
+
+
 def ping() -> bool:
     return get_client().admin.command("ping").get("ok") == 1.0
 
@@ -68,6 +80,7 @@ def ensure_indexes(db: Database) -> None:
     db[schema.SALES].create_index([("order_id", ASCENDING)])
     db[schema.ORDERS].create_index([("business_id", ASCENDING), ("placed_at", ASCENDING)])
     db[schema.STOCK_COUNTS].create_index([("business_id", ASCENDING), ("counted_at", ASCENDING)])
+    db[schema.PAYMENTS].create_index([("business_id", ASCENDING), ("date", ASCENDING)])
     # Weather + events around the pitches (backend/conditions.py): read by date for the forecast
     db[schema.WEATHER].create_index([("business_id", ASCENDING), ("pitch_id", ASCENDING), ("date", ASCENDING)])
     db[schema.EVENTS].create_index([("business_id", ASCENDING), ("date", ASCENDING), ("status", ASCENDING)])

@@ -34,6 +34,15 @@ Failures raise `fetch.FetchError` with a plain-English message (API keys never a
 ```
 Try them: `python -m backend.inputs.weather`, `python -m backend.inputs.events`.
 
+## WhatsApp via Twilio (`whatsapp.py`)
+Twilio posts each message to `POST /whatsapp/twilio`. The bridge checks `X-Twilio-Signature` (HMAC-SHA1 with `TWILIO_AUTH_TOKEN` over `PUBLIC_URL` + path + sorted fields), answers Twilio at once, then `handle()` runs in the background:
+- only `OWNER_WHATSAPP` is acted on; other numbers are logged (`whatsapp_ignored`) and get no reply
+- photo/PDF → downloaded from Twilio (credentials only ever sent to `api.twilio.com`) → `ingest_invoice(source="whatsapp_photo")`; the reply is the pipeline's message
+- exactly "approve 4" / "reject 2" → `approvals.decide(via="whatsapp")`, never via Gemini
+- anything else → `backend.outputs.assistant` (Gemini, read-only tools)
+
+Setup: Twilio Console → Messaging → Try it out → Send a WhatsApp message; join the sandbox from the owner's phone; set "When a message comes in" to `https://cofoundr.fly.dev/whatsapp/twilio` (POST).
+
 ## Gmail intake (`gmail.py`)
 The demo inbox (`GMAIL_ADDRESS` + a 16-letter `GMAIL_APP_PASSWORD`) is checked over IMAP every `GMAIL_POLL_SECONDS` (60 on Fly, off locally) and by the dashboard's **Check inbox now** button (`POST /check-inbox`).
 - PDF/image attachments are always read; an email without one is read as text **only if its subject mentions an invoice** (pitches and Google alerts never reach Gemini). Logos under 10 KB are ignored.
@@ -41,3 +50,10 @@ The demo inbox (`GMAIL_ADDRESS` + a 16-letter `GMAIL_APP_PASSWORD`) is checked o
 - `check_inbox()` never raises → `InboxResult(ok, message, emails, error)`; one `gmail_checked` log line per check with new email; login/connection failures logged once, not every minute.
 - **Saint channel:** Thea (our Saint agent) reads links but can't POST, so she emails the inbox. An email from `SAINT_EMAIL` that Gmail verified (top `Authentication-Results` from `mx.google.com`, DKIM/DMARC/SPF pass for her exact domain): a photo/PDF → `ingest_invoice(source="whatsapp_photo")`; a body line that is exactly "approve 4" / "reject 2" → `approvals.decide(via="whatsapp")` (one per email; quoted replies ignored). A forged From: is logged as `saint_email_rejected` and decides nothing. The owner hears the result via `/updates`, which Thea polls. Reply parsing lives in `replies.py` (shared with `/approve` and the chat bar).
 - Try it: `python -m backend.inputs.gmail` (real inbox + real Gemini + Atlas: it labels emails and saves invoices).
+
+## Card payments: EVO CSV, Square, SumUp (`evo.py`, `square.py`, `sumup.py`; built by Sunil, flagged for Jade)
+Read-only. Card data is never stored: see `docs/privacy.md`. Real data is refused in the demo database.
+- **EVO** has no merchant API: the owner exports *Transactions* as CSV and uploads it on the **Sales** page (`POST /import/evo`) or runs `python -m backend.inputs.evo <path> [--dry-run]`. Only allow-listed columns are read → `backend.payments.record_payments`. Demo sample: `data/samples/evo_transactions_synthetic.csv` (`python -m data.make_evo_sample`).
+- **Square** (`SQUARE_ACCESS_TOKEN`, `SQUARE_ENV`, scope `ORDERS_READ`): completed orders **with items** → POS format → `sales.record_orders`. `python -m backend.inputs.square --days 7 --dry-run`
+- **SumUp** (`SUMUP_ACCESS_TOKEN`, `SUMUP_ENV`, scope `transactions.history`): payments → `record_payments`. `python -m backend.inputs.sumup --days 7 --dry-run`
+- Sandbox = synthetic, production = real (needs a non-demo `MONGODB_DB` + `PAYMENT_ID_SALT`). Not on the poller yet.
