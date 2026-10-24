@@ -627,11 +627,19 @@ def test_gmail_reads_html_only_invoice_emails(db, inbox_env, gemini_reads):
     assert "Oat milk x10" in text and "Total £20.00" in text and "color:red" not in text
 
 
-def test_gmail_retries_an_email_when_gemini_is_busy(db, inbox_env, gemini_down):
+def test_gmail_retries_a_busy_email_after_a_wait_not_every_minute(db, inbox_env, gemini_down, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(gmail.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(gmail, "_retry_after", {})
     box = FakeInbox(_mail("Invoice 24/10/2026", "Weekly beans: £20.00"))
     r = gmail.check_inbox(connect=lambda: box)
-    assert not r.ok and "couldn't be read" in r.message and box.labelled() == []  # left for the next check
-    assert gmail.check_inbox(connect=lambda: box).emails  # ...which tries it again
+    assert not r.ok and "couldn't be read" in r.message and box.labelled() == []  # left for later
+    clock[0] += 60
+    assert gmail.check_inbox(connect=lambda: box).message == "Inbox checked: nothing new." and box.fetched == [b"1"]  # not yet
+    clock[0] += gmail.RETRY_WAIT
+    assert gmail.check_inbox(connect=lambda: box).emails and box.fetched == [b"1", b"1"]  # retried after the wait
+    fails = db[schema.AGENT_LOG].count_documents({"kind": "ingest_failed"})
+    assert fails == 2  # one per real attempt, not one per minute
 
 
 def test_gmail_not_an_invoice_after_all_is_labelled_not_retried(db, inbox_env, gemini_reads):
@@ -799,3 +807,64 @@ def test_trend_chart_geometry():
     assert t["actual"].startswith("M0.0,") and t["forecast"].startswith(f"M{t['split']},") and t["area"].endswith("Z")
     assert t["split"] == round(100 * 2 / 3, 2) and t["dot"][0] == t["split"]
     assert view.trend({"days": []}, {"days": []})["actual"] == ""
+
+
+# ---------------------------------------------------------------- CSRF: other websites can't act for the owner
+@pytest.mark.parametrize("path,data", [("/saint", {"text": "approve 1"}), ("/check-inbox", {}), ("/run-check", {}),
+                                       ("/approvals/x/decide", {"decision": "approve"})])
+@pytest.mark.parametrize("headers", [{"Origin": "https://evil.example.com"}, {"Origin": "null"},
+                                     {"Referer": "https://evil.example.com/page"}, {"Origin": "http://testserver.evil.com"}])
+def test_cross_site_posts_are_blocked(db, path, data, headers):
+    r = web.post(path, data=data, headers=headers, follow_redirects=False)
+    assert r.status_code == 403 and "Blocked" in r.text
+
+
+def test_same_site_and_server_to_server_posts_still_work(db, gemini_down, sent):
+    overdue.run()
+    same = web.post("/saint", data={"text": "approve 4"}, headers={"Origin": "http://testserver"}, follow_redirects=False)
+    assert same.status_code == 303 and "#4 approved" in _flash(same)
+    referer = web.post("/run-check", headers={"Referer": "http://testserver/approvals"}, follow_redirects=False)
+    assert referer.status_code == 303
+    saint = web.post("/approve", params={"token": TOKEN}, json={"text": "reject 1"})  # Saint's server: no Origin
+    assert saint.status_code == 200 and saint.json()["status"] == "rejected"
+
+
+# ---------------------------------------------------------------- local sandbox: never writes to the real database
+def test_sandbox_copies_the_data_and_keeps_writes_local(db, monkeypatch):
+    from backend.outputs import email
+    from tools import sandbox
+    for mod, attr in [(sandbox, "_mock"), (dbclient, "get_client"), (gmail, "check_inbox"), (gmail, "start_polling"), (email, "send_reminder")]:
+        monkeypatch.setattr(mod, attr, getattr(mod, attr))  # restored after the test
+    monkeypatch.setattr(sandbox, "_mock", None)
+    real_count = db[schema.INVOICES].count_documents({})
+    sandbox.install()
+    local = dbclient.get_db()
+    assert sandbox.active() and local[schema.INVOICES].count_documents({}) == real_count  # same data...
+    local[schema.INVOICES].delete_many({})
+    assert db[schema.INVOICES].count_documents({}) == real_count  # ...but deleting locally leaves the real one alone
+    assert gmail.check_inbox().error == "not_configured" and "NOT sent" in email.send_reminder({"to_email": "a@b.c"})
+
+
+def test_weather_never_makes_a_page_wait_on_a_refresh(monkeypatch):
+    import threading
+    clock = [10_000.0]
+    monkeypatch.setattr(view.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(view, "_weather", {"at": 0.0, "ttl": 0, "days": {}, "refreshing": False})
+    calls, release = [], threading.Event()
+
+    def slow_forecast(pitch, days, timeout):
+        calls.append(timeout)
+        if len(calls) > 1:
+            release.wait(2)  # the background refresh is slow...
+        return [{"date": "2026-10-24", "summary": f"v{len(calls)}"}]
+    monkeypatch.setattr(weather, "forecast", slow_forecast)
+    assert view.weather_by_date()["2026-10-24"]["summary"] == "v1" and calls == [view.WEATHER_TIMEOUT]  # first fetch inline, short timeout
+    clock[0] += view.WEATHER_TTL + 1  # stale now
+    assert view.weather_by_date()["2026-10-24"]["summary"] == "v1"  # ...but the page gets the old weather straight away
+    assert view.weather_by_date()["2026-10-24"]["summary"] == "v1" and len(calls) == 2  # only one refresh in flight
+    release.set()
+    for _ in range(50):
+        if not view._weather["refreshing"]:
+            break
+        threading.Event().wait(.02)
+    assert view.weather_by_date()["2026-10-24"]["summary"] == "v2"

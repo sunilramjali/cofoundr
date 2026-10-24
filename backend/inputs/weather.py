@@ -38,14 +38,14 @@ def _num(value, name: str) -> Optional[float]:
     return value
 
 
-def forecast(pitch: Pitch = PITCHES[0], days: int = 7) -> List[dict]:
+def forecast(pitch: Pitch = PITCHES[0], days: int = 7, timeout: float = fetch.TIMEOUT) -> List[dict]:
     """The next `days` days (today first, London dates) at one pitch."""
     if not 1 <= days <= MAX_DAYS:
         raise ValueError(f"days must be between 1 and {MAX_DAYS}.")
     data = fetch.get_json(OPEN_METEO, {
         "latitude": pitch["lat"], "longitude": pitch["lon"], "daily": ",".join(DAILY), "forecast_days": days,
         "timezone": "Europe/London", "temperature_unit": "celsius", "wind_speed_unit": "kmh", "precipitation_unit": "mm",
-    }, source="Open-Meteo")
+    }, source="Open-Meteo", timeout=timeout)
     daily = data.get("daily")
     if not isinstance(daily, dict) or not isinstance(daily.get("time"), list):
         raise fetch.FetchError("Open-Meteo answered without a daily forecast")

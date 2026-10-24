@@ -13,7 +13,7 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
@@ -30,6 +30,10 @@ from backend.db import activity, schema
 from backend.db.client import get_db
 from bridge import view
 
+if os.environ.get("COFOUNDR_SANDBOX"):  # local development on an in-memory copy of the demo data (tools/sandbox.py)
+    from tools import sandbox
+    sandbox.install()
+
 
 
 @asynccontextmanager
@@ -43,6 +47,18 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="CoFoundr", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def same_site_posts_only(request: Request, call_next):
+    """Block cross-site form posts (CSRF): another website must never be able to approve, pay or upload for the owner.
+    Browsers send Origin (or at least Referer) on cross-site POSTs; Saint's server-to-server calls send neither."""
+    if request.method == "POST":
+        source = request.headers.get("origin") or request.headers.get("referer")
+        host = request.headers.get("host", "")
+        if source is not None and (source == "null" or urlsplit(source).netloc != host):
+            return PlainTextResponse("Blocked: this action can only be sent from CoFoundr's own pages.", status_code=403)
+    return await call_next(request)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["money"] = lambda v: f"£{v:,.2f}" if v is not None else "–"
@@ -126,6 +142,7 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "stock": view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now),
         "opportunities": view.opportunities(gmail_logs),
         "nav": NAV,
+        "sandbox": bool(os.environ.get("COFOUNDR_SANDBOX")),
         "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
                   "polling": int(os.environ.get("GMAIL_POLL_SECONDS") or 0), "last": gmail.last_check},
     }
