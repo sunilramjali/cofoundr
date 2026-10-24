@@ -50,6 +50,12 @@ jade  ──┘
 - The hook also **blocks Claude from pushing to `main` or `stage`** (🚫🔴 BLOCKED: direct push). Claude pushes only to the person's own branch and opens PRs.
 - Don't create `sunil/...` or `stage/...` sub-branches: git can't have both `sunil` and `sunil/x`.
 
+### CI/CD
+- **CI** (`.github/workflows/ci.yml`): every PR into `stage`/`main` installs deps, compiles, runs `pytest tests` (fast, no MongoDB/Gemini needed). The `checks` job is a **required status check**: a red PR can't merge.
+- **CD** (`.github/workflows/deploy.yml`): every push to `main` (= every approved release PR) runs `fly deploy`, then checks `/health`. **Live app = `main`.** Don't `fly deploy` by hand from feature branches, except to hotfix during the demo.
+- Needs GitHub secret `FLY_API_TOKEN` (Fly deploy token scoped to the `cofoundr` app, 30-day expiry).
+- Add a test to `tests/` for any new logic that can run without network.
+
 ### Commit messages
 Format: **`MVP<n>: <one sentence of what changed>`**, where `<n>` is the MVP stage the change serves (see "Current stage" in `MVP.md`).
 ```
