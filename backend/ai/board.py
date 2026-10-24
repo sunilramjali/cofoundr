@@ -272,7 +272,9 @@ def write_memo(db, now: datetime) -> dict:
         attempts = 2
         fix = "\n".join(f"- {r['insight'].title}: " + "; ".join(r["problems"]) for r in wrong)
         try:
-            revised, _ = ask_gemini(prompt + "\n\n" + json.dumps(memo.model_dump()) + "\n\n" + RECHECK.format(problems=fix))
+            # ensure_ascii=False: "£" escaped as £ came back merged with the digits ("£276" → "ɶ")
+            revised, _ = ask_gemini(prompt + "\n\n" + json.dumps(memo.model_dump(), ensure_ascii=False) + "\n\n"
+                                    + RECHECK.format(problems=fix))
             by_title = {i.title.strip().lower(): i for i in revised.insights}
             known = {r["insight"].title.strip().lower() for r in results}
             renamed = [i for i in revised.insights if i.title.strip().lower() not in known]
