@@ -12,6 +12,27 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, ~04:15 — Docs caught up with release #43
+- **Did:** `project-plan.md` (Gemini roles, "built beyond the plan": card payments, self-grading forecast, board meeting, fee audit; data + real-data rule; full collections list; demo step 5 + Sunday prep; Twilio open question), `MVP.md` (my MVP2 extras ticked, release noted), `CLAUDE.md` (`payments.py` seam, `backend/ai/` contents, real-data + no-reset rules, test count), `README.md` (new jobs, status table, Atlas features table filled with evidence). Built on top of Jade's PR #46 (Saint removal) to avoid conflicts
+- **Status:** done, PR into `stage`
+- **Next:** Sunday-morning demo prep runs, rehearsal, backup video, README judging + user guide
+- **Blockers / notes for partner:** Jade, merge #46 first (mine includes it). Please pull. README now says Gmail "✓ Live" (Fly has `GMAIL_*` + #43 is deployed): your `MVP.md` Gmail box is yours to tick. Still missing for WhatsApp: `TWILIO_*` + `OWNER_WHATSAPP` Fly secrets, sandbox join + webhook
+
+## Sun 25 Oct, ~04:00 — Handover to a new session
+- **Git:** `sunil` = `stage` (all merged: #39, #42, #44). **Release PR #43 (stage → main) open, CI green, waiting for Jade's approval**; merging it deploys to Fly. Live `main` is still the 19:47 release (no card payments, board, reviews, fee audit, Twilio yet)
+- **Fly secrets:** has MONGODB_URI, GEMINI_API_KEY, BRIEF_TOKEN, GMAIL_*, SAINT_EMAIL. **Missing TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_WHATSAPP_FROM / OWNER_WHATSAPP** (Jade's WhatsApp demo; app runs fine without, WhatsApp shows "off")
+- **Tell Jade:** `git pull origin stage`; approve #43; review my edits in her area (`bridge/main.py` routes /board, /board/run, /import/evo, /import/fees + rate limits; `templates/board.html`, `sales.html`; `inputs/evo|square|sumup.py`, `inputs/weather.py history()`, `fetch.py`, `transport.py`)
+- **Atlas (demo DB):** untouched tonight except reads/dry runs. No forecast adjustment, memo, review, payments or fee audit stored yet
+- **Sunday-morning demo prep, after #43 is live (writes the demo DB: tell Jade first):**
+  1. `python -m backend.ai.review --backtest 21` (grades + lessons + earned cap)
+  2. `python -m backend.ai.forecast` (week with Gemini reasons)
+  3. `python -m backend.ai.board` (~70 s) or the button on /board
+  4. On /sales: upload `data/samples/evo_transactions_synthetic.csv`, then `data/samples/card_fees_synthetic.png` (finds the planted overcharges)
+  5. `python -m backend.ai.prioritise`
+- **Real GAIA data:** EVO CSV + fee summary PNG are **outside the repo** (`~/Documents/projects/`, copies in `~/Downloads`). Never commit/upload; real data only in a separate DB (`MONGODB_DB=gaia-real` + `PAYMENT_ID_SALT`). No real figures in logs or tests
+- **Then:** rehearse the 3-min demo twice, record the backup video, README judging/user-guide sections (with evidence)
+- **Ideas not built:** video stock count (#4: Twilio video → Argon counts with timestamps, double pass + expected-stock check, asks when unsure, order to approval); dashboard search box (Atlas Search); events source + events autoEmbed; hourly trading-hours rain in the forward forecast (Jade's weather.py); Square refunds
+
 ## Sun 25 Oct, ~03:45 — Post-mortem: board meeting, forecast reviews, fee audit
 - **10 bugs reproduced with failing tests first, then fixed** (`tests/test_postmortem_0325.py`, 396 pass):
   1. **Public "Hold a board meeting" button could run up the Gemini bill** (~170k tokens per press) → one per 10 min; fee uploads one per minute

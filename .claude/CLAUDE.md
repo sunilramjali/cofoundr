@@ -66,7 +66,7 @@ jade  ──┘
 - **CI** (`.github/workflows/ci.yml`): every PR into `stage`/`main` installs deps, compiles, runs `pytest tests` (fast, no MongoDB/Gemini needed). The `checks` job is a **required status check**: a red PR can't merge.
 - **CD** (`.github/workflows/deploy.yml`): every push to `main` (= every approved release PR) runs `fly deploy`, then checks `/health`. **Live app = `main`.** Don't `fly deploy` by hand from feature branches, except to hotfix during the demo.
 - Needs GitHub secret `FLY_API_TOKEN` (Fly deploy token scoped to the `cofoundr` app, 30-day expiry).
-- **Tests:** `.venv/bin/python -m pytest -q tests` (65+ tests, ~0.3 s). They use an in-memory MongoDB (`mongomock`) and a fake Gemini from `tests/conftest.py` (`db`, `gemini_down`, `fake_extraction`, `sent` fixtures); an autouse guard makes any test that touches the real Atlas or Gemini fail. Tools: `pip install -r requirements-dev.txt`. CI also runs `pyflakes`.
+- **Tests:** `.venv/bin/python -m pytest -q tests` (385+ tests, ~20 s). They use an in-memory MongoDB (`mongomock`) and a fake Gemini from `tests/conftest.py` (`db`, `gemini_down`, `fake_extraction`, `sent` fixtures); an autouse guard makes any test that touches the real Atlas or Gemini fail. Tools: `pip install -r requirements-dev.txt`. CI also runs `pyflakes`.
 - **Every new feature ships with a scenario test** for its obvious edge cases (see `docs/postmortem-2026-10-24.md`: 10 of 13 bugs would have been caught that way). Middle → `tests/test_middle.py`, edges → `tests/test_edges.py`.
 
 ### Commit messages
@@ -93,7 +93,8 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 | `backend/inputs/` | Input channels: Gmail intake, WhatsApp via Twilio (`whatsapp.py`: signed webhook, photos, "approve N"), external APIs (weather, events, Treg) | **Jade** |
 | `backend/pipeline.py` | **Inputs → middle hand-off**: `ingest_invoice(bytes, mime, source, origin)` does extract → verify → save → log → overdue check. Every input calls this, nothing else | **Sunil** |
 | `backend/sales.py` | **POS → database hand-off**: `record_orders(orders)`, `record_stock_count(count)` take the POS connector's format as-is; idempotent; writes `orders`, `sales` (time-series), `products`, `stock_counts` | **Sunil** |
-| `backend/ai/` | Gemini: invoice extraction + verification loop, overdue drafts, forecast, prioritisation | **Sunil** |
+| `backend/payments.py` | **Card payments → database hand-off**: `record_payments()` (EVO CSV, Square, SumUp), allow-listed fields, salted-hash ids, idempotent; `daily_takings()` | **Sunil** |
+| `backend/ai/` | Gemini: invoice extraction + verification loop, overdue drafts, forecast (`forecast.py`) + self-grading (`review.py`), prioritisation, board meeting (`board.py`), card fee audit (`fees.py`) | **Sunil** |
 | `backend/approvals.py` | Approval rules; the only place a decision is applied. Calls `outputs.email.send_reminder` after approval | **Sunil** |
 | `backend/db/`, `backend/db/schema.py` | MongoDB connection, activity log, indexes/search; **the shared data contract** | **Sunil** |
 | `data/` | Synthetic seed data, sample invoices | **Sunil** |
@@ -103,7 +104,7 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 | `Dockerfile`, `fly.toml`, `.github/workflows/` | Deploy + CI/CD | **Sunil** |
 | `.claude/` | Shared docs (protected by the hook) | Both |
 
-- **The two seams.** Inputs → middle: invoices go through `pipeline.ingest_invoice` (use its `IngestResult`); till data goes through `sales.record_orders` / `sales.record_stock_count` (use its `SyncResult`). Inputs never write MongoDB directly. Middle → outputs: read MongoDB through `schema.py` names; outputs never change data except via `approvals.decide`. Changing either seam = tell your partner first.
+- **The two seams.** Inputs → middle: invoices go through `pipeline.ingest_invoice` (use its `IngestResult`); till data goes through `sales.record_orders` / `sales.record_stock_count` (use its `SyncResult`); card payments go through `payments.record_payments`. Inputs never write MongoDB directly. Middle → outputs: read MongoDB through `schema.py` names; outputs never change data except via `approvals.decide`. Changing either seam = tell your partner first.
 - **Each folder has one owner.** To change something in your partner's folder, tell them first or ask them to make the change.
 - **Data contract:** never hard-code collection names or change document shapes outside `backend/db/schema.py`. Any change there gets announced to the partner and noted in your log *before* merging.
 - No Streamlit. The dashboard is server-rendered HTML in the same Fly.io app.
@@ -152,7 +153,8 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 - **Priorities come from the docs, in this order:** `MVP.md` (current stage) → `project-plan.md` (module priority + cut order) → `winning-criteria.md` (bounty checklists). Don't build nice-to-haves before the current MVP stage is done.
 - **Never cut the approval flow.** Every finance/money action needs owner approval first.
 - **Every sponsor tool must visibly do the job it's best at** (MongoDB Atlas features, Gemini 4 Argon reasoning/multimodal, WhatsApp via Twilio, Treg as tool gateway). When a feature ships, tick it in `winning-criteria.md`.
-- **Synthetic data only**, clearly labelled. No real customer data, no secrets committed.
+- **Synthetic data only** in the repo and the demo DB, clearly labelled. No real customer data, no secrets committed. Real GAIA exports stay outside the repo and only go into a separate DB (`MONGODB_DB=gaia-real` + `PAYMENT_ID_SALT`); `cofoundr-db` refuses them. No real figures in logs, tests or docs.
+- **Never wipe or re-seed the demo DB** unless Sunil asks. Anything that writes the demo DB (forecast, board, fee upload): tell the partner first.
 - If a change affects scope, stack or timeline, update `project-plan.md` in the same session and note it in the log.
 
 ## Logging
