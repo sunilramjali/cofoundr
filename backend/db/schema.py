@@ -211,11 +211,24 @@ class ProductForecast(TypedDict):
     expected_qty: float  # units expected that day
 
 
+class ForecastFactor(TypedDict):
+    kind: Literal["weather", "event", "transport"]
+    ref: str  # the condition it's based on: "weather:<date>", an Event _id or a TransportDisruption _id
+    label: str  # "Light rain", "Central line severe delays at Bethnal Green"
+    effect_pct: float  # this factor's share of the day's pct
+    why: str  # Gemini's short explanation
+
+
 class ForecastAdjustment(TypedDict):
-    """Gemini's change to the baseline, from weather + events (MVP2, after Jade's weather/events inputs)."""
-    pct: float  # e.g. +28.0
-    reason: str  # one line, e.g. "+28% Sat: Broadway Market nearby + sunny"
-    sources: List[str]  # what it looked at, e.g. ["weather", "events"]
+    """Gemini's change to the baseline from the day's weather, events and transport. Only stored after the checks in
+    backend.ai.forecast.check() pass (factors exist, add up, within limits, sensible direction, reason states the %)."""
+    pct: float  # e.g. +12.0
+    reason: str  # one line for the owner, e.g. "-18% Mon: heavy rain all day"
+    confidence: Literal["high", "medium", "low"]
+    by: Literal["gemini"]
+    sources: List[str]  # kinds of factor used, e.g. ["transport", "weather"]; [] = looked, no change
+    factors: List[ForecastFactor]
+    attempts: int  # 2 = accepted after Gemini fixed what the checks rejected
 
 
 class Forecast(TypedDict):

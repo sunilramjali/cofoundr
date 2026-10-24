@@ -12,6 +12,20 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, ~22:00 — Gemini forecast adjustment with a verification loop (MVP2)
+- **Did:** merged #31 into stage, opened release **PR #36** (stage → main, needs Jade's approval). Then `backend/ai/forecast.py`:
+  - Gemini gets each trading day's baseline + range, GAIA's daily takings history, and the stored conditions (`conditions_for`: weather, events, TfL), each with a `ref`
+  - Returns % change + factors (each cites a ref + its own %) + one line for the owner + confidence
+  - **Checks (code):** cited conditions must exist for that day and be the right kind; factors add up to the total; ±35% per day, ±30% per factor; rain/drizzle and transport disruptions can't raise takings; the reason must state the %; days with no conditions are never sent
+  - Failing days go back **once with the exact problems**; still failing or Gemini down → baseline kept, `gemini_fallback` logged. Accepted → `forecast_adjusted` logged
+  - `--no-gemini` flag; CLI prints the factors
+- **Live dry run (not stored):** Sat −25% (heavy rain −22%, Central line delays −3%), Mon −8% (heavy drizzle), Wed/Fri no change, all accepted on attempt 1
+- **Contract changes (`schema.py`):** `ForecastFactor`; `ForecastAdjustment` gains `confidence`, `by`, `factors`, `attempts` (`pct`, `reason`, `sources` unchanged, so Jade's `/sales` already shows `reason`)
+- **Tests:** `tests/test_forecast_adjust.py` (new file), 15 tests; conftest guards `forecast` from real Gemini → 260 pass
+- **Status:** done locally, not yet run for real on Atlas
+- **Next:** run `python -m backend.ai.forecast` on Atlas (+ on Fly with the poller); function calling; tick forecast item in `MVP.md`
+- **Blockers / notes for partner:** Jade, `final_revenue` can now go below `low_revenue` (rainy Sat £457 vs range £568–£634): your chart's `peak` uses `high_revenue`, fine, but show `final_revenue` + `adjustment.reason` and maybe the factors. New agent_log kind `forecast_adjusted`
+
 ## Sat 24 Oct, ~21:00 — Handover to a new session
 - **Open PR #31** (`sunil` → stage): hybrid search + price check + supplier loyalty + weather/events/transport storage. CI was green on the previous push; **merge it**, then pull stage
 - **Release PR #27** (stage → main) needs **Jade's approval**; after #31 merges it should be refreshed so the live app gets everything. Gmail secrets are staged on Fly and go live with that deploy
