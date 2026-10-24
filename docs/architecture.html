@@ -1,0 +1,278 @@
+<title>CoFoundr Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: single reading column; the system diagram breaks out wider; sections separated by space, not boxes */
+  :root {
+    --bg: #fbfaf8;
+    --surface: #ffffff;
+    --ink: #22201d;
+    --muted: #6f6a63;
+    --line: #e6e1da;
+    --accent: #0f6b5c;      /* approve / done */
+    --accent-soft: #e3f1ed;
+    --amber: #a8620a;       /* pending / open */
+    --amber-soft: #fbf0df;
+    --espresso: #3b2a20;    /* brand ink for headings + diagram nodes */
+    --node: #f3eee8;
+    --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161412; --surface: #1f1c19; --ink: #ece7e1; --muted: #a39b91; --line: #34302b;
+      --accent: #4fbfa8; --accent-soft: #17302a; --amber: #e0a14c; --amber-soft: #33270f;
+      --espresso: #e9d9c9; --node: #262220; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161412; --surface: #1f1c19; --ink: #ece7e1; --muted: #a39b91; --line: #34302b;
+    --accent: #4fbfa8; --accent-soft: #17302a; --amber: #e0a14c; --amber-soft: #33270f;
+    --espresso: #e9d9c9; --node: #262220; color-scheme: dark;
+  }
+
+  body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--font-body);
+         padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 72px; }
+  .wrap { max-width: 760px; margin: 0 auto; display: grid; gap: 56px; }
+  .wide { max-width: 1040px; margin: 0 auto; width: 100%; }
+  h1, h2, h3 { font-family: var(--font-display); color: var(--espresso); text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(2.2rem, 6vw, 3.4rem); font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; }
+  h2 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.01em; }
+  h3 { font-size: 1.1rem; font-weight: 600; }
+  p { margin: 0; }
+  section { display: grid; gap: 16px; }
+  .eyebrow { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .lede { font-size: 1.15rem; color: var(--ink); max-width: 62ch; }
+  .muted { color: var(--muted); }
+  code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+  code { background: var(--node); padding: 1px 6px; border-radius: 5px; }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 0.92rem; }
+  .meta span b { font-weight: 600; }
+
+  .rule { border-left: 3px solid var(--accent); padding: 12px 16px; background: var(--accent-soft); border-radius: 0 8px 8px 0; }
+  .rule b { color: var(--accent); }
+
+  /* System diagram */
+  .diagram { overflow-x: auto; }
+  .sys { min-width: 720px; display: grid; grid-template-columns: 1fr 1.6fr 1fr; grid-template-rows: auto auto auto; gap: 18px 28px; align-items: stretch; }
+  .node { background: var(--node); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+  .node h3 { font-size: 1rem; }
+  .node .role { font: 500 0.72rem/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+  .node ul { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+  .node.core { background: var(--surface); border: 2px solid var(--espresso); }
+  .node.next { border-style: dashed; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .split > div { background: var(--node); border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; min-width: 0; }
+  .split b { display: block; font-size: 0.8rem; color: var(--espresso); }
+  .arrow { font: 500 0.78rem/1.3 var(--font-mono); color: var(--muted); display: flex; align-items: center; justify-content: center; text-align: center; }
+  .owner { grid-column: 1; grid-row: 1; }
+  .app { grid-column: 2; grid-row: 1 / span 2; }
+  .phone { grid-column: 1; grid-row: 2; }
+  .saint { grid-column: 1; grid-row: 3; }
+  .gemini { grid-column: 3; grid-row: 1; }
+  .mongo { grid-column: 3; grid-row: 2 / span 2; }
+  .wire { grid-column: 2; grid-row: 3; }
+  .wire .arrow { height: 100%; border: 1px dashed var(--line); border-radius: 10px; padding: 10px; }
+  .tag { display: inline-block; font: 500 0.72rem/1.4 var(--font-mono); padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+  .tag.amber { background: var(--amber-soft); color: var(--amber); }
+
+  /* Four pieces */
+  .pieces { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 32px; }
+  .piece { display: grid; gap: 6px; align-content: start; }
+  .piece .role { font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+
+  /* Life of an invoice: a real sequence, so numbered */
+  ol.steps { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; gap: 14px; }
+  ol.steps li { counter-increment: s; display: grid; grid-template-columns: 2.2rem 1fr; gap: 12px; align-items: start; }
+  ol.steps li::before { content: counter(s); font: 800 1.05rem/2rem var(--font-display); color: var(--espresso); background: var(--node);
+                        border-radius: 50%; width: 2rem; height: 2rem; text-align: center; }
+  ol.steps li p { padding-top: 4px; }
+
+  /* Progress */
+  .progress { display: grid; gap: 8px; }
+  .bar { height: 10px; background: var(--node); border-radius: 99px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 75%; background: var(--accent); }
+  ul.checks { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 24px; font-size: 0.95rem; }
+  ul.checks li { display: flex; gap: 10px; align-items: baseline; }
+  ul.checks .ok { color: var(--accent); font-weight: 600; }
+  ul.checks .todo { color: var(--amber); font-weight: 600; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font: 500 0.72rem/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+  td:first-child { white-space: nowrap; font-family: var(--font-mono); font-size: 0.85rem; }
+
+  /* Branch flow */
+  .flow { overflow-x: auto; }
+  .flow-row { min-width: 560px; display: grid; grid-template-columns: auto auto auto auto auto; align-items: center; gap: 10px; }
+  .br { font: 500 0.95rem/1 var(--font-mono); padding: 10px 14px; border-radius: 8px; background: var(--node); border: 1px solid var(--line); text-align: center; }
+  .br.main { background: var(--espresso); color: var(--bg); border-color: var(--espresso); }
+  .br small { display: block; font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
+  .br.main small { color: var(--bg); opacity: 0.75; }
+  .stack { display: grid; gap: 8px; }
+  .to { font: 500 0.75rem/1.3 var(--font-mono); color: var(--muted); text-align: center; }
+  ul.plain { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+  pre { margin: 0; background: var(--node); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font: 0.85rem/1.55 var(--font-mono); }
+
+  footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+
+  @media (max-width: 640px) {
+    .pieces, ul.checks { grid-template-columns: 1fr; }
+    body { padding-block: 24px 56px; }
+    .wrap { gap: 44px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+
+  <header style="display:grid;gap:18px">
+    <p class="eyebrow">Encode London 2026 · handover for Jade · Sat 24 Oct, 13:30</p>
+    <h1>How CoFoundr works today</h1>
+    <p class="lede">CoFoundr is an AI co-founder for GAIA Coffee, an East London coffee truck (demo data is synthetic). It keeps track of invoices, spots what's overdue and drafts what to do about it. It never touches money until the owner says yes.</p>
+    <div class="meta">
+      <span><b>Live app</b> <a href="https://cofoundr.fly.dev" target="_blank" rel="noopener">cofoundr.fly.dev</a></span>
+      <span><b>Repo</b> <a href="https://github.com/sunilramjali/cofoundr" target="_blank" rel="noopener">sunilramjali/cofoundr</a></span>
+      <span><b>Waiting on you</b> <a href="https://github.com/sunilramjali/cofoundr/pull/3" target="_blank" rel="noopener">PR #3 review</a></span>
+    </div>
+    <p class="rule"><b>The one rule:</b> the agent prepares, the owner decides, and every decision is logged. Nothing involving money happens automatically.</p>
+  </header>
+
+  <section class="wide" aria-labelledby="sys">
+    <p class="eyebrow">The system</p>
+    <h2 id="sys">Four pieces, one web app in the middle</h2>
+    <div class="diagram" role="img" aria-label="Owner uses the dashboard in a browser or WhatsApp via Saint; both reach the CoFoundr web app on Fly.io, which talks to Gemini 4 Argon and MongoDB Atlas.">
+      <div class="sys">
+        <div class="node owner"><span class="role">Owner · browser</span><h3>Dashboard</h3><p style="font-size:.88rem">Approves, edits or rejects; uploads invoices.</p></div>
+        <div class="node phone"><span class="role">Owner · phone</span><h3>WhatsApp</h3><p style="font-size:.88rem">"brief" · "approve 1"</p></div>
+        <div class="node saint next"><span class="role">Voice · next to test</span><h3>Saint</h3><p style="font-size:.88rem">Calls <code>/brief</code> and <code>/approve</code> for the owner.</p><span class="tag amber">not connected yet</span></div>
+
+        <div class="node core app">
+          <span class="role">Front door · FastAPI on Fly.io (London)</span>
+          <h3>CoFoundr web app</h3>
+          <p style="font-size:.88rem">One app, two doors. Both use the same approval code, so the rules are identical.</p>
+          <div class="split">
+            <div><b>Dashboard pages</b>approval queue · upload · invoices · brief · agent activity</div>
+            <div><b>Saint endpoints</b><span class="mono">/brief</span> · <span class="mono">/approve</span> (token) · <span class="mono">/health</span></div>
+          </div>
+          <span class="tag">live · cofoundr.fly.dev</span>
+        </div>
+        <div class="wire"><div class="arrow">browser → app ← Saint<br>app ↔ Gemini · app ↔ MongoDB</div></div>
+
+        <div class="node gemini"><span class="role">Brain</span><h3>Gemini 4 Argon</h3><ul><li>reads invoice photos/PDFs</li><li>checks its own work</li><li>drafts reminders</li></ul></div>
+        <div class="node mongo"><span class="role">Memory · MongoDB Atlas</span><h3><span class="mono">cofoundr-db</span></h3><ul><li><span class="mono">businesses</span>: GAIA Coffee</li><li><span class="mono">invoices</span>: 10 seeded</li><li><span class="mono">approvals</span>: waiting for a yes/no</li><li><span class="mono">agent_log</span>: everything it did</li></ul></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="pieces">
+    <p class="eyebrow">In plain English</p>
+    <h2 id="pieces">What each piece does</h2>
+    <div class="pieces">
+      <div class="piece"><span class="role">Memory</span><h3>MongoDB Atlas</h3><p>One database, <code>cofoundr-db</code>. It holds the business, invoices (money owed <em>to</em> GAIA by customers, and money GAIA owes suppliers), the actions waiting for approval, and a log of everything the agent has done.</p></div>
+      <div class="piece"><span class="role">Brain</span><h3>Gemini 4 Argon</h3><p>Reads an invoice photo into who, how much, when due and line items, then checks its own work: do the lines add up, are the dates valid? If not, it looks again. If the invoice itself is wrong, it flags it for the owner instead of guessing. It also drafts reminders that get firmer each time.</p></div>
+      <div class="piece"><span class="role">Front door</span><h3>Web app on Fly.io</h3><p>The owner's dashboard and the endpoints Saint uses, in one app at <a href="https://cofoundr.fly.dev" target="_blank" rel="noopener">cofoundr.fly.dev</a>. It's the only thing that talks to Gemini and MongoDB.</p></div>
+      <div class="piece"><span class="role">Voice</span><h3>Saint on WhatsApp</h3><p>The owner's assistant. It asks our app for the brief and passes "approve 1" or "reject 2" back. The endpoints are ready; connecting Saint is the next test.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="life">
+    <p class="eyebrow">Walkthrough</p>
+    <h2 id="life">The life of one invoice</h2>
+    <ol class="steps">
+      <li><p><b>Upload.</b> The owner adds a photo or PDF on the dashboard (WhatsApp photos come in MVP2).</p></li>
+      <li><p><b>Read and check.</b> Gemini extracts the fields. Code checks the line items equal the total and the dates make sense. If a check fails, Gemini re-reads once. Still wrong → <span class="tag amber">needs review</span>, confidence drops, nothing is guessed.</p></li>
+      <li><p><b>Overdue check.</b> Past its due date → marked overdue. Customer invoices get a reminder drafted by Gemini: friendly nudge → firm reminder → final notice, based on how many were already sent. Supplier bills get a "please pay" note for the owner.</p></li>
+      <li><p><b>Waiting for approval.</b> Each draft becomes a numbered <span class="tag amber">pending</span> approval with a one-line "why".</p></li>
+      <li><p><b>Owner decides.</b> On the dashboard (Approve / Edit / Reject) or on WhatsApp ("approve 1"). Deciding twice is refused.</p></li>
+      <li><p><b>Applied and logged.</b> Approved reminder → reminder count goes up (sending is simulated). Approved payment → invoice marked paid. Every step lands in <code>agent_log</code>, shown on the dashboard.</p></li>
+    </ol>
+    <p class="muted" style="font-size:.9rem">If Gemini is unavailable, drafts fall back to templates, so the flow still works on stage.</p>
+  </section>
+
+  <section aria-labelledby="progress">
+    <p class="eyebrow">MVP1 · one invoice, chased with approval</p>
+    <h2 id="progress">6 of 8 done</h2>
+    <div class="progress">
+      <div class="bar" role="progressbar" aria-valuenow="6" aria-valuemin="0" aria-valuemax="8" aria-label="MVP1 progress"><i></i></div>
+    </div>
+    <ul class="checks">
+      <li><span class="ok">✓</span> Atlas data + synthetic seed</li>
+      <li><span class="ok">✓</span> Gemini extraction</li>
+      <li><span class="ok">✓</span> Verification loop</li>
+      <li><span class="ok">✓</span> Overdue check + drafts</li>
+      <li><span class="ok">✓</span> Approval queue</li>
+      <li><span class="ok">✓</span> Live on Fly.io</li>
+      <li><span class="todo">○</span> Saint test: WhatsApp → <code>/brief</code>, <code>/approve</code></li>
+      <li><span class="todo">○</span> Upload retest (Gemini spend cap keeps returning 429)</li>
+    </ul>
+    <p class="muted" style="font-size:.9rem">Biggest risk: Gemini's billing account keeps hitting its monthly spend cap. Ask the Google DeepMind booth to raise it before the demo.</p>
+  </section>
+
+  <section aria-labelledby="code">
+    <p class="eyebrow">Where things live</p>
+    <h2 id="code">Code map</h2>
+    <div class="table-wrap">
+      <table>
+        <tr><th>Path</th><th>What's in it</th></tr>
+        <tr><td>backend/db/</td><td>MongoDB connection, <code>schema.py</code> (the data contract: read it before changing any data shape), activity log</td></tr>
+        <tr><td>backend/ai/</td><td><code>extract.py</code> reads invoices · <code>overdue.py</code> finds overdue and drafts · <code>gemini.py</code> shared client</td></tr>
+        <tr><td>backend/approvals.py</td><td>The only place a decision is applied (dashboard and Saint both use it)</td></tr>
+        <tr><td>backend/brief.py</td><td>The WhatsApp-ready brief</td></tr>
+        <tr><td>bridge/</td><td>The web app: <code>main.py</code> routes, <code>templates/index.html</code> dashboard</td></tr>
+        <tr><td>data/</td><td><code>seed.py</code> demo data · <code>samples/</code> 3 synthetic invoice images</td></tr>
+        <tr><td>.claude/</td><td>Plan, MVP stages, winning criteria, our two logs. Start with <code>CLAUDE.md</code></td></tr>
+        <tr><td>Dockerfile, fly.toml</td><td>Deploy with <code>fly deploy</code> from the repo root</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="flow">
+    <p class="eyebrow">How we work together</p>
+    <h2 id="flow">Every change goes through a pull request</h2>
+    <div class="flow">
+      <div class="flow-row">
+        <div class="stack"><div class="br">sunil</div><div class="br">jade</div></div>
+        <div class="to">PR →<br>no approval needed</div>
+        <div class="br">stage<small>integration</small></div>
+        <div class="to">PR →<br>other person approves</div>
+        <div class="br main">main<small>what we demo</small></div>
+      </div>
+    </div>
+    <ul class="plain">
+      <li>Always start with <code>git pull origin stage</code>.</li>
+      <li>Commit messages: <code>MVP1: one sentence of what changed</code>.</li>
+      <li>No direct pushes to <code>stage</code> or <code>main</code>. GitHub blocks it, and so does the Claude hook.</li>
+      <li>Write only in your own log (<code>LOG-ceyda.md</code> is yours). Shared docs warn you to pull before editing.</li>
+      <li>Changing <code>schema.py</code>? Tell the other person first and note it in your log.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="first">
+    <p class="eyebrow">Jade, start here</p>
+    <h2 id="first">Your first steps</h2>
+    <ol class="steps">
+      <li><p><b>Accept the GitHub invite</b> for <code>@JadeAlpay</code> (github.com/notifications or the email).</p></li>
+      <li><p><b>Get the code and catch up</b> (your branch is behind):</p></li>
+    </ol>
+    <pre>git clone https://github.com/sunilramjali/cofoundr.git && cd cofoundr
+git switch jade && git pull origin stage && git push origin jade
+python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env     # your own Atlas user + keys; ask Sunil</pre>
+    <ol class="steps" start="3" style="counter-reset: s 2">
+      <li><p><b>Set up Claude Code:</b> create <code>.claude/settings.local.json</code> from the snippet in <code>CLAUDE.md</code> (with <code>COFOUNDR_USER: "ceyda"</code>), then restart Claude Code.</p></li>
+      <li><p><b>Review and approve <a href="https://github.com/sunilramjali/cofoundr/pull/3" target="_blank" rel="noopener">PR #3</a></b>, the MVP1 release to <code>main</code>.</p></li>
+      <li><p><b>Agree the split with Sunil:</b> who takes the Saint test, who starts MVP2 (WhatsApp photos, forecast, priorities, Atlas Search).</p></li>
+    </ol>
+  </section>
+
+  <footer>All business data shown in CoFoundr is synthetic. Snapshot as of Sat 24 Oct 2026, 13:30. The source of truth is the repo's <code>.claude/</code> docs.</footer>
+</div>
