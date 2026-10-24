@@ -21,6 +21,7 @@ SYNTHETIC_MARK = "(SYNTHETIC)"  # data/samples' demo export ends its merchant na
 REQUIRED = ("TransactionID", "Date", "Amount", "ChargeDesc", "Transaction currency")
 KEEP = REQUIRED + ("MSCAmount", "Product", "CardType", "Region", "CardBrandDesc")  # everything else is never read
 REGIONS = {"domestic": "domestic", "intra": "eea", "inter": "international"}
+NOT_EVO = "This doesn't look like an EVO transactions export. In EVO's portal, export Transactions as CSV"
 
 
 @dataclass
@@ -38,12 +39,16 @@ def _kind(desc: str) -> str:
     return "refund" if "refund" in d else "sale" if "sale" in d else "other"
 
 
+def _gbp(text: str) -> float:
+    return abs(float(text.strip().replace("£", "").replace(",", "")))  # "£1,234.00" → 1234.0
+
+
 def _row(r: dict) -> dict:
     day = datetime.strptime(r["Date"].strip(), "%d/%m/%Y").date().isoformat()
     fee = (r.get("MSCAmount") or "").strip()
     return {
         "source": "evo", "source_id": r["TransactionID"].strip(), "paid_at": day,
-        "amount_gbp": abs(float(r["Amount"])), "fee_gbp": abs(float(fee)) if fee else None,
+        "amount_gbp": _gbp(r["Amount"]), "fee_gbp": _gbp(fee) if fee else None,
         "currency": (r.get("Transaction currency") or "GBP").strip().upper(), "kind": _kind(r.get("ChargeDesc") or ""),
         "status": "successful",  # the export lists settled transactions only
         "card_product": {"debit": "debit", "credit": "credit"}.get((r.get("Product") or "").strip().lower()),
@@ -58,12 +63,21 @@ def parse(data: bytes) -> EvoFile:
     try:
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError:
-        text = data.decode("cp1252")
+        try:
+            text = data.decode("cp1252")
+        except UnicodeDecodeError:
+            raise ValueError(NOT_EVO) from None
+    try:
+        return _read(text)
+    except csv.Error as e:  # e.g. a field over the csv module's size limit: not an EVO export
+        raise ValueError(f"{NOT_EVO} ({e})") from None
+
+
+def _read(text: str) -> EvoFile:
     reader = csv.DictReader(io.StringIO(text))
     missing = [c for c in REQUIRED if c not in (reader.fieldnames or [])]
     if missing:
-        raise ValueError(f"This doesn't look like an EVO transactions export (missing column(s): {', '.join(missing)}). "
-                         "In EVO's portal, export Transactions as CSV.")
+        raise ValueError(f"{NOT_EVO} (missing column(s): {', '.join(missing)})")
     out, marks = EvoFile(), []
     for n, r in enumerate(reader, 2):  # row 1 is the header
         out.rows += 1
@@ -74,7 +88,9 @@ def parse(data: bytes) -> EvoFile:
             out.errors.append(f"row {n}: {e}")
             continue
         out.payments.append(p)
-    out.synthetic = bool(marks) and all(marks)
+    if not out.rows:
+        raise ValueError("This EVO export has no payments in it. Check the date range you exported.")
+    out.synthetic = all(marks)
     days = sorted(p["paid_at"] for p in out.payments)
     out.first_day, out.last_day = (days[0], days[-1]) if days else (None, None)
     return out
@@ -85,8 +101,11 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("path")
     parser.add_argument("--dry-run", action="store_true", help="check the file and show totals; store nothing")
     args = parser.parse_args(argv)
-    with open(args.path, "rb") as f:
-        parsed = parse(f.read())
+    try:
+        with open(args.path, "rb") as f:
+            parsed = parse(f.read())
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"Not imported: {e}")
     sales = [p for p in parsed.payments if p["kind"] == "sale"]
     print(f"{parsed.rows} rows, {len(sales)} sales £{sum(p['amount_gbp'] for p in sales):,.2f}, "
           f"{parsed.first_day} → {parsed.last_day}, {'SYNTHETIC' if parsed.synthetic else 'REAL'} data, {len(parsed.errors)} bad row(s)")
@@ -95,7 +114,10 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.dry_run:
         return
     from backend.payments import record_payments
-    print(record_payments(parsed.payments, origin="EVO CSV (command line)", synthetic=parsed.synthetic).message)
+    try:
+        print(record_payments(parsed.payments, origin="EVO CSV (command line)", synthetic=parsed.synthetic).message)
+    except ValueError as e:  # demo database refused, or the salt is missing/changed: nothing was stored
+        raise SystemExit(f"Not imported: {e}")
 
 
 if __name__ == "__main__":

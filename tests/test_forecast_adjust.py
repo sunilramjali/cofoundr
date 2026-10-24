@@ -155,3 +155,20 @@ def test_run_with_gemini_down_still_stores_the_baseline_and_logs_the_fallback(db
     assert stored["adjustment"] is None and stored["final_revenue"] == stored["expected_revenue"]
     log = db[schema.AGENT_LOG].find_one({"kind": "gemini_fallback"})
     assert "Gemini unavailable (429)" in log["summary"] and SAT in log["summary"]
+
+
+# --- post-mortem regressions (Sat 24 Oct, ~23:30)
+
+def test_a_rounded_percent_in_the_reason_is_accepted_and_tiny_changes_need_none():
+    fc, _ = _forecasts()
+    refs = forecast.day_conditions(SAT, {"weather": SUN, "events": [], "transport": []})
+    assert forecast.check(fc[0], refs, _day(SAT, 12.5, "+13% Sat: sunny", ("weather", f"weather:{SAT}", 12.5))) == []
+    assert forecast.check(fc[0], refs, _day(SAT, 0.3, "Sat: no real change", ("weather", f"weather:{SAT}", 0.3))) == []
+    assert forecast.check(fc[0], refs, _day(SAT, 12, "+20% Sat: sunny", ("weather", f"weather:{SAT}", 12)))  # still wrong
+
+
+def test_the_same_condition_cited_twice_is_rejected():
+    fc, _ = _forecasts()
+    refs = forecast.day_conditions(SAT, {"weather": RAIN, "events": [], "transport": []})
+    twice = _day(SAT, -20, "-20% Sat: rain", ("weather", f"weather:{SAT}", -10), ("weather", f"weather:{SAT}", -10))
+    assert any("more than once" in p for p in forecast.check(fc[0], refs, twice))

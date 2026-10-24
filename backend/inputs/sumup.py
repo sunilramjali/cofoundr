@@ -20,6 +20,7 @@ from backend.inputs import fetch
 
 HISTORY = "https://api.sumup.com/v0.1/me/transactions/history"
 PAGE = 100
+MAX_PAGES = 200  # 20,000 payments per sync; a "next" link that never ends must not hang the sync
 KINDS = {"PAYMENT": "sale", "REFUND": "refund"}  # CHARGE_BACK and the rest are skipped
 ENTRY = {"contactless": "contactless", "chip": "chip", "magstripe": "swipe", "manual_entry": "manual"}
 
@@ -40,19 +41,25 @@ class SumUpClient:
 
     def iter_transactions(self, since: datetime, until: datetime) -> Iterator[dict]:
         params = {"oldest_time": since.isoformat(), "newest_time": until.isoformat(), "limit": PAGE, "order": "ascending"}
-        while True:
+        seen = set()
+        for _ in range(MAX_PAGES):
             page = self._get(HISTORY, params, "SumUp", headers={"Authorization": f"Bearer {self.token}"})
             yield from page.get("items", [])
             nxt = next((link.get("href") for link in page.get("links", []) if link.get("rel") == "next"), None)
             if not nxt:
                 return
+            if nxt in seen:
+                raise fetch.FetchError("SumUp sent the same next page twice; stopped so the sync can't loop forever")
+            seen.add(nxt)
             params = dict(urllib.parse.parse_qsl(nxt.split("?", 1)[-1]))  # SumUp gives the next page as a query string
+        raise fetch.FetchError(f"SumUp history is longer than {MAX_PAGES} pages; sync a shorter window")
 
 
 def to_payment(t: dict) -> dict:
     """One SumUp history item → backend.payments input format (allow-listed fields only)."""
     return {"source": "sumup", "source_id": str(t.get("id") or t.get("transaction_code") or ""),
-            "paid_at": t.get("timestamp"), "amount_gbp": t.get("amount"), "fee_gbp": None,
+            "paid_at": t.get("timestamp"), "fee_gbp": None,
+            "amount_gbp": abs(t["amount"]) if isinstance(t.get("amount"), (int, float)) else t.get("amount"),  # refunds can be negative
             "currency": t.get("currency") or "GBP", "kind": KINDS.get(t.get("type"), "other"),
             "status": "successful" if t.get("status") == "SUCCESSFUL" else (t.get("status") or "unknown").lower(),
             "card_product": None, "card_category": None, "region": None,

@@ -12,6 +12,21 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, ~23:30 — Post-mortem: forecast adjustment + card payments
+- **Found and reproduced 13 bugs, all fixed with a regression test (293 pass):**
+  1. **Changing `PAYMENT_ID_SALT` silently double-counted** every re-import → salt fingerprint in `counters`, a different salt is refused
+  2. Synthetic sample hashed differently on Fly vs a laptop with a salt → synthetic data always uses the fixed dev salt
+  3. EVO upload: 128 KB+ field = **500**; non-CSV = raw decode error; header-only file = "That's a real EVO export" → plain messages
+  4. No salt = 1,030 identical row errors → one error up front, nothing written
+  5. SumUp/Square: a repeating next page/cursor **looped forever** → capped + same-page detection; Square looked up locations every page, no locations = unclear 400
+  6. SumUp negative refund rejected → abs; Square line without `gross_sales_money` = £0 → priced from qty × (unit + modifiers)
+  7. EVO `£4.00` / `1,234.50` rejected → read
+  8. Forecast check: "+13%" for 12.5 and "no change" for 0.3 wrongly rejected → ±1 tolerance; **same condition cited twice passed** → rejected
+  9. Refund on a closed day made it a trading day → only days with a sale count
+  10. Till connected yesterday hid months of card payments → forecast uses whichever source covers more days (never both: double count)
+- **Not fixed (notes):** forecast only runs from the CLI (nothing refreshes it on Fly); Square refunds ignored (takings slightly high); the "(SYNTHETIC)" mark could be added to a real file by hand; `*.csv` in `.gitignore` would also hide a future synthetic CSV unless named `*_synthetic.csv`
+- **Next:** push + PR `sunil` → stage
+
 ## Sat 24 Oct, ~23:00 — Card payments: EVO CSV upload, Square + SumUp read-only, privacy (MVP2)
 - **Why:** real GAIA uses EVO (card machine). EVO has no merchant API (portal export only). Checked a real export **locally, outside the repo** (no real figures recorded here): the real trading pattern differs from our synthetic data's weekdays, and EVO's fees matched the PSR fee summary for every UK card
 - **Decisions (Sunil):** I build the inputs too (flag Jade); store each payment stripped (not just daily totals); real data only in a separate DB

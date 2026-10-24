@@ -189,6 +189,9 @@ def day_conditions(date_: str, cond: dict) -> Dict[str, dict]:
 def check(day: dict, refs: Dict[str, dict], adj: DayAdjustment) -> List[str]:
     """Deterministic checks on one day's adjustment. Empty list = accepted."""
     problems = []
+    cited = [f.ref for f in adj.factors]
+    for ref in sorted({r for r in cited if cited.count(r) > 1}):
+        problems.append(f"factor {ref!r} is cited more than once (count each condition once)")
     for f in adj.factors:
         known = refs.get(f.ref)
         if known is None:
@@ -205,7 +208,8 @@ def check(day: dict, refs: Dict[str, dict], adj: DayAdjustment) -> List[str]:
         problems.append(f"factors add up to {total:+g}%, but the day's pct is {adj.pct:+g}%")
     if abs(adj.pct) > MAX_PCT:
         problems.append(f"pct {adj.pct:+g}% is beyond ±{MAX_PCT}%")
-    if adj.pct and str(round(abs(adj.pct))) not in {str(round(float(n))) for n in re.findall(r"(\d+(?:\.\d+)?)\s*%", adj.reason)}:
+    stated = [float(n) for n in re.findall(r"(\d+(?:\.\d+)?)\s*%", adj.reason)]
+    if abs(adj.pct) >= 0.5 and not any(abs(n - abs(adj.pct)) <= 1 for n in stated):  # "+13%" for 12.5 is fine
         problems.append(f"reason {adj.reason!r} doesn't state the day's {adj.pct:+.0f}%")
     if not adj.reason.strip():
         problems.append("reason is empty")
@@ -298,10 +302,14 @@ def run(days: int = 7, now: Optional[datetime] = None, dry_run: bool = False, us
     names = {p["_id"]: p["name"] for p in db[schema.PRODUCTS].find({"business_id": BUSINESS_ID}, {"name": 1})}
 
     history = daily_history(orders)
-    if not orders:  # no till: card payments (EVO CSV, SumUp) give takings, but not what sold
-        from backend.payments import daily_takings
-        days_window = {"$gte": since.date().isoformat(), "$lt": until.date().isoformat()}
-        history = daily_takings(db[schema.PAYMENTS].find({"business_id": BUSINESS_ID, "date": days_window}, {"date": 1, "amount": 1, "kind": 1}))
+    # Card payments (EVO CSV, SumUp) give takings but not what sold. Never add them to till orders (the same sale
+    # would count twice): use whichever source covers more days, e.g. a till connected last week vs months of EVO.
+    from backend.payments import daily_takings
+    days_window = {"$gte": since.date().isoformat(), "$lt": until.date().isoformat()}
+    card = daily_takings(db[schema.PAYMENTS].find({"business_id": BUSINESS_ID, "date": days_window}, {"date": 1, "amount": 1, "kind": 1}))
+    source = "card payments" if len(card) > len(history) else f"{len(orders)} orders"
+    if len(card) > len(history):
+        history, sales = card, []
     forecasts = baseline(history, daily_product_qty(sales), names, today, days)
     summary = adjust(forecasts, conditions.conditions_for([f["date"] for f in forecasts]), history) if use_gemini else None
     if not dry_run:
@@ -311,7 +319,7 @@ def run(days: int = 7, now: Optional[datetime] = None, dry_run: bool = False, us
         trading = [f for f in forecasts if f["trading"]]
         activity.log("forecast_updated", f"Forecast for {forecasts[0]['date']}–{forecasts[-1]['date']}: "
                      f"{len(trading)} trading day(s), £{sum(f['expected_revenue'] for f in trading):,.0f} expected "
-                     f"(baseline from {f'{len(orders)} orders' if orders else 'card payments'})", days=[f["date"] for f in forecasts])
+                     f"(baseline from {source})", days=[f["date"] for f in forecasts])
         if summary:
             log_adjustment(forecasts, summary)
     return forecasts

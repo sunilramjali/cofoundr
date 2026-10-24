@@ -3,7 +3,7 @@ stripped, real-data guard. Fake HTTP, no network. Own file so it never conflicts
 import csv
 import io
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import unquote
 
 import pytest
@@ -14,6 +14,7 @@ from backend.ai import forecast
 from backend.db import schema
 from backend.db.client import RealDataRefused
 from backend.inputs import evo, fetch, square, sumup
+from backend.inputs.pos.client import PosClient
 from data import make_evo_sample
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
@@ -109,8 +110,9 @@ def test_real_data_is_refused_in_the_demo_database(db, salt, monkeypatch):
 
 def test_real_payment_ids_need_a_secret_salt(db, monkeypatch):
     monkeypatch.delenv("PAYMENT_ID_SALT", raising=False)
-    result = payments.record_payments(evo.parse(_evo_csv()).payments, origin="test", synthetic=False, now=NOW)
-    assert result.new == 0 and "PAYMENT_ID_SALT" in result.errors[0]
+    with pytest.raises(ValueError, match="PAYMENT_ID_SALT isn't set"):
+        payments.record_payments(evo.parse(_evo_csv()).payments, origin="test", synthetic=False, now=NOW)
+    assert db[schema.PAYMENTS].count_documents({}) == 0
 
 
 def test_unknown_input_fields_are_never_stored(db, salt):
@@ -125,7 +127,7 @@ def test_unknown_input_fields_are_never_stored(db, salt):
 
 def _web():
     from bridge.main import app
-    return TestClient(app)
+    return TestClient(app, raise_server_exceptions=False)
 
 
 def test_dashboard_upload_takes_the_synthetic_sample(db):
@@ -240,3 +242,82 @@ def test_no_card_number_shaped_text_survives_any_connector(db, salt):
     sales.record_orders([square.to_pos_order(SQ_ORDER)], origin="test", now=NOW)
     everything = repr([list(db[c].find()) for c in (schema.PAYMENTS, schema.ORDERS, schema.SALES, schema.AGENT_LOG)])
     assert not re.search(r"\d{6}\*+\d{4}", everything)
+
+
+# --- post-mortem regressions (Sat 24 Oct, ~23:30)
+
+def test_changing_the_salt_is_refused_instead_of_double_counting(db, salt, monkeypatch):
+    parsed = evo.parse(_evo_csv([{}, {}]))
+    payments.record_payments(parsed.payments, origin="test", synthetic=False, now=NOW)
+    monkeypatch.setenv("PAYMENT_ID_SALT", "another-salt")
+    with pytest.raises(ValueError, match="has changed"):
+        payments.record_payments(parsed.payments, origin="test", synthetic=False, now=NOW)
+    assert db[schema.PAYMENTS].count_documents({}) == 2
+    assert "test-salt" not in repr(list(db[schema.COUNTERS].find()))  # only a fingerprint is kept
+
+
+@pytest.mark.parametrize("data, says", [
+    (",".join(make_evo_sample.COLUMNS).encode() + b"\n" + b"x" * 200_000 + b"\n", "doesn't look like an EVO"),  # was a 500
+    (bytes(range(256)) * 4, "doesn't look like an EVO"),  # was a raw decode error
+    (",".join(make_evo_sample.COLUMNS).encode() + b"\n", "no payments"),  # was "That's a real EVO export"
+])
+def test_bad_uploads_get_a_plain_message_never_a_crash(db, data, says):
+    r = _web().post("/import/evo", files={"file": ("f.csv", data, "text/csv")}, follow_redirects=False)
+    assert r.status_code == 303 and says in unquote(r.headers["location"]) and db[schema.PAYMENTS].count_documents({}) == 0
+
+
+def test_amounts_with_a_pound_sign_or_thousands_comma_are_read():
+    parsed = evo.parse(_evo_csv([{"Amount": "£4.00"}, {"Amount": "1,234.50", "MSCAmount": "£3.70"}]))
+    assert parsed.errors == [] and [p["amount_gbp"] for p in parsed.payments] == [4.0, 1234.5] and parsed.payments[1]["fee_gbp"] == 3.7
+
+
+def test_a_negative_sumup_refund_is_stored_as_a_refund(db):
+    result = payments.record_payments([sumup.to_payment({**SU_ITEMS[2], "amount": -3.5})], origin="test", synthetic=True, now=NOW)
+    assert result.new == 1 and result.revenue == -3.5
+
+
+def test_a_square_line_without_gross_sales_is_totalled_from_its_price():
+    line = {k: v for k, v in SQ_ORDER["line_items"][0].items() if k != "gross_sales_money"}
+    mapped = square.to_pos_order({**SQ_ORDER, "line_items": [line]})
+    assert mapped["items"][0]["line_total_gbp"] == 8.0 and mapped["total_gbp"] == 7.0
+
+
+def test_endless_pagination_stops_with_an_error():
+    endless = lambda *a, **k: {"items": [], "links": [{"rel": "next", "href": "oldest_ref=same"}]}  # noqa: E731
+    with pytest.raises(fetch.FetchError, match="same next page"):
+        list(sumup.SumUpClient(token="t", env="sandbox", get=endless).iter_transactions(NOW, NOW))
+    loc_calls = []
+
+    def sq(url, *a, **k):
+        if url.endswith("/locations"):
+            loc_calls.append(url)
+            return {"locations": [{"id": "L1"}]}
+        return {"orders": [], "cursor": "same"}
+    with pytest.raises(fetch.FetchError, match="same cursor"):
+        list(square.SquareClient(token="t", env="sandbox", get=sq).iter_orders(NOW, NOW))
+    assert len(loc_calls) == 1  # looked up once, not per page
+    with pytest.raises(fetch.FetchError, match="no active locations"):
+        square.SquareClient(token="t", env="sandbox", get=lambda *a, **k: {"locations": []}).locations()
+
+
+def test_a_refund_on_a_closed_day_does_not_make_it_a_trading_day():
+    days = payments.daily_takings([{"date": "2026-10-20", "kind": "refund", "amount": 4.0},
+                                   {"date": "2026-10-24", "kind": "sale", "amount": 5.0}])
+    assert list(days) == [date(2026, 10, 24)]
+
+
+def test_forecast_prefers_months_of_card_payments_over_a_till_connected_yesterday(db):
+    payments.record_payments(evo.parse(make_evo_sample.OUT.read_bytes()).payments, origin="test", synthetic=True, now=NOW)
+    sales.record_orders(PosClient(now="2026-12-01").iter_sales(since="2026-10-23", until="2026-10-24"), origin="test", now=NOW)
+    out = forecast.run(now=NOW, use_gemini=False)
+    assert [f["weekday"] for f in out if f["trading"]] == ["Saturday", "Sunday", "Thursday", "Friday"]
+    log = db[schema.AGENT_LOG].find_one({"kind": "forecast_updated"})
+    assert "card payments" in log["summary"]
+
+
+def test_synthetic_data_hashes_the_same_whatever_the_local_salt(db, monkeypatch):
+    sample = evo.parse(make_evo_sample.OUT.read_bytes()).payments[:3]
+    payments.record_payments(sample, origin="Fly, no salt", synthetic=True, now=NOW)
+    monkeypatch.setenv("PAYMENT_ID_SALT", "sunils-real-salt")
+    again = payments.record_payments(sample, origin="laptop with a salt", synthetic=True, now=NOW)
+    assert again.duplicates == 3 and again.new == 0

@@ -43,7 +43,8 @@ class PaymentSyncResult:
 
     @property
     def message(self) -> str:
-        parts = [f"{self.new} new card payment(s) (£{self.revenue:,.2f}, fees £{self.fees:,.2f})", f"{self.duplicates} already recorded"]
+        fees = f", fees £{self.fees:,.2f}" if self.fees else ""
+        parts = [f"{self.new} new card payment(s) (£{self.revenue:,.2f}{fees})", f"{self.duplicates} already recorded"]
         if self.skipped:
             parts.append(f"{self.skipped} skipped (not a successful sale or refund)")
         if self.errors:
@@ -51,13 +52,30 @@ class PaymentSyncResult:
         return "Card payments: " + ", ".join(parts) + "."
 
 
-def id_hash(source: str, source_id: str, synthetic: bool) -> str:
+def _salt(synthetic: bool) -> str:
+    """Synthetic ids need no secret, so they always use DEV_SALT (same hash on every machine and on Fly)."""
+    if synthetic:
+        return DEV_SALT
     salt = os.environ.get("PAYMENT_ID_SALT")
     if not salt:
-        if not synthetic:
-            raise ValueError("PAYMENT_ID_SALT isn't set: real payment ids are never stored unsalted. Add it to .env.")
-        salt = DEV_SALT
-    return hmac.new(salt.encode(), f"{source}:{source_id}".encode(), hashlib.sha256).hexdigest()[:24]
+        raise ValueError("PAYMENT_ID_SALT isn't set: real payment ids are never stored unsalted. Add it to .env.")
+    return salt
+
+
+def id_hash(source: str, source_id: str, synthetic: bool) -> str:
+    return hmac.new(_salt(synthetic).encode(), f"{source}:{source_id}".encode(), hashlib.sha256).hexdigest()[:24]
+
+
+def _check_salt(db, synthetic: bool) -> None:
+    """A different salt makes every re-imported payment look new, so takings would silently double. The first import
+    remembers a fingerprint of the salt (not the salt); later imports with another salt are refused."""
+    fingerprint = hmac.new(_salt(synthetic).encode(), b"salt-check", hashlib.sha256).hexdigest()[:16]
+    key = f"{BUSINESS_ID}:payment_id_salt:{'synthetic' if synthetic else 'real'}"
+    stored = db[schema.COUNTERS].find_one_and_update({"_id": key}, {"$setOnInsert": {"fingerprint": fingerprint}}, upsert=True,
+                                                     return_document=True)
+    if stored["fingerprint"] != fingerprint:
+        raise ValueError("PAYMENT_ID_SALT has changed since payments were last imported, so re-imported payments would be "
+                         "counted twice. Put the original salt back in .env.")
 
 
 def _money(value, name: str, optional: bool = False) -> Optional[float]:
@@ -130,6 +148,7 @@ def record_payments(payments: Iterable[dict], origin: str, synthetic: bool, now:
     db = get_db()
     if not synthetic:
         check_real_data_allowed(db)
+    _check_salt(db, synthetic)  # ValueError up front: one clear message, nothing written
     now = now or datetime.now(timezone.utc)
     result = PaymentSyncResult()
     for n, p in enumerate(payments, 1):
@@ -170,4 +189,4 @@ def daily_takings(payments: Iterable[dict]) -> dict:
             d["orders"] += 1
         else:
             d["revenue"] -= p["amount"]
-    return days
+    return {d: v for d, v in days.items() if v["orders"]}  # a refund on a closed day doesn't make it a trading day

@@ -23,6 +23,7 @@ from backend.inputs import fetch
 HOSTS = {"sandbox": "https://connect.squareupsandbox.com", "production": "https://connect.squareup.com"}
 VERSION = os.environ.get("SQUARE_VERSION", "2025-01-23")  # Square-Version header: pins the API's response shape
 PAGE = 500
+MAX_PAGES = 200  # 100,000 orders per sync; a cursor that never ends must not hang the sync
 
 
 class SquareClient:
@@ -48,13 +49,16 @@ class SquareClient:
     def locations(self) -> List[str]:
         if self.location_id:
             return [self.location_id]
-        return [loc["id"] for loc in self._call("/v2/locations").get("locations", []) if loc.get("status", "ACTIVE") == "ACTIVE"]
+        ids = [loc["id"] for loc in self._call("/v2/locations").get("locations", []) if loc.get("status", "ACTIVE") == "ACTIVE"]
+        if not ids:
+            raise fetch.FetchError("Square has no active locations for this account")
+        return ids
 
     def iter_orders(self, since: datetime, until: datetime) -> Iterator[dict]:
         """Raw completed Square orders closed in [since, until), oldest first, across all pages."""
-        cursor = None
-        while True:
-            body = {"location_ids": self.locations(), "limit": PAGE,
+        cursor, seen, locations = None, set(), self.locations()
+        for _ in range(MAX_PAGES):
+            body = {"location_ids": locations, "limit": PAGE,
                     "query": {"filter": {"state_filter": {"states": ["COMPLETED"]},
                                          "date_time_filter": {"closed_at": {"start_at": since.isoformat(), "end_at": until.isoformat()}}},
                               "sort": {"sort_field": "CLOSED_AT", "sort_order": "ASC"}}}
@@ -65,6 +69,10 @@ class SquareClient:
             cursor = page.get("cursor")
             if not cursor:
                 return
+            if cursor in seen:
+                raise fetch.FetchError("Square sent the same cursor twice; stopped so the sync can't loop forever")
+            seen.add(cursor)
+        raise fetch.FetchError(f"Square returned more than {MAX_PAGES} pages; sync a shorter window")
 
 
 def _gbp(money: Optional[dict]) -> float:
@@ -82,10 +90,11 @@ def to_pos_order(o: dict) -> dict:
         qty = float(li.get("quantity") or 0)
         mods = [{"name": m.get("name") or "", "value": "", "price_gbp": _gbp(m.get("base_price_money")) * float(m.get("quantity") or 1)}
                 for m in li.get("modifiers") or []]
+        unit = _gbp(li.get("base_price_money"))
+        gross = _gbp(li["gross_sales_money"]) if li.get("gross_sales_money") else round(qty * (unit + sum(m["price_gbp"] for m in mods)), 2)
         items.append({"sku": li.get("catalog_object_id") or f"SQ:{(li.get('name') or 'item').strip().lower()}",
                       "name": li.get("name") or "Item", "variant": li.get("variation_name") or None, "quantity": qty,
-                      "unit_price_gbp": _gbp(li.get("base_price_money")), "modifiers": mods,
-                      "line_total_gbp": _gbp(li.get("gross_sales_money"))})
+                      "unit_price_gbp": unit, "modifiers": mods, "line_total_gbp": gross})
     subtotal = round(sum(i["line_total_gbp"] for i in items), 2)
     discount = _gbp(o.get("total_discount_money"))
     tenders = sorted({(t.get("type") or "other").lower() for t in o.get("tenders") or []})

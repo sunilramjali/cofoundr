@@ -33,7 +33,7 @@ Date (and time when the provider gives it), amount, fee, sale or refund, debit/c
 
 ## Where real data lives
 - **Never in the shared demo database** (`cofoundr-db`). That database is read by `/brief` through a token in the URL, by both developers' local machines, and by demo resets, which is only acceptable for synthetic data. Storing real data there raises `RealDataRefused` and writes nothing (dashboard upload, command line, Square production alike).
-- Real data goes into the business's own database (`MONGODB_DB=gaia-real`) and needs a secret `PAYMENT_ID_SALT`.
+- Real data goes into the business's own database (`MONGODB_DB=gaia-real`) and needs a secret `PAYMENT_ID_SALT`. The salt must never change: the first import remembers a fingerprint of it (not the salt itself), and an import with a different salt is refused rather than counting every payment twice.
 - Raw exports **never enter the repo or the Docker image**: `*.csv` and `private/` are in `.gitignore` and `.dockerignore`, apart from `data/samples/*_synthetic.csv`. Keep them outside the project folder, and delete or archive them privately after import.
 - Gemini only ever sees **daily totals**, never individual payments.
 
