@@ -43,7 +43,7 @@ def test_health_and_token_guard():
 
 def test_update_messages_are_whatsapp_ready():
     from datetime import datetime, timezone
-    from backend.updates import approval_message, invoice_message
+    from backend.outputs.updates import approval_message, invoice_message
     ok = invoice_message({"invoice_number": "EDC-1", "counterparty": "Eastside Dairy Co", "amount": 176.7,
                           "due_date": datetime(2026, 11, 7, tzinfo=timezone.utc), "needs_review": False})
     assert "EDC-1" in ok and "£176.70" in ok and "07 Nov" in ok and "✓" in ok
@@ -66,3 +66,9 @@ def test_reminder_gap_prevents_same_day_nagging():
     assert not due_for_action({"direction": "receivable", "last_reminder_at": today - timedelta(hours=2)}, today)
     assert due_for_action({"direction": "receivable", "last_reminder_at": today - timedelta(days=4)}, today)
     assert due_for_action({"direction": "payable", "last_reminder_at": today}, today)
+
+
+def test_pipeline_rejects_empty_and_oversized_input_without_calling_gemini():
+    from backend.pipeline import MAX_BYTES, ingest_invoice
+    assert ingest_invoice(b"", "image/png", "email").error == "empty"
+    assert ingest_invoice(b"x" * (MAX_BYTES + 1), "image/png", "email").error == "too_large"

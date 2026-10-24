@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from backend.db import schema
 
 BUSINESS_ID = "gaia-coffee"
-SEEDED = [schema.BUSINESSES, schema.INVOICES, schema.APPROVALS]
+SEEDED = [schema.BUSINESSES, schema.INVOICES, schema.APPROVALS, schema.AGENT_LOG]
 
 
 def _today() -> datetime:
@@ -110,7 +110,7 @@ def main() -> None:
         for inv in invoices:
             print(f"  {inv['invoice_number']:<10} {inv['direction']:<10} {inv['status']:<8} "
                   f"£{inv['amount']:>8.2f}  due {inv['due_date']:%a %d %b}  {inv['counterparty']}")
-        print(f"[dry run] approvals: 0 (created later by the overdue check)")
+        print("[dry run] approvals: 0 (created later by the overdue check)")
         return
 
     from backend.db.client import ensure_indexes, get_db  # only needs MONGODB_URI when writing
@@ -120,6 +120,8 @@ def main() -> None:
         for name in SEEDED:
             deleted = db[name].delete_many({"synthetic": True}).deleted_count
             print(f"reset: removed {deleted} synthetic docs from {name}")
+        cleared = db[schema.CURSORS].delete_many({"_id": {"$regex": f"^{BUSINESS_ID}:"}}).deleted_count
+        print(f"reset: cleared {cleared} /updates cursor(s)")
     elif db[schema.BUSINESSES].find_one({"_id": BUSINESS_ID}):
         raise SystemExit("Demo data already exists. Re-run with --reset to replace it.")
 

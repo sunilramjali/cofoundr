@@ -16,13 +16,12 @@ from urllib.parse import quote
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from google.genai import errors as genai_errors
 
 from backend import approvals
 from backend.ai import overdue
-from backend.ai.extract import extract_invoice, save_invoice, to_invoice_doc
-from backend.brief import build_brief
-from backend.updates import get_updates
+from backend.outputs.brief import build_brief
+from backend.outputs.updates import get_updates
+from backend.pipeline import ingest_invoice
 from backend.db import activity, schema
 from backend.db.client import get_db
 
@@ -33,7 +32,7 @@ templates.env.filters["day"] = lambda d: d.strftime("%d %b") if d else "–"
 templates.env.filters["stamp"] = lambda d: d.strftime("%d %b %H:%M") if d else "–"
 
 BUSINESS_ID = "gaia-coffee"
-MAX_UPLOAD = 10 * 1024 * 1024
+MAX_UPLOAD = 10 * 1024 * 1024  # pipeline.ingest_invoice rejects anything larger
 
 
 def _check_token(token: Optional[str]) -> None:
@@ -70,24 +69,9 @@ def dashboard(request: Request, msg: Optional[str] = None):
 @app.post("/upload")
 def upload(file: UploadFile = File(...)):
     data = file.file.read(MAX_UPLOAD + 1)
-    if not data:
-        return _back("No file uploaded.")
-    if len(data) > MAX_UPLOAD:
-        return _back("File too large (max 10 MB).")
     mime = file.content_type or "application/octet-stream"
-    try:
-        ex, issues, attempts = extract_invoice(data, mime)
-    except genai_errors.APIError as e:
-        return _back(f"Gemini couldn't read it right now ({e.code}). Try again in a minute.")
-    doc, created = save_invoice(to_invoice_doc(ex, issues, attempts, "pdf" if mime == "application/pdf" else "manual"))
-    if not created:
-        return _back(f"{doc['invoice_number']} is already in CoFoundr.")
-    verdict = "needs your review: " + issues[0] if issues else f"checked ✓ (attempt {attempts})"
-    activity.log("invoice_extracted", f"Read {doc['invoice_number']} from {doc['counterparty']}, "
-                 f"£{doc['amount']:.2f}, {verdict}", invoice_number=doc["invoice_number"], attempts=attempts)
-    drafted = overdue.run()
-    extra = f" {len(drafted)} new action(s) drafted for approval." if drafted else ""
-    return _back(f"Added {doc['invoice_number']} ({doc['counterparty']}, £{doc['amount']:.2f}): {verdict}.{extra}")
+    result = ingest_invoice(data, mime, "pdf" if mime == "application/pdf" else "manual", origin="dashboard upload")
+    return _back(result.message)
 
 
 @app.post("/approvals/{approval_id}/decide")
