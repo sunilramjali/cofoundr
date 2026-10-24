@@ -7,8 +7,8 @@
 {% block body %}
 <ol class="timeline">
   {% for e in timeline %}
-  <li class="event{% if e.actor == 'owner' %} event--owner{% endif %}{% if e.icon == 'alert' %} event--alert{% endif %}">
-    <span class="event__ico"><svg class="ico"><use href="#i-{{ e.icon }}"/></svg></span>
+  <li class="event">
+    <span class="gem {{ 'gem--rose' if e.icon == 'alert' else ('gem--sage' if e.actor == 'owner' else '') }}"><svg class="ico"><use href="#i-{{ e.icon }}"/></svg></span>
     <div>
       <div class="event__head"><span class="event__label">{{ "You · " if e.actor == "owner" else "" }}{{ e.label }}</span>
         <time class="event__ago" datetime="{{ e.at.isoformat() if e.at else '' }}">{{ e.ago }}{% if e.at %} · {{ e.at|stamp }}{% endif %}</time></div>
