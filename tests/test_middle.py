@@ -640,6 +640,9 @@ class FakeAtlas:
         self.pipeline = pipeline
         return list(self.docs)
 
+    def find(self, *_a, **_k):
+        return []
+
 
 def _fused(number, keyword=None, meaning=None):
     details = [{"inputPipelineName": "keyword", "rank": 1 if keyword else 0, **({"value": keyword} if keyword else {})},
@@ -693,11 +696,12 @@ def test_price_check_compares_like_for_like_items_across_suppliers(db):
     from backend.db import search
     check = search.price_check(db, MEADOWFIELD)
     by_item = {c["item"]: c for c in check.comparisons}
+    assert all(c["kind"] == "other_supplier" for c in check.comparisons)  # Meadowfield has no earlier bills of its own
     assert by_item["Whole Milk (2L)"]["other_price"] == 1.85 and by_item["Whole Milk (2L)"]["change_pct"] == 2.7
     assert by_item["Whole Milk (2L)"]["counterparty"] == "Eastside Dairy Co"
     assert by_item["Oat Barista Milk (1L)"]["change_pct"] == -9.5  # cheaper than Eastside's "Oat milk, 1L"
     assert "Almond Barista Milk (1L)" not in by_item  # nothing comparable: no guess
-    assert [c["item"] for c in check.rises] == ["Whole Milk (2L)"]
+    assert [c["item"] for c in check.cheaper_elsewhere] == ["Whole Milk (2L)"] and check.rises == []
 
 
 def test_price_check_never_compares_customer_invoices_with_supplier_bills(db):
@@ -706,3 +710,73 @@ def test_price_check_never_compares_customer_invoices_with_supplier_bills(db):
                   "line_items": [{"description": "Oat milk upgrade", "qty": 1, "unit_price": 99.0}]}
     assert all(c["invoice_number"].startswith("GAIA-") for c in search.price_check(db, receivable).comparisons)
     assert search.price_check(db, {**MEADOWFIELD, "line_items": []}).comparisons == []
+
+
+def _eastside(**kw):
+    return {"business_id": "gaia-coffee", "invoice_number": "EDC-9000", "direction": "payable", "counterparty": "Eastside Dairy Co.",
+            "currency": "GBP", "line_items": [{"description": "Whole milk, 2L", "qty": 40, "unit_price": 1.95}], **kw}
+
+
+def test_same_supplier_rise_is_price_creep_even_with_a_name_variant(db):
+    from backend.db import search
+    check = search.price_check(db, _eastside())  # "Eastside Dairy Co." = the seeded "Eastside Dairy Co"
+    assert [(c["kind"], c["invoice_number"], c["change_pct"]) for c in check.rises] == [("same_supplier", "EDC-7781", 5.4)]
+
+
+def test_different_pack_sizes_are_never_compared(db):
+    from backend.db import search
+    one_litre = _eastside(line_items=[{"description": "Whole milk, 1L", "qty": 40, "unit_price": 0.95}])
+    assert search.price_check(db, one_litre).comparisons == []  # was a false "-49%" against the 2L carton
+    assert search._sizes("Whole Milk (2L)") == search._sizes("whole milk, 2 litres") == {"2l"}
+
+
+def test_only_earlier_trusted_same_currency_positive_prices_count(db):
+    from backend.db import schema, search
+    old = datetime.now(timezone.utc) - timedelta(days=60)
+    assert search.price_check(db, _eastside(issue_date=old)).comparisons == []  # EDC-7781 is newer than this one
+    assert search.price_check(db, _eastside(currency="EUR")).comparisons == []
+    free = _eastside(line_items=[{"description": "Whole milk, 2L", "qty": 1, "unit_price": 0.0}])
+    assert search.price_check(db, free).comparisons == []
+    flagged = search.price_check(db, _eastside(needs_review=True))
+    assert flagged.comparisons == [] and "check" in flagged.skipped
+    db[schema.INVOICES].update_one({"invoice_number": "EDC-7781"}, {"$set": {"needs_review": True}})
+    assert search.price_check(db, _eastside()).comparisons == []  # a misread reference price is no reference
+
+
+def test_ties_go_to_the_most_similar_invoice(db, monkeypatch):
+    from backend.db import search
+    hits = [{"_id": 1, "invoice_number": "MOST-SIMILAR", "counterparty": "A", "currency": "GBP",
+             "issue_date": datetime(2026, 1, 1, tzinfo=timezone.utc), "line_items": [{"description": "Whole milk, 2L", "unit_price": 1.80}]},
+            {"_id": 2, "invoice_number": "LESS-SIMILAR", "counterparty": "B", "currency": "GBP",
+             "issue_date": datetime(2026, 1, 1, tzinfo=timezone.utc), "line_items": [{"description": "Whole milk, 2L", "unit_price": 1.20}]}]
+    monkeypatch.setattr(search, "similar_invoices", lambda *_a, **_k: search.SearchResult(hits, "hybrid"))
+    check = search.price_check(db, _eastside(counterparty="Somebody New", counterparty_key="somebodynew"))
+    assert [c["invoice_number"] for c in check.comparisons] == ["MOST-SIMILAR"]
+
+
+class EmptyAtlas:
+    """Atlas with a missing/building index: $search answers with nothing (no error). Everything else is the real mock."""
+    def __init__(self, db):
+        self.db = db
+
+    def __getitem__(self, name):
+        coll = self.db[name]
+        return type("Coll", (), {"aggregate": lambda _s, _p: [], "__getattr__": lambda _s, a: getattr(coll, a)})()
+
+
+def test_an_empty_atlas_answer_falls_back_and_is_logged_once_an_hour(db):
+    from backend.db import schema, search
+    first = search.search_invoices(EmptyAtlas(db), "dairy")
+    assert first.mode == "basic" and first.hits[0]["invoice_number"] == "EDC-7781" and "building" in first.error
+    search.search_invoices(EmptyAtlas(db), "cups")
+    search.search_invoices(db, "milk")  # mongomock: $search unsupported, also a fallback
+    assert db[schema.AGENT_LOG].count_documents({"kind": "search_fallback"}) == 1
+    assert search.search_invoices(EmptyAtlas(db), "submarine").hits == []  # genuinely nothing: still empty
+
+
+def test_queries_without_words_or_too_long_are_handled():
+    from backend.db import search
+    atlas = FakeAtlas([])
+    assert search.search_invoices(atlas, "?!..").hits == [] and atlas.pipeline is None  # no Atlas call at all
+    search.search_invoices(atlas, "milk " * 500)
+    assert len(atlas.pipeline[0]["$rankFusion"]["input"]["pipelines"]["meaning"][0]["$vectorSearch"]["query"]["text"]) <= 200

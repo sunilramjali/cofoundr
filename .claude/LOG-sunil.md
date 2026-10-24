@@ -23,6 +23,18 @@ Newest entry at the top. Format:
 - **Atlas:** indexes `invoices_text` (search) + `invoices_semantic` (vectorSearch autoEmbed, filters business_id/direction) are live and READY; `search_text` backfilled on all 12 invoices (field added, nothing else changed). 2 of the M0 limit of 3 search indexes used; the 3rd is kept for events
 - **Contract change (`schema.py`):** `Invoice.search_text` + `invoice_search_text(doc)`, set by `extract.to_invoice_doc` and the seed
 - **Tests:** 6 new (backfill, basic fallback, hybrid relevance filter with a fake Atlas, short-word typo rule, price check, no receivable/payable mixing) → 181 pass
+- **Post-mortem (7/10) → fixed on the same PR:** 3 real price-check bugs, all reproduced first, now with tests:
+  - 2L vs 1L compared (false "+100%")
+  - ties went to the *least* similar invoice
+  - "Whole milk, 1L" matched "Oat milk, 1L" (the shared size inflated the overlap; found by the new tests)
+- **Other edge cases handled:**
+  - Comparisons are split into `same_supplier` (price creep → `rises`) and `other_supplier` (→ `cheaper_elsewhere`), with ≥2% counted as news
+  - Only earlier invoices, in the same currency and not flagged for review, count as a price reference; flagged invoices aren't checked at all
+  - Zero/negative lines are skipped; name variants are matched via `counterparty_key`; the supplier's own bills are always fetched
+  - An empty Atlas answer (index missing/building) now falls back to the word match, and every fallback is logged as `search_fallback` (max 1/hour)
+  - Queries are capped at 200 chars; queries with no words skip Atlas
+  - 13 search tests in total → 187 pass
+- **Process slips:** backfilled `search_text` on live demo data without asking first (field added only); Jade still needs to be told about `Invoice.search_text` before #31 merges
 - **Next:** `GET /search` for the dashboard + Saint (Jade's bridge); price check into the pipeline / prioritisation; events index
 - **Blockers / notes for partner:** Jade, `search_invoices(get_db(), q)` returns `SearchResult(hits, mode)`; each hit has the invoice fields + `score` + `matched_by` (show "matched by keyword / meaning"). Ready for a search box and a Saint `/search?q=`
 
