@@ -60,12 +60,12 @@
   </div>
   {% endif %}
 
-  {% for a in payables[:2] %}
+  {% for a in payables[:2] %}{% set c = checks.get(a._id|string, {}) %}
   <div class="card glass tilt" style="--i:{{ loop.index0 + 2 }}">
-    <span class="gem"><svg class="ico"><use href="#i-pound"/></svg></span>
-    <div><h3>Invoice to be paid</h3><p>{{ a.counterparty }} · {{ a.amount|money }}{% if a.days_overdue is not none %} · {{ a.days_overdue }} days overdue{% endif %} · #{{ a.ref }}</p></div>
-    <form method="post" action="/approvals/{{ a._id }}/decide"><input type="hidden" name="back" value="/"><input type="hidden" name="decision" value="approve">
-      <button class="btn btn--accent" data-busy="Paying…">Pay now</button></form>
+    <span class="gem{{ ' gem--rose' if c.new_sender else '' }}"><svg class="ico"><use href="#i-{{ 'alert' if c.new_sender else 'pound' }}"/></svg></span>
+    <div><h3>Invoice to be paid</h3><p>{{ a.counterparty }} · {{ a.amount|money }}{% if a.days_overdue is not none %} · {{ a.days_overdue }} days overdue{% endif %} · #{{ a.ref }}</p>
+      {% if c.new_sender %}<p class="warn-line"><svg class="ico"><use href="#i-alert"/></svg>First invoice ever from this supplier: check it's genuine</p>{% endif %}</div>
+    <a class="btn btn--accent" href="/approvals#a{{ a.ref }}">Pay now <svg class="ico ico--go"><use href="#i-arrow"/></svg></a>
   </div>
   {% endfor %}
 

@@ -46,8 +46,11 @@
       canvas.width = Math.max(1, Math.round(innerWidth * k)); canvas.height = Math.max(1, Math.round(innerHeight * k));
       gl.viewport(0, 0, canvas.width, canvas.height);
     };
-    const draw = () => {
-      mouse.x += (mouse.tx - mouse.x) * .035; mouse.y += (mouse.ty - mouse.y) * .035;
+    let last = 0;
+    const draw = (now = performance.now()) => {
+      if (!calm && !document.hidden && now - last < 33) { raf = requestAnimationFrame(draw); return; }  // ~30 fps is plenty
+      last = now;
+      mouse.x += (mouse.tx - mouse.x) * .07; mouse.y += (mouse.ty - mouse.y) * .07;
       gl.uniform2f(uR, canvas.width, canvas.height); gl.uniform1f(uT, (Date.now() / 1000) % 100000); gl.uniform2f(uM, mouse.x, mouse.y);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (!calm && !document.hidden) raf = requestAnimationFrame(draw);
@@ -130,8 +133,11 @@
       canvas.width = Math.round(canvas.clientWidth * k); canvas.height = Math.round(canvas.clientHeight * k);
       gl.viewport(0, 0, canvas.width, canvas.height);
     };
-    const draw = () => {
-      aim.x += (aim.tx - aim.x) * .05; aim.y += (aim.ty - aim.y) * .05;
+    let last = 0;
+    const draw = (now = performance.now()) => {
+      if (!calm && visible && !document.hidden && now - last < 33) { raf = requestAnimationFrame(draw); return; }  // ~30 fps
+      last = now;
+      aim.x += (aim.tx - aim.x) * .1; aim.y += (aim.ty - aim.y) * .1;
       gl.uniform2f(uR, canvas.width, canvas.height); gl.uniform1f(uT, (Date.now() / 1000) % 10000); gl.uniform2f(uM, aim.x, aim.y);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (!calm && visible && !document.hidden) raf = requestAnimationFrame(draw);
@@ -177,6 +183,10 @@
     const original = area.value.trim();
     area.addEventListener("input", () => card.classList.toggle("is-edited", area.value.trim() !== original));
   });
+
+  /* Arriving from a home card ("Pay now" → /approvals#a3): open that approval's details and bring it into view */
+  const target = location.hash.length > 1 && document.getElementById(location.hash.slice(1));
+  if (target && target.classList.contains("ask")) { const d = $("details", target); if (d) d.open = true; target.scrollIntoView({ block: "center" }); }
 
   /* Drop zone */
   const zone = $(".drop");

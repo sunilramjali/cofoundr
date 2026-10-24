@@ -217,7 +217,8 @@ def sales_history(orders: List[dict], today: date, days: int = 28) -> dict:
 
 LOW_COVER_DAYS = 7  # flag stock that will last less than a week
 ORDER_COVER_DAYS = 14  # suggested order tops stock up to two weeks
-OPPORTUNITY = re.compile(r"partner|collab|opportunit|pop-?up|sponsor|event", re.IGNORECASE)
+OPPORTUNITY = re.compile(r"\b(partner(ship)?s?|collab\w*|opportunit\w*|pop-?ups?|sponsor\w*)\b", re.IGNORECASE)
+AUTOMATED = re.compile(r"(no-?reply|donotreply|mailer-daemon|notifications?)@", re.IGNORECASE)
 
 
 def stock_estimate(counts: List[dict], now: datetime) -> dict:
@@ -256,7 +257,7 @@ def opportunities(gmail_logs: List[dict]) -> List[dict]:
     for log in gmail_logs:
         for e in (log.get("detail") or {}).get("emails") or []:
             subject = (e.get("subject") or "").strip()
-            if subject and OPPORTUNITY.search(subject) and subject.lower() not in seen:
+            if subject and OPPORTUNITY.search(subject) and not AUTOMATED.search(e.get("from") or "") and subject.lower() not in seen:
                 seen.add(subject.lower())
                 who = re.search(r"[–-]\s*(.+?)\s+[x×]\s+", subject)
                 out.append({"subject": subject, "sender": e.get("from") or "", "at": log.get("at"),
@@ -280,3 +281,27 @@ def trend(sales: dict, wk: dict, days: int = 14) -> dict:
     return {"actual": line(pts[:split + 1]), "forecast": line(pts[split:]) if ahead else "",
             "area": line(pts[:split + 1]) + f" L{pts[split][0]},100 L0,100 Z", "dot": pts[split] if actual else None,
             "split": pts[split][0] if actual else 0}
+
+
+def payment_checks(pending: List[dict], invoices: List[dict]) -> Dict[str, dict]:
+    """For each pending supplier payment: where its invoice came from and whether this is the first invoice we've ever had
+    from that supplier. Anyone can email an invoice in, so a first-time sender gets a visible warning before Pay."""
+    by_id = {str(i.get("_id")): i for i in invoices}
+    seen: Dict[str, int] = {}
+    for i in invoices:
+        key = i.get("counterparty_key") or (i.get("counterparty") or "").lower()
+        seen[key] = seen.get(key, 0) + 1
+    out = {}
+    for a in pending:
+        if a.get("action_type") != "supplier_payment":
+            continue
+        inv = by_id.get(str(a.get("target_id"))) or {}
+        key = inv.get("counterparty_key") or (inv.get("counterparty") or "").lower()
+        read_by_ai = "verification_issues" in inv  # seed/demo invoices weren't read from a document
+        out[str(a["_id"])] = {
+            "source": inv.get("source") if read_by_ai else "demo",
+            "new_sender": bool(inv) and read_by_ai and seen.get(key, 0) <= 1,
+            "needs_review": bool(inv.get("needs_review")),
+            "from_email": inv.get("counterparty_email"),
+        }
+    return out
