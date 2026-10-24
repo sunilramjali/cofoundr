@@ -33,3 +33,10 @@ Failures raise `fetch.FetchError` with a plain-English message (API keys never a
  "url": "...", "fetched_at": "<ISO UTC>"}
 ```
 Try them: `python -m backend.inputs.weather`, `python -m backend.inputs.events`.
+
+## Gmail intake (`gmail.py`)
+The demo inbox (`GMAIL_ADDRESS` + a 16-letter `GMAIL_APP_PASSWORD`) is checked over IMAP every `GMAIL_POLL_SECONDS` (60 on Fly, off locally) and by the dashboard's **Check inbox now** button (`POST /check-inbox`).
+- PDF/image attachments are always read; an email without one is read as text **only if its subject mentions an invoice** (pitches and Google alerts never reach Gemini). Logos under 10 KB are ignored.
+- Each email is handled once: it gets the Gmail label `CoFoundr/processed` (no DB writes here). If Gemini was busy, it stays unlabelled and the next check retries it. Nothing is marked as read.
+- `check_inbox()` never raises → `InboxResult(ok, message, emails, error)`; one `gmail_checked` log line per check with new email; login/connection failures logged once, not every minute.
+- Try it: `python -m backend.inputs.gmail` (real inbox + real Gemini + Atlas: it labels emails and saves invoices).
