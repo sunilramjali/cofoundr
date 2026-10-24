@@ -12,6 +12,15 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, ~16:10 — Demo data frozen for Sunday + handover to a new chat
+- **Decision (Sunil): do NOT reset the seed.** Nothing refreshes automatically; `data.seed --reset` only exists to undo rehearsal changes, and it currently also wipes till data (sales/orders/products/stock) without reloading it. Don't run it unless Sunil asks
+- **Atlas demo state to keep for Sunday:** 10 invoices (4 overdue), 4 pending Gemini-drafted approvals (#1–#4), 2,422 POS orders (Jade's data, 2 Sep → 24 Oct), 15 products, 3 stock counts, 7-day forecast saved. Days-overdue grow by 1/day (fine)
+- **Rehearse without consuming the demo:** use a test invoice and delete only it afterwards; don't approve #1–#4 before the demo
+- **Optional fix (not done):** make plain `seed --reset` leave till data alone (`--include-sales` to wipe it)
+- **Open / next (middle):** prioritisation (Gemini ranks tasks), Atlas Search index, Gemini retry with backoff, Gemini forecast adjustment (needs Jade's weather/events)
+- **Waiting on others:** Jade approves PR #3 (stage → main = deploys all fixes; live still runs this morning's code); Saint team answers; Jade's `pos/sync.py`, Gmail intake, Saint wiring
+- **Live:** https://cofoundr.fly.dev (Fly v2, working Gemini key verified with a live upload, test data cleaned up)
+
 ## Sat 24 Oct — Sales loaded + baseline forecast (MVP2)
 - **Loaded Jade's POS data into Atlas** via `record_orders` with the real clock: 2,421 orders (£18,811.80), 4,502 sale lines, 15 products, 3 stock counts, 2 Sep → 24 Oct, 0 errors, 0 future orders; re-run idempotent
 - **Did:** `schema.Forecast` (+ `ProductForecast`, `ForecastAdjustment` for Gemini later); `backend/ai/forecast.py`: trading weekdays learned from history (Mon/Wed/Fri/Sat), average of last 6 same weekdays + low–high range, top-8 product quantities, today's partial sales ignored, London-time days (DST-safe); saved 7 days to `forecasts` + `forecast_updated` log
