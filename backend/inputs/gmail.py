@@ -40,6 +40,7 @@ FILE_TYPES = ALLOWED_TYPES - {"text/plain"}
 
 _lock = threading.Lock()  # the poller and the "Check inbox now" button never check at the same time
 _last_failure: Optional[str] = None  # so a broken login is logged once, not every minute
+last_check: Optional[dict] = None  # {"at", "ok", "message"} of the latest finished check, for the dashboard
 
 
 @dataclass
@@ -158,6 +159,18 @@ def _unprocessed(imap: imaplib.IMAP4) -> List[bytes]:
 
 def check_inbox(limit: int = MAX_PER_CHECK, connect: Callable[[], imaplib.IMAP4] = None) -> InboxResult:
     """Check the demo inbox once: read new invoices, label every email handled."""
+    global last_check
+    result = _check_inbox(limit, connect)
+    if result.error != "busy":
+        last_check = {"at": datetime.now(timezone.utc), "ok": result.ok, "message": result.message}
+    return result
+
+
+def configured() -> bool:
+    return all(_credentials())
+
+
+def _check_inbox(limit: int, connect: Optional[Callable[[], imaplib.IMAP4]]) -> InboxResult:
     global _last_failure
     address, password = _credentials()
     if not address or not password:

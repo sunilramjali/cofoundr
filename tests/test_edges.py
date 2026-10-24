@@ -88,7 +88,7 @@ def test_token_guard_handles_odd_tokens(db):
 def test_dashboard_renders_with_real_data(db, gemini_down):
     overdue.run()
     r = web.get("/", params={"msg": "<b>hi</b>"})
-    assert r.status_code == 200 and "Waiting for your approval" in r.text
+    assert r.status_code == 200 and "Waiting for your yes" in r.text and "Approve &amp; send" in r.text
     assert "<b>hi</b>" not in r.text and "&lt;b&gt;hi&lt;/b&gt;" in r.text  # flash messages are escaped
 
 
@@ -668,3 +668,59 @@ def test_gmail_poller_checks_now_and_stops(monkeypatch):
     stop = gmail.start_polling(3600)
     assert ran.wait(2)
     stop.set()
+
+
+# ---------------------------------------------------------------- dashboard view helpers
+from datetime import date as _date  # noqa: E402
+
+from bridge import view  # noqa: E402
+
+
+@pytest.mark.parametrize("pending,owed,review,expected", [
+    ([], 0, [], "Nothing needs you right now."),
+    ([{}], 0, [], "One thing needs your yes."),
+    ([{}] * 4, 1193.0, [], "Four things need your yes. £1,193 is overdue to come in."),
+    ([], 0, [{}], "One invoice needs a second look."),
+    ([{}, {}], 0, [{}, {}], "Two things need your yes, and two invoices need a second look."),
+    ([{}] * 12, 0, [], "12 things need your yes."),
+])
+def test_hero_headline_reads_naturally(pending, owed, review, expected):
+    assert view.headline(pending, owed, review) == expected
+
+
+def test_due_labels():
+    today = _date(2026, 10, 24)
+    at = lambda d: datetime(d.year, d.month, d.day, 12, tzinfo=timezone.utc)  # noqa: E731
+    assert view.due_label({"status": "overdue", "due_date": at(_date(2026, 10, 3))}, today) == "21 days overdue"
+    assert view.due_label({"status": "overdue", "due_date": at(_date(2026, 10, 23))}, today) == "1 day overdue"
+    assert view.due_label({"status": "open", "due_date": at(today)}, today) == "Due today"
+    assert view.due_label({"status": "open", "due_date": at(_date(2026, 10, 25))}, today) == "Due in 1 day"
+    assert view.due_label({"status": "open", "due_date": at(_date(2026, 11, 17))}, today) == "Due 17 Nov"
+    assert view.due_label({"status": "paid", "due_date": at(_date(2026, 9, 1))}, today) == "Paid"
+    assert view.due_label({"status": "open", "due_date": None}, today) == "No due date"
+
+
+def test_week_strip_scales_bars_and_survives_missing_weather():
+    fc = [{"date": "2026-10-24", "trading": True, "final_revenue": 600, "low_revenue": 500, "high_revenue": 700},
+          {"date": "2026-10-25", "trading": False, "final_revenue": 0},
+          {"date": "not a date"},
+          {"date": "2026-10-26", "trading": True, "final_revenue": 350, "low_revenue": 300, "high_revenue": 400}]
+    wk = view.week(fc, {"2026-10-24": {"weather_code": 63, "summary": "Rain"}}, _date(2026, 10, 24))
+    assert [d["bar"] for d in wk["days"]] == [86, 0, 50] and wk["total"] == 950 and wk["trading_days"] == 2
+    assert wk["days"][0]["wx_icon"] == "rain" and wk["days"][2]["wx_icon"] == "none" and wk["next"]["is_today"]
+    assert view.week([], {}, _date(2026, 10, 24)) == {"days": [], "total": 0, "trading_days": 0, "next": None}
+
+
+def test_weather_outage_never_breaks_the_page(db, monkeypatch):
+    monkeypatch.setattr(view, "_weather", {"at": 0.0, "ttl": 0, "days": {}})
+    monkeypatch.setattr(weather, "forecast", lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("down")))
+    assert view.weather_by_date() == {}
+    r = web.get("/")
+    assert r.status_code == 200 and "No forecast yet" in r.text and "Nothing needs your yes" in r.text
+
+
+@pytest.mark.parametrize("secs,expected", [(5, "just now"), (240, "4 min ago"), (3 * 3600, "3 h ago"), (30 * 3600, "yesterday")])
+def test_ago(secs, expected):
+    now = datetime(2026, 10, 24, 12, tzinfo=timezone.utc)
+    assert view.ago(now - timedelta(seconds=secs), now) == expected
+    assert view.ago(None) == "never"
