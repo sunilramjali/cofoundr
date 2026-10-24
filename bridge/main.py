@@ -10,27 +10,47 @@ import html
 import os
 import re
 import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from backend import approvals
 from backend.ai import overdue
+from backend.inputs import gmail
 from backend.outputs.brief import build_brief
 from backend.outputs.updates import get_updates
 from backend.pipeline import ingest_invoice
 from backend.db import activity, schema
 from backend.db.client import get_db
+from bridge import view
 
-app = FastAPI(title="CoFoundr")
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    """GMAIL_POLL_SECONDS set (fly.toml) → check the demo inbox in the background; unset (local, tests) → only on click."""
+    every = int(os.environ.get("GMAIL_POLL_SECONDS") or 0)
+    stop = gmail.start_polling(every) if every > 0 else None
+    yield
+    if stop:
+        stop.set()
+
+
+app = FastAPI(title="CoFoundr", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["money"] = lambda v: f"£{v:,.2f}" if v is not None else "–"
 templates.env.filters["day"] = lambda d: d.strftime("%d %b") if d else "–"
 templates.env.filters["stamp"] = lambda d: d.strftime("%d %b %H:%M") if d else "–"
+templates.env.filters["money0"] = view.money0
+templates.env.filters["ago"] = view.ago
+templates.env.globals["due_label"] = view.due_label
 
 BUSINESS_ID = "gaia-coffee"
 MAX_UPLOAD = 10 * 1024 * 1024  # pipeline.ingest_invoice rejects anything larger
@@ -68,15 +88,27 @@ def _back(msg: str) -> RedirectResponse:
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, msg: Optional[str] = None):
     db = get_db()
+    now = view.london_now()
     invoices = list(db[schema.INVOICES].find({"business_id": BUSINESS_ID}).sort([("status", -1), ("due_date", 1)]))
+    pending = approvals.pending()
+    review = [i for i in invoices if i.get("needs_review") and i["status"] != "paid"]
+    brief = build_brief(_public_url(request))
+    forecasts = list(db[schema.FORECASTS].find({"business_id": BUSINESS_ID, "date": {"$gte": now.date().isoformat()}})
+                     .sort("date", 1).limit(7))
     return templates.TemplateResponse(request, "index.html", {
         "msg": msg,
-        "pending": approvals.pending(),
-        "decided": approvals.recent_decided(),
+        "now": now,
+        "greeting": view.greeting(now),
+        "headline": view.headline(pending, brief["overdue_receivable_total"], review),
+        "pending": pending,
+        "tones": view.TONES,
         "invoices": invoices,
-        "review": [i for i in invoices if i.get("needs_review") and i["status"] != "paid"],
-        "brief": build_brief(_public_url(request)),
-        "activity": activity.recent(),
+        "review": review,
+        "brief": brief,
+        "timeline": view.timeline(activity.recent(12), now),
+        "week": view.week(forecasts, view.weather_by_date(), now.date()),
+        "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
+                  "polling": int(os.environ.get("GMAIL_POLL_SECONDS") or 0), "last": gmail.last_check},
     })
 
 
@@ -98,6 +130,11 @@ def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Op
     except approvals.DecisionError as e:
         return _back(str(e))
     return _back(f"#{result['ref']} {result['status']}: {result['effect']}.")
+
+
+@app.post("/check-inbox")
+def check_inbox():
+    return _back(gmail.check_inbox().message)
 
 
 @app.post("/run-check")
