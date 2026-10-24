@@ -1,13 +1,25 @@
-# Each folder has one owner who must review PRs touching it.
-# TODO: replace placeholders with real GitHub usernames, and set owners marked TBD.
-# Enforced only with GitHub branch protection on main ("Require review from Code Owners").
+# Jade owns the edges (inputs + outputs), Sunil owns the middle (data + analysis + errors).
+# Enforced with the GitHub rulesets on main/stage once "Require review from Code Owners" is switched on.
 
-/backend/db/   @SUNIL_GITHUB
-/data/         @SUNIL_GITHUB
-/backend/ai/   @TBD
-/bridge/       @TBD
-/dashboard/    @TBD
+# Middle: Sunil
+/backend/db/          @sunilramjali
+/backend/ai/          @sunilramjali
+/backend/pipeline.py  @sunilramjali
+/backend/approvals.py @sunilramjali
+/backend/sales.py     @sunilramjali
+/data/                @sunilramjali
+/Dockerfile           @sunilramjali
+/fly.toml             @sunilramjali
+/.github/workflows/   @sunilramjali
 
-# Shared docs: both review
-/.claude/      @SUNIL_GITHUB @CEYDA_GITHUB
-/README.md     @SUNIL_GITHUB @CEYDA_GITHUB
+# Edges: Jade
+/backend/inputs/      @JadeAlpay
+/backend/outputs/     @JadeAlpay
+/bridge/              @JadeAlpay
+
+# Shared
+/.claude/             @sunilramjali @JadeAlpay
+/README.md            @sunilramjali @JadeAlpay
+/tests/test_middle.py @sunilramjali
+/tests/test_edges.py  @JadeAlpay
+/tests/conftest.py     @sunilramjali @JadeAlpay

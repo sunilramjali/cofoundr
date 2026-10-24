@@ -1,2 +1,2 @@
 # backend/ai: Gemini, forecast, invoice extraction, prioritisation
-**Owner: TBD**
+**Owner: Sunil** (the middle: Gemini analysis, verification, overdue, forecast, prioritisation)

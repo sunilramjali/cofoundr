@@ -26,6 +26,18 @@ $LINE"
 
 if [ "$tool" = "Bash" ]; then
   cmd=$(jq -r '.tool_input.command // empty' <<<"$input")
+  # Only inspect the "git push ..." segment(s), not commit messages etc.
+  pushes=$(grep -oE 'git( -C [^ ]+)? push[^;&|"'\''$]*' <<<"$cmd")
+  if [ -n "$pushes" ]; then
+    branch=$(git -C "${CLAUDE_PROJECT_DIR:-.}" branch --show-current 2>/dev/null)
+    if grep -Eq '[ :+](main|stage)( |$)' <<<"$pushes" || { [[ "$branch" =~ ^(main|stage)$ ]] && ! grep -Eq 'push( -[^ ]+)* [^ -][^ ]* [^ ]+' <<<"$pushes"; }; then
+      emit deny "$LINE
+🚫🔴 BLOCKED: direct push to main/stage
+Push to your own branch, then open a PR.
+Flow: sunil / jade → PR → stage → PR (approved) → main
+$LINE"
+    fi
+  fi
   for owner in sunil ceyda; do
     [ "$owner" = "$me" ] && continue
     if grep -q "LOG-$owner\.md" <<<"$cmd" && grep -Eq '(>|sed -i|perl -[a-z]*i|tee|mv |cp |rm |truncate)' <<<"$cmd"; then
@@ -75,4 +87,20 @@ $LINE"
       jq -n --arg m "🟢 Your log: LOG-$me.md" '{systemMessage: $m}'
     fi ;;
 esac
+
+# Folder ownership (mirrors CLAUDE.md + CODEOWNERS): Sunil = the middle, Jade/Ceyda = inputs + outputs.
+rel=${f#"${CLAUDE_PROJECT_DIR:-$PWD}"/}
+case "$rel" in
+  backend/db/*|backend/ai/*|backend/pipeline.py|backend/approvals.py|data/*|tests/test_middle.py|Dockerfile|fly.toml|.github/workflows/*) area_owner=sunil ;;
+  backend/inputs/*|backend/outputs/*|bridge/*|tests/test_edges.py) area_owner=ceyda ;;
+  *) area_owner="" ;;
+esac
+if [ -n "$area_owner" ] && [ -n "$me" ] && [ "$area_owner" != "$me" ]; then
+  who=$([ "$area_owner" = ceyda ] && echo "Jade (Ceyda)" || echo "Sunil")
+  emit ask "$LINE
+🟠 PARTNER'S AREA: $rel is owned by $who
+Editing it can clash with their work. Tell them first, or ask them to make the change.
+Only approve if you've agreed it with $who.
+$LINE"
+fi
 exit 0

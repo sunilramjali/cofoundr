@@ -1,0 +1,4 @@
+# Append-only lists: when both of you add lines, keep both sides instead of conflicting.
+requirements.txt merge=union
+.env.example merge=union
+requirements-dev.txt merge=union

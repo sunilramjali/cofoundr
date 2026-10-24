@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [stage, main]
+  push:
+    branches: [stage, main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      BRIEF_TOKEN: ci-test-token  # only so the app can check tokens; no real secrets in CI
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - run: python -m pyflakes backend bridge data tests
+      - run: python -m compileall -q backend bridge data
+      - run: python -m pytest -q tests

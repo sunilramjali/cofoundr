@@ -2,7 +2,7 @@
 
 **Event:** Encode London Hackathon 2026 (23–25 Oct), Encode Hub, Shoreditch
 **Submission deadline:** Sunday 25 Oct, 12:00
-**Team:** 2
+**Team:** Sunil (@sunilramjali) + Jade / Ceyda (@JadeAlpay)
 **Targets:** Main prize + MongoDB, Gemini and Saint sponsor bounties
 
 ---
@@ -20,15 +20,14 @@ Framed for small businesses generally. Demo business: **GAIA Coffee** (East Lond
 | Database | MongoDB Atlas | Single source of truth: invoices, sales, products, events, tasks, approvals |
 | AI | Gemini | Multimodal extraction, reasoning, prioritisation, forecast adjustment, drafting |
 | Conversational layer | Saint (saint.work) | Owner talks to CoFoundr on WhatsApp (input + output) |
-| Dashboard | Streamlit | Visual control panel + approval queue |
-| Saint bridge | FastAPI on Fly.io | Plain HTML/JSON endpoints Saint can read (Streamlit is JS-rendered, so Saint likely can't read it) |
+| Web app: dashboard + Saint bridge | FastAPI on Fly.io | **One app.** Server-rendered HTML dashboard (owner's control panel + approval queue) **and** the endpoints Saint uses. Sits between Saint, Gemini and MongoDB. (Streamlit dropped.) |
 
 ## 3. Architecture
 
 ```
-Owner ⇄ WhatsApp ⇄ Saint ⇄ FastAPI (/brief, /approve) ⇄ MongoDB Atlas ⇄ Streamlit dashboard
-                                   ⇅
-                                 Gemini
+Owner ⇄ WhatsApp ⇄ Saint ⇄ Fly.io web app (dashboard + /brief, /approve) ⇄ MongoDB Atlas
+                                        ⇅
+                                      Gemini
 ```
 
 - Approvals can happen in the dashboard or by WhatsApp reply. Both update the same MongoDB record.
@@ -36,19 +35,22 @@ Owner ⇄ WhatsApp ⇄ Saint ⇄ FastAPI (/brief, /approve) ⇄ MongoDB Atlas �
 
 ### 3a. Bridge strategy (Saint ⇄ MongoDB)
 
-**What it is:** a small FastAPI web server in `bridge/`, deployed on **Fly.io** at a public URL (e.g. `https://cofoundr.fly.dev`). It's the **only** way Saint reads or changes data. Saint never connects to MongoDB directly.
+**What it is:** one FastAPI web app in `bridge/`, deployed on **Fly.io** at a public URL (e.g. `https://cofoundr.fly.dev`). It serves **both** the owner's dashboard (server-rendered HTML pages) **and** the endpoints Saint uses, and it's the only thing that talks to Gemini and MongoDB. It's the **only** way Saint reads or changes data. Saint never connects to MongoDB directly.
+
+**Confirmed:** Saint can interact with the Fly.io web app (bridge between Saint, Gemini and the web page).
 
 **Why:**
-1. Saint can't read Streamlit (JS-rendered) → the bridge serves plain text/HTML/JSON.
+1. One server-rendered app → the owner's dashboard and Saint read the same pages/data; no JS-only frontend Saint can't read.
 2. Security → Saint holds only a demo token (`BRIEF_TOKEN`), never the MongoDB password.
 3. Rules in one place → approval checks live in the bridge, so Saint can't bypass them (trust story + "human control" judging criteria).
 4. Saint gets finished answers (ranked, explained, WhatsApp-ready), not raw documents.
 
 ```
-            ┌─► Streamlit dashboard (owner views)
-MongoDB ◄───┤
-            └─► Bridge (FastAPI on Fly.io) ◄──► Saint ◄──► WhatsApp ◄──► Owner
-                        └─► Gemini
+                 ┌─ Dashboard pages (/, /invoices, /approvals) ◄── Owner (browser)
+MongoDB ◄──► Fly.io web app (FastAPI)
+                 └─ Saint endpoints (/brief, /approve) ◄──► Saint ◄──► WhatsApp ◄──► Owner
+                        ⇅
+                      Gemini
 ```
 
 **Endpoints:**
@@ -57,29 +59,34 @@ MongoDB ◄───┤
 |---|---|---|
 | `GET /brief?token=…&format=html\|json` | Owner asks Saint for the brief | Reads tasks, invoices, forecasts, approvals → returns a WhatsApp-ready message |
 | `POST /approve` `{id, decision}` | Owner replies "approve 1" / "reject 1" | Checks the action exists and is `pending` → updates `approvals` (decision, `decided_via: "whatsapp"`, timestamp) → dashboard reflects it |
+| `GET /updates?token=…[&since=…][&format=text][&peek=true]` | Saint polls on a schedule (e.g. every minute) | Returns WhatsApp-ready messages for anything new since last time: new invoices (or "needs your check"), new drafts with "reply approve N", dashboard decisions. Without `since`, the server remembers what was delivered. `format=text` returns an empty body when there's nothing to send |
 | `POST /invoice` (later) | Owner sends an invoice photo | Sends the photo to Gemini for extraction → saves to `invoices` |
 | `GET /health` | Fly.io health check | Returns `ok` |
 
 **Rules:**
 - Approvals are `POST` only, never a clickable GET link (link previews/crawlers could trigger them).
 - Every bridge call is logged to an agent activity record in MongoDB (Agents That Ship: "clear record").
-- Bridge and dashboard both import collection names/shapes from `backend/db/schema.py`.
+- Dashboard pages and Saint endpoints live in the same app and import collection names/shapes from `backend/db/schema.py`.
+- Dashboard pages are plain server-rendered HTML (Jinja templates, optional htmx), so Saint can read them too.
 - The token in the URL is OK only because all data is synthetic demo data.
 
 **Fly.io deployment:**
-- `bridge/` holds `main.py`, `requirements.txt`, `Dockerfile` and `fly.toml` (app `cofoundr`, region `lhr`, internal port 8080, health check on `/health`).
-- Secrets are set with `fly secrets set MONGODB_URI=… BRIEF_TOKEN=… GEMINI_API_KEY=…` and are never committed.
-- Deploy: `cd bridge && fly deploy`.
+- **Live: https://cofoundr.fly.dev** (app `cofoundr`, region `lhr`, internal port 8080, health check on `/health`, 1 machine kept warm).
+- `Dockerfile` and `fly.toml` live at the **repo root** (the image needs `backend/` as well as `bridge/`). Access logging is off so the `/brief` token never appears in `fly logs`.
+- Secrets are set with `fly secrets set MONGODB_URI=… BRIEF_TOKEN=… GEMINI_API_KEY=…` and are never committed. Non-secret config (`GEMINI_MODEL`, `MONGODB_DB`, `PUBLIC_URL`) is in `fly.toml`.
+- Deploy: `fly deploy` from the repo root.
+- Saint calls `GET /brief?token=…` (or header `X-Token`), and `POST /approve` with `{"text": "approve 1"}` or `{"ref": 1, "decision": "approve"}`.
 - MongoDB Atlas network access must allow Fly.io's outbound IPs (or `0.0.0.0/0` for the hackathon, demo data only).
 - **Deploy a stub first** (hard-coded `/brief` text) and test that Saint can read it **before** building real logic.
 
-**Depends on the Saint team's answers:** can Saint read a web page, call an API/webhook, or receive WhatsApp photos? Web page only → `/brief` HTML + approvals via the dashboard. API/webhook → full `/brief` JSON + `/approve`. Neither → Google Sheet fallback.
+**Saint integration:** confirmed Saint works through the Fly.io web app → build `/brief` + `/approve`. Still to confirm: can Saint pass a WhatsApp photo to `POST /invoice`? (Until then, invoices are uploaded in the dashboard.) Google Sheet fallback no longer needed.
 
 ## 4. Modules (priority order)
 
 **Must ship**
 1. **Invoice chaser** — ingest invoices, flag overdue, draft escalating reminders (approval-gated).
-   Inputs, in build order: WhatsApp photo → PDF upload → email (forward to Saint's inbox) → manual form. Gemini extracts supplier, amount, due date and line items to JSON.
+   Inputs, in build order: **Gmail inbox, autonomous (MVP1)** → dashboard upload, manual fallback (built) → WhatsApp photo via Saint (MVP2). Gemini extracts supplier, amount, due date and line items to JSON.
+   **Gmail intake design:** a dedicated demo Gmail account (not anyone's personal inbox) with 2-step verification and an **app password**; the Fly.io app polls it over IMAP about every minute, processes new emails with PDF/image attachments once (tracked by Message-ID), labels them processed, and logs each step in `agent_log`. Secrets: `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` (Fly secrets + `.env`).
 2. **Revenue forecaster** — Python baseline (statsmodels/Prophet) on POS history; Gemini adjusts for events + weather and explains why (e.g. "+28% Sat: market nearby + sunny").
 3. **Approval flow** — Approve / Edit / Reject queue for all finance actions. Never cut this — it's the trust story.
 4. **Auto-prioritise & schedule** — Gemini ranks open tasks via function calling over MongoDB, with a one-line reason each; produces a weekly plan.
@@ -110,10 +117,12 @@ MongoDB ◄───┤
 
 ## 7. Timeline
 
-| When | Person A — backend, data, Gemini | Person B — app, Saint |
+> Sunil built MVP1 solo up to Sat ~13:30. Jade (Ceyda) has now joined; split the remaining columns between you.
+
+| When | Backend, data, Gemini (Sunil) | Web app, Saint (to split with Jade) |
 |---|---|---|
 | Sat 10:30–13:00 | Atlas schema; synthetic POS + invoices | FastAPI skeleton on Fly.io with `/brief`; test Saint can read it |
-| 13:00–17:00 | Gemini invoice extraction; forecast baseline + Gemini adjustment | Streamlit dashboard (priorities, invoices, forecast); approval queue → MongoDB |
+| 13:00–17:00 | Gemini invoice extraction; forecast baseline + Gemini adjustment | Dashboard pages on Fly.io (priorities, invoices, forecast); approval queue → MongoDB |
 | 17:00–21:00 | Events API; Gemini prioritisation | Saint flow: photo in → brief out → "approve" reply updates MongoDB |
 | 21:00–late | Waste estimator; reminder drafts | Heatmap; end-to-end test |
 | Sun → 12:00 | Bug fixes; seed clean demo state | Backup demo video; README; submit |
@@ -126,6 +135,8 @@ MongoDB ◄───┤
 
 ## 9. Open questions
 - [ ] Ask Saint team: can Saint pass a WhatsApp photo to our backend, or only Drive/email?
-- [ ] Ask Saint team: API / webhook access for hackathon teams?
+- [x] Saint access: Saint interacts with our Fly.io web app (bridge)
+- [ ] Ask Saint team: can Saint send WhatsApp messages unprompted (business-initiated), run on a schedule, or receive a webhook? (needed for automatic updates)
 - [ ] Confirm GAIA owner is OK with the name being used
-- [ ] Final call: Streamlit vs other front end
+- [x] Front end: server-rendered dashboard in the FastAPI app on Fly.io (Streamlit dropped)
+- [x] Gemini 4 Argon API key: working paid-tier key (`AIza…`) since Sat 15:00; lab key (`gcplab.me`) hit its spend cap, a new free-tier key had 0 Argon quota

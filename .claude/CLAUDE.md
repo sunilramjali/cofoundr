@@ -21,27 +21,93 @@ All planning docs live in `.claude/`. Read the relevant one before starting work
 
 ## Git workflow
 
-- **`main` = the working version. Nobody commits to it directly.** All changes go through small pull requests.
-- Each person works on their own branches: `sunil/<topic>`, `ceyda/<topic>` (e.g. `sunil/atlas-schema`).
-- **Pull from `main` often, at least every 1–2 hours** (`git pull origin main` into your branch). Small, frequent merges rarely clash.
-- Never keep two separate copies of the project. One repo, one `main`.
-- Before starting work, Claude checks the current branch. If it's `main`, it creates/switches to a personal branch first.
+Repo: https://github.com/sunilramjali/cofoundr
+
+```
+sunil ──┐
+        ├──► stage ──(PR only)──► main
+jade  ──┘
+```
+
+| Branch | Who | Rules |
+|---|---|---|
+| `main` | Nobody directly | **Protected** (ruleset "main branch"): PR from `stage` only, **1 approval from the other person**, no force-push, no deletion. |
+| `stage` | Integration branch | **Protected** (ruleset "stage branch"): PR from `sunil`/`jade` only, no direct pushes, no force-push, no deletion. |
+| `sunil` | Sunil's working branch (GitHub `@sunilramjali`) | Sunil only |
+| `jade` | Ceyda's working branch (Jade = Ceyda, GitHub `@JadeAlpay`) | Jade only |
+
+**The formal flow (both of you, every change):**
+1. Start from the latest stage: `git switch <you> && git pull origin stage`
+2. Work and commit on your branch (`MVP<n>: …` messages), push: `git push origin <you>`
+3. Open a PR **`<you>` → `stage`**: `gh pr create --base stage --head <you> --title "MVP<n>: …"`
+4. Tell your partner; merge when green (stage PRs don't need an approval, so you're never blocked)
+5. Your partner pulls: `git pull origin stage`
+6. Releases: PR **`stage` → `main`**, **approved by the other person**, then merged
+
+- **Pull from `stage` often, at least every 1–2 hours** (`git pull origin stage` into your branch). Small, frequent merges rarely clash.
+- Never keep two separate copies of the project. One repo.
+- Before starting work, Claude checks the current branch. If it's `main` or `stage`, it switches to the person's own branch first.
+- The hook also **blocks Claude from pushing to `main` or `stage`** (🚫🔴 BLOCKED: direct push). Claude pushes only to the person's own branch and opens PRs.
+- Don't create `sunil/...` or `stage/...` sub-branches: git can't have both `sunil` and `sunil/x`.
+
+### Avoiding conflicts (working in parallel)
+1. **Start synced.** A SessionStart hook (`hooks/sync-check.sh`) warns if you're on `main`/`stage`, behind `stage`, or have uncommitted changes. If it says you're behind: `git pull origin stage` before editing anything.
+2. **Stay in your area.** Claude asks before editing the partner's folders (🟠 PARTNER'S AREA). Need a change there? Tell them, or ask them to make it.
+3. **Small PRs, merged fast.** One feature per PR into `stage`; merge as soon as CI is green, then tell your partner to pull. Long-lived branches are what conflict.
+4. **Pull again before opening a PR:** `git pull origin stage`, fix anything locally, re-run tests, then push.
+5. **Shared files, by design:**
+   - `requirements.txt`, `.env.example`: append-only; `.gitattributes` `merge=union` keeps both sides when you both add lines (local merges/pulls).
+   - Tests: `tests/test_middle.py` (Sunil) and `tests/test_edges.py` (Jade). Never a shared test file.
+   - `schema.py`: Sunil edits; Jade asks for new shapes.
+   - Shared docs: tick only **your own** checkboxes; keep edits small; commit them on their own.
+6. **If a conflict happens anyway:** don't force-push. Resolve on your branch (`git pull origin stage`, fix the marked sections, run tests, commit), and ask your partner when it's their code.
+
+### CI/CD
+- **CI** (`.github/workflows/ci.yml`): every PR into `stage`/`main` installs deps, compiles, runs `pytest tests` (fast, no MongoDB/Gemini needed). The `checks` job is a **required status check**: a red PR can't merge.
+- **CD** (`.github/workflows/deploy.yml`): every push to `main` (= every approved release PR) runs `fly deploy`, then checks `/health`. **Live app = `main`.** Don't `fly deploy` by hand from feature branches, except to hotfix during the demo.
+- Needs GitHub secret `FLY_API_TOKEN` (Fly deploy token scoped to the `cofoundr` app, 30-day expiry).
+- **Tests:** `.venv/bin/python -m pytest -q tests` (65+ tests, ~0.3 s). They use an in-memory MongoDB (`mongomock`) and a fake Gemini from `tests/conftest.py` (`db`, `gemini_down`, `fake_extraction`, `sent` fixtures); an autouse guard makes any test that touches the real Atlas or Gemini fail. Tools: `pip install -r requirements-dev.txt`. CI also runs `pyflakes`.
+- **Every new feature ships with a scenario test** for its obvious edge cases (see `docs/postmortem-2026-10-24.md`: 10 of 13 bugs would have been caught that way). Middle → `tests/test_middle.py`, edges → `tests/test_edges.py`.
+
+### Commit messages
+Format: **`MVP<n>: <one sentence of what changed>`**, where `<n>` is the MVP stage the change serves (see "Current stage" in `MVP.md`).
+```
+MVP1: Add Gemini invoice extraction with a line-item total check.
+MVP2: Add POST /approve endpoint for WhatsApp approvals.
+```
+Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commit.
 
 ## Code layout & ownership
 
-| Folder | Contents | Owner |
+**The split: Jade owns the edges (inputs + outputs), Sunil owns the middle (data + analysis + errors).**
+
+```
+ INPUTS (Jade)                 MIDDLE (Sunil)                        OUTPUTS (Jade)
+ Gmail, WhatsApp/Saint in,  →  pipeline.ingest_invoice()          →  dashboard UI, Saint outbox on
+ external APIs, upload         Gemini read + verify, MongoDB,        WhatsApp (/brief, /updates),
+                               overdue, approval rules, errors       emails sent after approval
+```
+
+| Folder / file | Contents | Owner |
 |---|---|---|
-| `backend/db/` | MongoDB Atlas: connection, collections, indexes, search | **Sunil** |
-| `backend/db/schema.py` | **Shared data contract**: collection names + document shapes | **Sunil** |
-| `data/` | Synthetic seed data | **Sunil** |
-| `backend/ai/` | Gemini, forecast, invoice extraction, prioritisation | TBD |
-| `bridge/` | FastAPI `/brief`, `/approve` for Saint (Fly.io) | TBD |
-| `dashboard/` | Streamlit | TBD |
+| `backend/inputs/` | Input channels: Gmail intake, WhatsApp photos via Saint, external APIs (weather, events, Treg) | **Jade** |
+| `backend/pipeline.py` | **Inputs → middle hand-off**: `ingest_invoice(bytes, mime, source, origin)` does extract → verify → save → log → overdue check. Every input calls this, nothing else | **Sunil** |
+| `backend/sales.py` | **POS → database hand-off**: `record_orders(orders)`, `record_stock_count(count)` take the POS connector's format as-is; idempotent; writes `orders`, `sales` (time-series), `products`, `stock_counts` | **Sunil** |
+| `backend/ai/` | Gemini: invoice extraction + verification loop, overdue drafts, forecast, prioritisation | **Sunil** |
+| `backend/approvals.py` | Approval rules; the only place a decision is applied. Calls `outputs.email.send_reminder` after approval | **Sunil** |
+| `backend/db/`, `backend/db/schema.py` | MongoDB connection, activity log, indexes/search; **the shared data contract** | **Sunil** |
+| `data/` | Synthetic seed data, sample invoices | **Sunil** |
+| `backend/outputs/` | Owner-facing output: `brief.py` (WhatsApp brief), `updates.py` (`/updates` messages), `email.py` (sending after approval) | **Jade** |
+| `bridge/` | **The Fly.io web app**: routes in `main.py`, dashboard UI in `templates/` | **Jade** |
+| `tests/test_middle.py` / `tests/test_edges.py` | Fast tests, no network: middle / edges | **Sunil** / **Jade** |
+| `Dockerfile`, `fly.toml`, `.github/workflows/` | Deploy + CI/CD | **Sunil** |
 | `.claude/` | Shared docs (protected by the hook) | Both |
 
+- **The two seams.** Inputs → middle: invoices go through `pipeline.ingest_invoice` (use its `IngestResult`); till data goes through `sales.record_orders` / `sales.record_stock_count` (use its `SyncResult`). Inputs never write MongoDB directly. Middle → outputs: read MongoDB through `schema.py` names; outputs never change data except via `approvals.decide`. Changing either seam = tell your partner first.
 - **Each folder has one owner.** To change something in your partner's folder, tell them first or ask them to make the change.
 - **Data contract:** never hard-code collection names or change document shapes outside `backend/db/schema.py`. Any change there gets announced to the partner and noted in your log *before* merging.
-- `.github/CODEOWNERS` mirrors this table (placeholders until GitHub usernames are added).
+- No Streamlit. The dashboard is server-rendered HTML in the same Fly.io app, so Saint can read it too.
+- `.github/CODEOWNERS` mirrors this table.
 
 ## Edit permissions (to prevent clashes)
 
