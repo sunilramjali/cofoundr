@@ -72,6 +72,7 @@
       <nav class="nav"><a href="/settings" class="{{ 'is-on' if path == '/settings' }}"><span class="nav__ico"><svg class="ico"><use href="#i-gear"/></svg></span><span class="label">Settings</span></a></nav>
       <span class="status"><i class="dot {{ 'dot--warn' if inbox.last and not inbox.last.ok else ('dot--live' if inbox.configured and inbox.polling else '') }}"></i>
         {% if inbox.configured %}{{ "Watching your inbox" if inbox.polling else "Inbox connected" }}{% if inbox.last %} · {{ inbox.last.at|ago }}{% endif %}{% else %}Inbox not connected{% endif %}</span>
+      {% if sandbox %}<span class="status" title="Local in-memory copy: nothing here reaches Atlas"><i class="dot dot--warn"></i>Sandbox · local copy</span>{% endif %}
       <div class="me"><span class="me__avatar">G</span><span><b>GAIA Coffee</b><small>Owner · synthetic demo</small></span></div>
     </div>
   </aside>

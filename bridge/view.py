@@ -13,8 +13,9 @@ from backend.inputs.pitches import PITCHES
 LONDON = ZoneInfo("Europe/London")
 WEATHER_TTL = 30 * 60  # seconds; Open-Meteo updates hourly at best
 WEATHER_RETRY = 5 * 60  # after a failure, don't slow every page load by retrying
+WEATHER_TIMEOUT = 3  # seconds: the one inline fetch (nothing cached yet) never holds a page longer than this
 
-_weather = {"at": 0.0, "ttl": 0, "days": {}}
+_weather = {"at": 0.0, "ttl": 0, "days": {}, "refreshing": False}
 _weather_lock = threading.Lock()
 
 # activity kind → (icon, short label); unknown kinds fall back to a dot
@@ -89,17 +90,32 @@ def weather_icon(code: Optional[int]) -> str:
     return "storm"
 
 
-def weather_by_date() -> Dict[str, dict]:
-    """The first pitch's 7-day forecast keyed by date, cached; {} when Open-Meteo can't be reached."""
+def _refresh_weather() -> None:
+    try:
+        days, ttl = {d["date"]: d for d in weather.forecast(PITCHES[0], days=7, timeout=WEATHER_TIMEOUT)}, WEATHER_TTL
+    except Exception:  # the page must render without weather
+        days, ttl = None, WEATHER_RETRY
     with _weather_lock:
+        if days is not None:
+            _weather["days"] = days
+        _weather.update(at=time.monotonic(), ttl=ttl, refreshing=False)
+
+
+def weather_by_date() -> Dict[str, dict]:
+    """The first pitch's 7-day forecast keyed by date; {} when Open-Meteo can't be reached.
+    Never makes a page wait on a refresh: stale weather is served while a background thread fetches new weather.
+    Only the very first fetch (nothing cached yet) is inline, and it gives up after WEATHER_TIMEOUT seconds."""
+    with _weather_lock:
+        days = _weather["days"]
         if time.monotonic() - _weather["at"] < _weather["ttl"]:
-            return _weather["days"]
-        try:
-            days, ttl = {d["date"]: d for d in weather.forecast(PITCHES[0], days=7)}, WEATHER_TTL
-        except Exception:  # the page must render without weather
-            days, ttl = {}, WEATHER_RETRY
-        _weather.update(at=time.monotonic(), ttl=ttl, days=days)
-        return days
+            return days
+        if days:
+            if not _weather.get("refreshing"):
+                _weather["refreshing"] = True
+                threading.Thread(target=_refresh_weather, name="weather-refresh", daemon=True).start()
+            return days
+    _refresh_weather()
+    return _weather["days"]
 
 
 def week(forecasts: List[dict], weather_days: Dict[str, dict], today: date) -> dict:
