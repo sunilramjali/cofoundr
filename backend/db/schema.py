@@ -189,4 +189,38 @@ class StockCount(TypedDict):
     synthetic: bool
 
 
-# TODO(Sunil, MVP2): Event, Forecast, Task shapes
+# ---------------------------------------------------------------- forecast (MVP2)
+
+class ProductForecast(TypedDict):
+    sku: str
+    name: str
+    expected_qty: float  # units expected that day
+
+
+class ForecastAdjustment(TypedDict):
+    """Gemini's change to the baseline, from weather + events (MVP2, after Jade's weather/events inputs)."""
+    pct: float  # e.g. +28.0
+    reason: str  # one line, e.g. "+28% Sat: Broadway Market nearby + sunny"
+    sources: List[str]  # what it looked at, e.g. ["weather", "events"]
+
+
+class Forecast(TypedDict):
+    """One doc per business per day ahead; recomputed by backend.ai.forecast.run(), latest run wins."""
+    _id: str  # "<business_id>:<YYYY-MM-DD>"
+    business_id: str
+    date: str  # London calendar date, "YYYY-MM-DD"
+    weekday: str  # "Saturday"
+    trading: bool  # False on days GAIA doesn't trade (then everything below is 0)
+    expected_revenue: float  # baseline, GBP
+    expected_orders: float
+    low_revenue: float  # range from the same weekdays' history (min..max of the lookback)
+    high_revenue: float
+    basis: str  # human-readable, e.g. "average of the last 6 Saturdays"
+    products: List[ProductForecast]  # top sellers expected that day
+    adjustment: Optional[ForecastAdjustment]  # None until Gemini adjusts it
+    final_revenue: float  # baseline × (1 + pct/100), or the baseline when not adjusted
+    generated_at: datetime
+    synthetic: bool
+
+
+# TODO(Sunil, MVP2): Event, Task shapes

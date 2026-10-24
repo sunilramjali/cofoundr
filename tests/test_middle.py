@@ -387,3 +387,98 @@ def test_stock_counts_are_stored_once_with_their_kind(db):
 def test_till_sync_never_reaches_the_future_through_the_connector(db):
     r = sales.record_orders(PosClient(now="2026-10-03").iter_sales(), now="2026-10-03")
     assert r.new > 0 and db[schema.ORDERS].find_one(sort=[("placed_at", -1)])["placed_at"].date().isoformat() <= "2026-10-02"
+
+
+# --- forecast (baseline from till history)
+from datetime import date as _date  # noqa: E402
+from statistics import mean as _mean  # noqa: E402
+from zoneinfo import ZoneInfo as _Zone  # noqa: E402
+
+from backend.ai import forecast  # noqa: E402
+
+_LON = _Zone("Europe/London")
+
+
+def _hist(weekday_revenue, weeks=6, end=_date(2026, 10, 24)):
+    """Synthetic daily history: {weekday: revenue} for `weeks` weeks before `end`."""
+    h = {}
+    for w in range(1, weeks + 1):
+        for wd, rev in weekday_revenue.items():
+            d = end - timedelta(days=(end.weekday() - wd) % 7 or 7) - timedelta(weeks=w - 1)
+            h[d] = {"revenue": rev + w, "orders": 10 + w}
+    return h
+
+
+def test_forecast_learns_trading_days_and_averages_same_weekdays():
+    h = _hist({0: 600, 2: 500, 4: 550, 5: 700})  # Mon, Wed, Fri, Sat
+    out = forecast.baseline(h, {}, {}, _date(2026, 10, 24), days=7)  # starts on a Saturday
+    assert [f["trading"] for f in out] == [True, False, True, False, True, False, True]  # Sat Sun Mon Tue Wed Thu Fri
+    sat = out[0]
+    assert sat["expected_revenue"] == round(_mean(700 + w for w in range(1, 7)), 2)
+    assert sat["low_revenue"] == 701 and sat["high_revenue"] == 706 and "last 6 Saturdays" in sat["basis"]
+    assert out[1]["expected_revenue"] == 0 and "doesn't usually trade on Sundays" in out[1]["basis"]
+    assert all(f["final_revenue"] == f["expected_revenue"] and f["adjustment"] is None for f in out)
+
+
+def test_forecast_with_little_or_no_history():
+    assert all(not f["trading"] for f in forecast.baseline({}, {}, {}, _date(2026, 10, 24)))
+    short = _hist({5: 700}, weeks=3)  # 3 Saturdays: enough to count as a trading day, basis says so
+    sat = forecast.baseline(short, {}, {}, _date(2026, 10, 24), days=1)[0]
+    assert sat["trading"] and "last 3 Saturdays" in sat["basis"]
+
+
+def test_a_one_off_day_does_not_make_a_weekday_a_trading_day():
+    h = _hist({5: 700})
+    h[_date(2026, 10, 13)] = {"revenue": 900, "orders": 90}  # one Tuesday market, once
+    tue = forecast.baseline(h, {}, {}, _date(2026, 10, 24), days=4)[3]
+    assert tue["weekday"] == "Tuesday" and not tue["trading"]
+
+
+def test_product_forecast_counts_days_without_a_sale_as_zero():
+    h = _hist({5: 700}, weeks=2)
+    sats = sorted(h)
+    pq = {sats[0]: {"FLW": 30, "IMA": 4}, sats[1]: {"FLW": 20}}  # iced matcha only sold on one of two Saturdays
+    sat = forecast.baseline(h, pq, {"FLW": "Flat White"}, _date(2026, 10, 24), days=1)[0]
+    by = {p["sku"]: p for p in sat["products"]}
+    assert by["FLW"]["expected_qty"] == 25 and by["FLW"]["name"] == "Flat White" and by["IMA"]["expected_qty"] == 2
+
+
+def test_days_are_bucketed_in_london_time_across_the_clock_change():
+    from datetime import datetime as _dt, timezone as _tz
+    # 23:30 UTC on Sat 24 Oct is 00:30 BST on Sun 25; 23:30 UTC on Sun 25 (after clocks go back) is still Sun 25
+    orders = [{"placed_at": _dt(2026, 10, 24, 23, 30, tzinfo=_tz.utc), "total": 5.0},
+              {"placed_at": _dt(2026, 10, 25, 23, 30, tzinfo=_tz.utc), "total": 7.0}]
+    assert forecast.daily_history(orders) == {_date(2026, 10, 25): {"revenue": 12.0, "orders": 2}}
+
+
+def test_forecast_run_on_jades_data_matches_a_manual_calculation(db):
+    sales.record_orders(POS.iter_sales(until="2026-10-24"), now=CLOCK)
+    out = forecast.run(now=datetime(2026, 10, 24, 11, 0, tzinfo=timezone.utc))
+    sat = out[0]
+    # by hand from the raw export: total per Saturday, last 6 Saturdays before 24 Oct
+    per_day = {}
+    for o in POS.iter_sales(until="2026-10-24"):
+        d = datetime.fromisoformat(o["placed_at"]).astimezone(_LON).date()
+        per_day[d] = per_day.get(d, 0) + o["total_gbp"]
+    last6 = sorted((d for d in per_day if d.weekday() == 5), reverse=True)[:6]
+    assert sat["weekday"] == "Saturday" and sat["expected_revenue"] == round(_mean(per_day[d] for d in last6), 2)
+    assert [f["weekday"] for f in out if f["trading"]] == ["Saturday", "Monday", "Wednesday", "Friday"]
+    assert sat["products"][0]["name"] in {"Flat White", "Latte", "Cappuccino"}
+
+
+def test_forecast_run_stores_latest_and_ignores_today_so_far(db):
+    sales.record_orders(POS.iter_sales(until="2026-10-24T12:00:00+01:00"), now=CLOCK)  # includes Sat morning sales
+    now = datetime(2026, 10, 24, 11, 0, tzinfo=timezone.utc)
+    first = forecast.run(now=now)
+    db[schema.ORDERS].insert_one({"_id": "x", "business_id": "gaia-coffee", "placed_at": now - timedelta(hours=1), "total": 9999.0})
+    second = forecast.run(now=now)  # a huge sale this morning must not move today's forecast (today isn't over)
+    assert first[0]["expected_revenue"] == second[0]["expected_revenue"]
+    assert db[schema.FORECASTS].count_documents({}) == 7  # replaced, not duplicated
+    assert db[schema.AGENT_LOG].count_documents({"kind": "forecast_updated"}) == 2
+    assert forecast.run(now=now, dry_run=True) and db[schema.AGENT_LOG].count_documents({"kind": "forecast_updated"}) == 2
+
+
+def test_a_new_business_with_two_weeks_of_history_still_gets_a_forecast():
+    h = _hist({0: 600, 5: 700}, weeks=2)
+    out = forecast.baseline(h, {}, {}, _date(2026, 10, 24), days=3)  # Sat, Sun, Mon
+    assert [f["trading"] for f in out] == [True, False, True] and "last 2 Saturdays" in out[0]["basis"]

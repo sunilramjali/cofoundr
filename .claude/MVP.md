@@ -69,8 +69,8 @@ Each morning the owner gets a WhatsApp brief **without asking**: what's coming i
 - [ ] **Weather + events data:** Open-Meteo (no key) daily forecast for the truck's pitches + an events source (Ticketmaster or via Treg) stored in MongoDB (`events`), refreshed on a schedule
 
 **Middle (Sunil)**
-- [ ] **Sales history:** ~6 months of synthetic GAIA POS sales in a MongoDB **time-series** collection (`sales`)
-- [ ] **Forecast:** baseline per day for the next 7 days from sales history, then **Gemini adjusts** for weather + nearby events and **explains why** ("+28% Sat: market nearby + sunny"); stored in `forecasts`
+- [x] **Sales history:** Jade's synthetic GAIA POS export (Sep–Nov 2026, 3,969 orders) recorded via `backend.sales` into MongoDB **time-series** `sales` (+ `orders`, `products`, `stock_counts`); loaded up to today, rest arrives as time passes
+- [ ] **Forecast:** ✓ **baseline done** (`backend/ai/forecast.py`: trading days learned from history, average of the last 6 same weekdays with a low–high range, per-product quantities; stored in `forecasts`). **Still to do:** **Gemini adjusts** for weather + nearby events and **explains why** ("+28% Sat: market nearby + sunny"), needs Jade's weather/events inputs
 - [ ] **Prioritisation:** Gemini ranks open tasks (approvals, review flags, forecast prep like "order extra oat milk") by impact with a one-line reason each; stored in `tasks`
 - [ ] **Atlas Search:** full-text search over invoices/suppliers (index + query function)
 - [ ] **Vector Search / Automated Embedding:** semantic match of events to the business profile ("worth trading at?"), or similar past invoices; **Hybrid Search** if time allows
