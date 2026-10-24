@@ -46,24 +46,7 @@
   {% endif %}
 </section>
 
-<section class="block">
-  <h2>The last four weeks <small>{{ sales.total|money0 }} over {{ sales.trading_days }} trading days</small></h2>
-  {% if sales.trading_days %}
-  <div class="hist" role="img" aria-label="Daily takings for the last 28 days">
-    {% for d in sales.days %}
-    <div class="hist__col{% if not d.orders %} hist__col--off{% endif %}" style="--i:{{ loop.index0 }}">
-      <span class="hist__bar" style="--h:{{ d.bar }}%"></span>
-      <div class="tip"><b>{{ d.date.strftime("%a %-d %b") }}</b>{% if d.orders %}<span class="muted">{{ d.revenue|money0 }} · {{ d.orders }} orders</span>{% else %}<span class="muted">Not trading</span>{% endif %}</div>
-    </div>
-    {% endfor %}
-  </div>
-  <div class="hist__axis"><span>{{ sales.days[0].date.strftime("%-d %b") }}</span><span>yesterday</span></div>
-  {% else %}
-  <div class="empty"><svg class="ico"><use href="#i-till"/></svg><div><b>No till data yet.</b>Sales show up here once the till syncs.</div></div>
-  {% endif %}
-</section>
-
-<section class="block">
+<section class="block" id="record">
   <h2>How my forecasts did <small>graded against what you actually took</small></h2>
   {% if record.overall %}
   <div class="stats">
@@ -81,6 +64,44 @@
   </details>
   {% else %}
   <div class="empty"><svg class="ico"><use href="#i-chart"/></svg><div><b>No grades yet.</b>After each trading day I compare my forecast with what you took, and learn from the misses.</div></div>
+  {% endif %}
+</section>
+
+{% if fee_audit %}
+<section class="block" id="fees">
+  <h2>Card fees <small>your provider's fee summary, read by Gemini and checked against every payment</small></h2>
+  {% set a = fee_audit.audit %}
+  <div class="card card--quiet" style="grid-template-columns:minmax(0,1fr);margin-top:0">
+    <div>
+      {% if not a %}
+      <h3>Fee summary needs your check</h3>
+      <p>I read it twice but the rates didn't reproduce its own worked example, so I didn't audit anything: {{ fee_audit.problems|join("; ") }}</p>
+      {% else %}
+      <h3>{% if a.overcharged %}{{ fee_audit.schedule.provider or "Your card provider" }} overcharged {{ a.overcharged|length }} payment{{ "s" if a.overcharged|length != 1 }} by £{{ "%.2f"|format(a.extra_total) }}{% else %}Every card fee matched your contract{% endif %}</h3>
+      <p>{{ a.matched }} of {{ a.checked }} UK card payments charged exactly the contract rate{% if a.not_covered %}; {{ a.not_covered }} overseas or unlisted cards aren't covered by the summary{% endif %}. I checked my reading of the summary against its own worked example{{ " (after one re-read)" if fee_audit.attempts > 1 }}.{% if fee_audit.schedule.contract_end %} Contract ends {{ fee_audit.schedule.contract_end }}.{% endif %}</p>
+      {% if a.overcharged %}<ul>{% for o in a.overcharged[:6] %}<li class="muted">{{ o.date }}: £{{ "%.2f"|format(o.amount) }} {{ o.card }} card, charged £{{ "%.2f"|format(o.charged) }}, contract £{{ "%.2f"|format(o.expected) }}</li>{% endfor %}</ul>
+      <p class="muted">It's in your Tasks to query with them. I won't contact them without you.</p>{% endif %}
+      {% for m in a.below_minimum %}<p class="muted">{{ m.month }}: fees came to £{{ "%.2f"|format(m.fees) }}, under the £{{ "%.2f"|format(m.minimum) }} monthly minimum, so you were topped up by £{{ "%.2f"|format(m.topped_up_by) }}.</p>{% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="block">
+  <h2>The last four weeks <small>{{ sales.total|money0 }} over {{ sales.trading_days }} trading days</small></h2>
+  {% if sales.trading_days %}
+  <div class="hist" role="img" aria-label="Daily takings for the last 28 days">
+    {% for d in sales.days %}
+    <div class="hist__col{% if not d.orders %} hist__col--off{% endif %}" style="--i:{{ loop.index0 }}">
+      <span class="hist__bar" style="--h:{{ d.bar }}%"></span>
+      <div class="tip"><b>{{ d.date.strftime("%a %-d %b") }}</b>{% if d.orders %}<span class="muted">{{ d.revenue|money0 }} · {{ d.orders }} orders</span>{% else %}<span class="muted">Not trading</span>{% endif %}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="hist__axis"><span>{{ sales.days[0].date.strftime("%-d %b") }}</span><span>yesterday</span></div>
+  {% else %}
+  <div class="empty"><svg class="ico"><use href="#i-till"/></svg><div><b>No till data yet.</b>Sales show up here once the till syncs.</div></div>
   {% endif %}
 </section>
 
@@ -104,23 +125,6 @@
     <span class="drop__file" aria-live="polite"></span>
     <button class="btn" type="submit" data-busy="Reading with Gemini…">Check fees <svg class="ico"><use href="#i-arrow"/></svg></button>
   </form>
-  {% if fee_audit %}
-  {% set a = fee_audit.audit %}
-  <div class="card card--quiet" style="grid-template-columns:minmax(0,1fr);margin-top:14px">
-    <div>
-      {% if not a %}
-      <h3>Fee summary needs your check</h3>
-      <p>I read it twice but the rates didn't reproduce its own worked example, so I didn't audit anything: {{ fee_audit.problems|join("; ") }}</p>
-      {% else %}
-      <h3>{% if a.overcharged %}{{ fee_audit.schedule.provider or "Your card provider" }} overcharged {{ a.overcharged|length }} payment{{ "s" if a.overcharged|length != 1 }} by £{{ "%.2f"|format(a.extra_total) }}{% else %}Every card fee matched your contract{% endif %}</h3>
-      <p>{{ a.matched }} of {{ a.checked }} UK card payments charged exactly the contract rate{% if a.not_covered %}; {{ a.not_covered }} overseas or unlisted cards aren't covered by the summary{% endif %}. I checked my reading of the summary against its own worked example{{ " (after one re-read)" if fee_audit.attempts > 1 }}.{% if fee_audit.schedule.contract_end %} Contract ends {{ fee_audit.schedule.contract_end }}.{% endif %}</p>
-      {% if a.overcharged %}<ul>{% for o in a.overcharged[:6] %}<li class="muted">{{ o.date }}: £{{ "%.2f"|format(o.amount) }} {{ o.card }} card, charged £{{ "%.2f"|format(o.charged) }}, contract £{{ "%.2f"|format(o.expected) }}</li>{% endfor %}</ul>
-      <p class="muted">It's in your Tasks to query with them. I won't contact them without you.</p>{% endif %}
-      {% for m in a.below_minimum %}<p class="muted">{{ m.month }}: fees came to £{{ "%.2f"|format(m.fees) }}, under the £{{ "%.2f"|format(m.minimum) }} monthly minimum, so you were topped up by £{{ "%.2f"|format(m.topped_up_by) }}.</p>{% endfor %}
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
   <p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>In EVO's portal, export Transactions as CSV. I keep the date, amount, fee and card type (debit/credit) of each payment. Card numbers, auth codes and card-network references are never stored. Square and SumUp connect directly instead.</span></p>
 </section>
 {% endblock %}

@@ -33,6 +33,66 @@ ACTIVITY = {
     "brief_served": ("chat", "Sent the brief"),
 }
 TONES = {0: "Friendly nudge", 1: "Firm reminder", 2: "Final notice"}
+FIXED = re.compile(r"^'(?P<says>.+)': you said (?P<said>[\d.,-]+), the database says (?P<actual>[\d.,-]+)$")
+
+
+def board_fixes(first_problems: List[str]) -> List[dict]:
+    """The board memo's 'fixed on the recheck' lines as {says, said, actual}, for the struck-through chips.
+    Lines that aren't a number mismatch (e.g. "can't be checked") are left out."""
+    out = []
+    for p in first_problems or []:
+        m = FIXED.match(p or "")
+        if m:
+            fix = m.groupdict()
+            try:
+                actual = float(fix["actual"].replace(",", ""))
+                fix["shown"] = f"£{actual:,.2f}" if "£" in fix["says"] else f"{actual:,g}"
+            except ValueError:
+                fix["shown"] = fix["actual"]
+            out.append(fix)
+    return out
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def while_away(extracted: List[dict], review: List[dict], fee_audit: Optional[dict], memo: Optional[dict],
+               record: Optional[dict]) -> List[dict]:
+    """Home's "While you were away" list: what the agent did and caught on its own, one line each, newest proof
+    first. Built from stored results (never log text), so every number here is one the pages behind it show."""
+    out = []
+    if extracted or review:
+        text = f"Read {_plural(len(extracted), 'invoice')} this week and checked every total" if extracted else ""
+        if review:
+            flagged = f"flagged {_plural(len(review), 'invoice')} that {'doesn' if len(review) == 1 else 'don'}'t add up"
+            text = f"{text}, and {flagged}" if text else flagged[0].upper() + flagged[1:]
+        out.append({"icon": "doc", "text": text + ".", "href": "/invoices"})
+    a = (fee_audit or {}).get("audit")
+    if a and a.get("checked"):
+        if a.get("overcharged"):
+            text = (f"Found {_plural(len(a['overcharged']), 'overcharged card payment')} (£{a.get('extra_total', 0):.2f}) "
+                    f"among the {a['checked']:,} I checked against your fee summary.")
+        else:
+            text = f"Checked {a['checked']:,} card payments against your fee summary: every fee matched."
+        out.append({"icon": "pound", "text": text, "href": "/sales#fees"})
+    if memo and memo.get("insights"):
+        fixed = sum(len(board_fixes(i.get("first_problems"))) for i in memo["insights"])
+        tokens = (memo.get("read") or {}).get("tokens")
+        read = f"Read the whole business in one go ({tokens:,} tokens)" if tokens else "Read the whole business in one go"
+        text = (f"{read} and caught {_plural(fixed, 'wrong number')} in my own memo before showing you." if fixed
+                else f"{read}; every number in the memo checked against your records.")
+        out.append({"icon": "bulb", "text": text, "href": "/board"})
+    o = (record or {}).get("overall")
+    if o and o.get("days"):
+        if o["adjusted_error"] > o["baseline_error"]:
+            text = (f"Graded my own forecasts: my weather adjustments made them worse ({o['baseline_error']}% → "
+                    f"{o['adjusted_error']}% off), so I learned from it and now adjust by ±{round(record['cap'])}% at most.")
+        else:
+            text = (f"Graded my own forecasts: my adjustments helped ({o['baseline_error']}% → {o['adjusted_error']}% off) "
+                    f"on {o['helped']} of {o['days']} days.")
+        out.append({"icon": "chart", "text": text, "href": "/sales#record"})
+    return out
 
 
 def london_now() -> datetime:

@@ -29,7 +29,7 @@ from backend.outputs import assistant, whatsapp as whatsapp_out
 from backend.outputs.brief import build_brief
 from backend.outputs.updates import get_updates
 from backend.pipeline import ingest_invoice
-from backend.db import activity, schema
+from backend.db import activity, schema, search
 from backend.db.client import RealDataRefused, get_db
 from bridge import view
 
@@ -120,6 +120,11 @@ def _context(request: Request, msg: Optional[str]) -> dict:
     week = view.week(forecasts, view.weather_by_date(), now.date())
     sales = view.sales_history(orders, now.date())
     gmail_logs = list(db[schema.AGENT_LOG].find({"business_id": BUSINESS_ID, "kind": "gmail_checked"}).sort("at", -1).limit(20))
+    extracted = list(db[schema.AGENT_LOG].find({"business_id": BUSINESS_ID, "kind": "invoice_extracted",
+                                                "at": {"$gte": view.days_ago(now, 7)}}, {"_id": 1}))
+    memo = db[schema.BOARD_MEMOS].find_one({"business_id": BUSINESS_ID}, sort=[("generated_at", -1)])
+    record = _forecast_record(db)
+    fee_audit = db[schema.FEE_AUDITS].find_one({"business_id": BUSINESS_ID}, sort=[("created_at", -1)])
     return {
         "msg": msg,
         "now": now,
@@ -137,10 +142,13 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "stock": view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now),
         "opportunities": view.opportunities(gmail_logs),
         "nav": NAV,
-        "memo": db[schema.BOARD_MEMOS].find_one({"business_id": BUSINESS_ID}, sort=[("generated_at", -1)]),
+        "memo": memo,
         "memo_running": _board_running.locked(),
-        "record": _forecast_record(db),
-        "fee_audit": db[schema.FEE_AUDITS].find_one({"business_id": BUSINESS_ID}, sort=[("created_at", -1)]),
+        "record": record,
+        "fee_audit": fee_audit,
+        "away": view.while_away(extracted, review, fee_audit, memo, record),
+        "tasks": list(db[schema.TASKS].find({"business_id": BUSINESS_ID}).sort("rank", 1).limit(3)),
+        "board_fixes": view.board_fixes,
         "checks": view.payment_checks(pending, invoices),
         "sandbox": bool(os.environ.get("COFOUNDR_SANDBOX")),
         "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
@@ -158,9 +166,11 @@ def _forecast_record(db) -> dict:
 
 
 def _page(name: str):
-    def render(request: Request, msg: Optional[str] = None, show: Optional[str] = None):
+    def render(request: Request, msg: Optional[str] = None, show: Optional[str] = None, q: Optional[str] = None):
         ctx = _context(request, msg)
-        ctx.update(path=request.url.path, show=show)
+        ctx.update(path=request.url.path, show=show, q=(q or "").strip(), found=None)
+        if name == "invoices" and ctx["q"]:  # Atlas hybrid search (keyword + meaning); falls back to a plain match
+            ctx["found"] = search.search_invoices(get_db(), ctx["q"])
         return templates.TemplateResponse(request, f"{name}.html", ctx)
     return render
 

@@ -159,6 +159,6 @@ def test_the_board_page_shows_each_status_and_strikes_out_what_failed(till, gemi
     board.run(now=NOW)
     page = TestClient(app).get("/board").text
     assert "Cash is stuck in catering" in page and "Checked ✓" in page and "Failed the check" in page
-    assert "<s>Made-up trend</s>" in page and "the database says" in page and "tokens read in one go" in page
+    assert "<s>Made-up trend</s>" in page and "the database says" in page and "tokens read in one Gemini call" in page
     empty = TestClient(app).get("/board")
     assert empty.status_code == 200
