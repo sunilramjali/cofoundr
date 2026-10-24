@@ -1,0 +1,13 @@
+# Each folder has one owner who must review PRs touching it.
+# TODO: replace placeholders with real GitHub usernames, and set owners marked TBD.
+# Enforced only with GitHub branch protection on main ("Require review from Code Owners").
+
+/backend/db/   @SUNIL_GITHUB
+/data/         @SUNIL_GITHUB
+/backend/ai/   @TBD
+/bridge/       @TBD
+/dashboard/    @TBD
+
+# Shared docs: both review
+/.claude/      @SUNIL_GITHUB @CEYDA_GITHUB
+/README.md     @SUNIL_GITHUB @CEYDA_GITHUB
