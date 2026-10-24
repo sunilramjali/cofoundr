@@ -223,3 +223,57 @@ def test_pos_empty_folder_is_an_empty_till(tmp_path):
     till = PosClient(tmp_path)
     assert till.list_sales() == {"orders": [], "cursor": None}
     assert till.list_stock() is None
+
+
+# --- till sync: connector → backend.sales (in-memory DB)
+import json  # noqa: E402
+from datetime import timedelta  # noqa: E402
+
+from backend.inputs.pos import sync as pos_sync  # noqa: E402
+
+
+def test_pos_backfill_records_everything_once(db):
+    first = pos_sync.sync(ALL_DATA, days=None)
+    assert first.ok and first.orders.new == 3969 and first.stock_new == 6
+    assert db[schema.ORDERS].count_documents({}) == 3969
+    again = pos_sync.sync(ALL_DATA, days=None)
+    assert again.ok and again.orders.new == 0 and again.orders.duplicates == 3969 and again.stock_new == 0
+    assert "0 new order(s)" in again.message and "0 new stock count(s)" in again.message
+
+
+def test_pos_sync_reads_only_the_lookback_window_and_never_the_future(db):
+    now = datetime(2026, 10, 24, 12, 0, tzinfo=LONDON)
+    r = pos_sync.sync(PosClient(now=now), days=7)
+    assert r.ok and r.orders.new > 0 and r.stock_new == 0  # the 2 Oct count is outside the window
+    stored = [o["placed_at"] for o in db[schema.ORDERS].find()]
+    assert min(stored) >= now - timedelta(days=7) and max(stored) < now
+    assert db[schema.ORDERS].count_documents({}) == r.orders.new
+
+
+def test_pos_sync_reports_a_broken_till_and_records_nothing(db, tmp_path):
+    (tmp_path / "real.json").write_text('{"orders": []}')
+    r = pos_sync.sync(PosClient(tmp_path), days=None)
+    assert not r.ok and "synthetic" in r.message and r.message.startswith("Till sync failed")
+    assert db[schema.ORDERS].count_documents({}) == 0
+
+
+def test_pos_sync_reports_a_bad_stock_count_but_keeps_going(db, tmp_path):
+    good = {"data_type": "synthetic_mock_data", "record_type": "physical_inventory_count", "count_id": "GAIA-COUNT-OPENING-1",
+            "counted_at": "2026-10-02T07:10:00+01:00", "items": [{"sku": "INV-001", "unit": "kg", "counted_quantity": 5}]}
+    bad = {**good, "count_id": "", "counted_at": "2026-10-03T07:10:00+01:00"}
+    (tmp_path / "good.json").write_text(json.dumps(good))
+    (tmp_path / "bad.json").write_text(json.dumps(bad))
+    r = pos_sync.sync(PosClient(tmp_path, now="2026-12-01"), days=None)
+    assert r.stock_new == 1 and len(r.stock_errors) == 1 and r.stock_errors[0].startswith("?:") and not r.ok
+
+
+def test_pos_sync_rejects_a_zero_day_window():
+    with pytest.raises(ValueError):
+        pos_sync.sync(ALL_DATA, days=0)
+
+
+def test_pos_sync_command_line(db, capsys):
+    pos_sync.main(["--all", "--now", "2026-10-03"])
+    out = capsys.readouterr().out
+    assert out.startswith("Till sync:") and "new stock count(s)" in out
+    assert db[schema.ORDERS].count_documents({}) > 0
