@@ -6,6 +6,7 @@ Run locally (from the repo root):
 Pages are plain server-rendered HTML (no JS), so Saint can read them too.
 Endpoints are sync `def` so blocking PyMongo / Gemini calls run in FastAPI's thread pool.
 """
+import html
 import os
 import re
 import secrets
@@ -37,8 +38,21 @@ MAX_UPLOAD = 10 * 1024 * 1024  # pipeline.ingest_invoice rejects anything larger
 
 def _check_token(token: Optional[str]) -> None:
     expected = os.environ.get("BRIEF_TOKEN", "")
-    if not expected or not token or not secrets.compare_digest(token, expected):
+    # Compare bytes: compare_digest raises on non-ASCII str, which would be a 500 instead of a 403
+    if not expected or not token or not secrets.compare_digest(token.encode(), expected.encode()):
         raise HTTPException(status_code=403, detail="Invalid or missing token.")
+
+
+# The whole reply must be one command: "approve 3", "Yes #3", "reject 2!". Anything else ("don't approve 3",
+# "approve 1 and 2", "approve the £450 one") is refused, so a negated or ambiguous message never moves money.
+REPLY = re.compile(r"^\s*(approve|approved|yes|ok|reject|rejected|no)\s*#?\s*(\d{1,6})\s*[.!]*\s*$", re.IGNORECASE)
+
+
+def parse_reply(text: str) -> Optional[tuple]:
+    m = REPLY.match(text or "")
+    if not m:
+        return None
+    return ("reject" if m.group(1).lower() in ("reject", "rejected", "no") else "approve"), int(m.group(2))
 
 
 def _public_url(request: Request) -> str:
@@ -102,8 +116,8 @@ def brief(request: Request, token: Optional[str] = Query(None), format: str = "t
     activity.log("brief_served", f"Brief served ({format}): {len(data['pending_approvals'])} pending approval(s)", actor="saint")
     if format == "json":
         return JSONResponse(data)
-    if format == "html":
-        return HTMLResponse(f"<!doctype html><html><body><pre>{data['text']}</pre></body></html>")
+    if format == "html":  # text includes names read from invoices (untrusted): escape it
+        return HTMLResponse(f"<!doctype html><html><body><pre>{html.escape(data['text'])}</pre></body></html>")
     return PlainTextResponse(data["text"])
 
 
@@ -130,12 +144,11 @@ def approve(payload: dict = Body(...), token: Optional[str] = Query(None), x_tok
     _check_token(token or x_token)
     ref, decision = payload.get("ref"), payload.get("decision")
     if "text" in payload:
-        m = re.search(r"\b(approve|yes|ok|reject|no)\b\D*(\d+)", str(payload["text"]).lower())
-        if not m:
-            raise HTTPException(400, 'Couldn\'t understand. Reply like "approve 1" or "reject 1".')
-        decision = "approve" if m.group(1) in ("approve", "yes", "ok") else "reject"
-        ref = int(m.group(2))
-    if decision not in ("approve", "reject") or ref is None:
+        parsed = parse_reply(str(payload["text"]))
+        if not parsed:
+            raise HTTPException(400, 'Couldn\'t understand. Reply with just "approve 1" or "reject 1".')
+        decision, ref = parsed
+    if decision not in ("approve", "reject") or isinstance(ref, bool) or not str(ref).isdigit():
         raise HTTPException(400, 'Send {"ref": 1, "decision": "approve" | "reject"} or {"text": "approve 1"}.')
     approval = approvals.find(ref=int(ref))
     if not approval:

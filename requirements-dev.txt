@@ -1,0 +1,5 @@
+# Test + lint tools (CI and local). App dependencies are in requirements.txt.
+pytest>=8
+httpx>=0.27
+mongomock>=4.1
+pyflakes>=3

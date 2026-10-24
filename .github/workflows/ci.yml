@@ -17,6 +17,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install -r requirements.txt pytest httpx
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - run: python -m pyflakes backend bridge data tests
       - run: python -m compileall -q backend bridge data
       - run: python -m pytest -q tests

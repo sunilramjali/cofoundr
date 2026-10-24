@@ -3,6 +3,7 @@
 Owner: Sunil. Both backend and web app code import from here.
 Any change to a shape here must be announced to your partner (and logged) before merging.
 """
+import re
 from datetime import datetime
 from typing import List, Literal, Optional, TypedDict
 
@@ -19,6 +20,13 @@ TASKS = "tasks"
 APPROVALS = "approvals"
 AGENT_LOG = "agent_log"  # every agent action / decision, for the "clear record" judging criterion
 CURSORS = "cursors"  # per-consumer read position in agent_log for /updates, _id = "<business_id>:<consumer>"
+COUNTERS = "counters"  # atomic sequences, e.g. _id = "<business_id>:approval_ref"
+
+
+def counterparty_key(name: Optional[str]) -> str:
+    """Normalised name used to tell invoices apart: invoice numbers are only unique per supplier/customer.
+    "Eastside Dairy Co." and "eastside dairy co" → "eastsidedairyco"."""
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
 
 
 class AgentLogEntry(TypedDict):
@@ -53,6 +61,7 @@ class Invoice(TypedDict):
     # payable    = the business owes a supplier (CoFoundr reminds the owner to pay)
     direction: Literal["receivable", "payable"]
     counterparty: str  # customer or supplier name
+    counterparty_key: str  # counterparty_key(counterparty); unique with (business_id, direction, invoice_number)
     counterparty_email: Optional[str]
     amount: float  # must equal sum(qty * unit_price) of line_items
     currency: str
@@ -87,8 +96,9 @@ class Approval(TypedDict):
     draft_subject: Optional[str]
     draft: str  # email body, or the payment instruction
     drafted_by: Literal["gemini", "template", "rule"]
-    status: Literal["pending", "approved", "edited", "rejected"]
-    decided_via: Optional[Literal["dashboard", "whatsapp"]]
+    # cancelled = the system withdrew it (invoice paid/removed before a decision); nothing was sent
+    status: Literal["pending", "approved", "edited", "rejected", "cancelled"]
+    decided_via: Optional[Literal["dashboard", "whatsapp", "system"]]
     created_at: datetime
     decided_at: Optional[datetime]
     synthetic: bool
