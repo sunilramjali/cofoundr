@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, ~04:15 — Docs caught up with release #43
+- **Did:** `project-plan.md` (Gemini roles, "built beyond the plan": card payments, self-grading forecast, board meeting, fee audit; data + real-data rule; full collections list; demo step 5 + Sunday prep; Twilio open question), `MVP.md` (my MVP2 extras ticked, release noted), `CLAUDE.md` (`payments.py` seam, `backend/ai/` contents, real-data + no-reset rules, test count), `README.md` (new jobs, status table, Atlas features table filled with evidence). Built on top of Jade's PR #46 (Saint removal) to avoid conflicts
+- **Status:** done, PR into `stage`
+- **Next:** Sunday-morning demo prep runs, rehearsal, backup video, README judging + user guide
+- **Blockers / notes for partner:** Jade, merge #46 first (mine includes it). Please pull. README now says Gmail "✓ Live" (Fly has `GMAIL_*` + #43 is deployed): your `MVP.md` Gmail box is yours to tick. Still missing for WhatsApp: `TWILIO_*` + `OWNER_WHATSAPP` Fly secrets, sandbox join + webhook
+
 ## Sun 25 Oct, ~04:00 — Handover to a new session
 - **Git:** `sunil` = `stage` (all merged: #39, #42, #44). **Release PR #43 (stage → main) open, CI green, waiting for Jade's approval**; merging it deploys to Fly. Live `main` is still the 19:47 release (no card payments, board, reviews, fee audit, Twilio yet)
 - **Fly secrets:** has MONGODB_URI, GEMINI_API_KEY, BRIEF_TOKEN, GMAIL_*, SAINT_EMAIL. **Missing TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_WHATSAPP_FROM / OWNER_WHATSAPP** (Jade's WhatsApp demo; app runs fine without, WhatsApp shows "off")

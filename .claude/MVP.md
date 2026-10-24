@@ -75,6 +75,10 @@ Each morning the owner gets a WhatsApp brief **without asking**: what's coming i
 - [x] **Atlas Search:** full-text search over invoices/suppliers (index + query function)
 - [x] **Vector Search / Automated Embedding:** similar past invoices (Voyage via `autoEmbed`) + **Hybrid Search** (`$rankFusion`). Events matching not built
 - [x] **Error hardening:** Gemini 429s retried with backoff; every failure logged in `agent_log` and surfaced to the owner, never silent
+- [x] **Card payments** (added Sat night): EVO CSV upload on `/sales`, Square + SumUp read-only → `backend/payments.py` (`payments`), card data stripped, salted-hash ids, idempotent; real data refused on the demo DB
+- [x] **Board meeting** (added): `backend/ai/board.py` + `/board`: one ~169k-token Gemini call over the whole business, every number recomputed from MongoDB (`board_memos`)
+- [x] **Card fee audit** (added): `backend/ai/fees.py`: Gemini reads the fee summary image, checked against its worked example; every payment audited; overcharges → `fee_overcharge` task (`fee_audits`)
+- [x] **Released:** all of the above live on Fly since release #43 (Sat 24 Oct). Demo-DB runs (backtest, forecast, board, fee upload, prioritise) still to do Sunday morning
 
 **Outputs (Jade)**
 - [ ] **Real reminder emails:** `outputs/email.py` sends approved reminders (Gmail SMTP from the demo inbox); `effect` shows "sent", never sends without approval

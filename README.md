@@ -25,7 +25,10 @@ A big company would hire an ops manager, a bookkeeper and an analyst. A one-truc
 | Job | What CoFoundr does |
 |---|---|
 | **Invoice chaser** | Owner snaps an invoice photo on WhatsApp → Gemini extracts supplier, amount, due date and line items → overdue invoices are flagged → escalating reminders are drafted for approval |
-| **Revenue forecaster** | Baseline forecast from sales history, adjusted by Gemini for local events and weather, with a plain-English reason ("+28% Sat: market nearby + sunny") |
+| **Revenue forecaster** | Baseline forecast from till or card-payment history, adjusted by Gemini for weather, events and TfL disruptions, with a plain-English reason ("+28% Sat: market nearby + sunny") |
+| **Self-grading forecast** | Grades its own forecasts against actual takings, learns checked lessons, and earns (or loses) how far Gemini may move the baseline |
+| **Board meeting** | Gemini reads the whole business in one call (every till line, invoice, approval, forecast) and writes a memo; code recomputes every number it claims |
+| **Card fee audit** | Reads the card provider's fee summary from a photo and checks every card payment against it; overcharges become a task |
 | **Approval flow** | Every finance action waits in an Approve / Edit / Reject queue, in the dashboard or by replying on WhatsApp |
 | **Auto-prioritise & schedule** | Ranks open tasks by impact, with a one-line reason each, and builds a weekly plan |
 | **Morning brief** | Owner asks on WhatsApp, "what's my day?", and gets the top priorities, forecast and pending approvals |
@@ -57,14 +60,15 @@ Invoices and requests come in from **Gmail, the dashboard, WhatsApp (via Twilio)
 
 | Piece | Role | Status |
 |---|---|---|
-| **Gmail** | Invoices arrive by email and are picked up automatically | MVP1, in progress |
+| **Gmail** | Invoices arrive by email and are picked up automatically | ✓ Live |
 | **Dashboard upload** | Manual fallback for adding an invoice | ✓ Built |
 | **WhatsApp via Twilio (in)** | Owner replies "approve 1" or asks a question (Gemini answers, read-only); signed webhook `/whatsapp/twilio` | ✓ Built, going live |
 | **WhatsApp via Twilio (out)** | Owner is messaged automatically when something needs them (`/updates` pushed) | ✓ Built, going live |
 | **WhatsApp photos** | Owner sends invoice photos on WhatsApp → read and checked | ✓ Built, going live |
-| **APIs** | Weather (Open-Meteo), events, Treg tools for the forecast and partnerships | MVP2 |
-| **Gemini 4 Argon** | Reads and double-checks invoices, drafts reminders | ✓ Built |
-| **MongoDB Atlas** | Business, invoices, approvals, agent activity log | ✓ Built |
+| **Card payments** | EVO CSV upload on `/sales`; Square + SumUp read-only. Card data stripped, ids salted-hashed | ✓ Built |
+| **APIs** | Weather (Open-Meteo) and TfL disruptions feed the forecast; events + Treg tools next | Weather + TfL ✓ Built |
+| **Gemini 4 Argon** | Reads and double-checks invoices and fee summaries, adjusts and grades the forecast, ranks priorities, holds the board meeting, drafts reminders | ✓ Built |
+| **MongoDB Atlas** | Every collection (sales as time-series), Atlas Search, Vector Search, Hybrid Search, agent activity log | ✓ Built |
 | **Fly.io** | Hosts the app: dashboard + WhatsApp webhook at https://cofoundr.fly.dev | ✓ Live |
 
 ## How it's different
@@ -102,12 +106,12 @@ CoFoundr isn't a chatbot or a bookkeeping tool. It's an agent that does the work
 ### MongoDB Atlas
 | Atlas feature | Used? | Where |
 |---|---|---|
-| Atlas Search | _TBD_ | |
-| Atlas Vector Search | _TBD_ | |
-| Hybrid Search | _TBD_ | |
-| Automated Embedding | _TBD_ | |
-| Atlas Stream Processing | _TBD_ | |
-| Voyage AI | _TBD_ | |
+| Atlas Search | ✓ | `backend/db/search.py`, index `invoices_text` (typo-tolerant), used by the invoice price check |
+| Atlas Vector Search | ✓ | `similar_invoices()`, index `invoices_semantic`: similar past invoices for the cross-supplier price check |
+| Hybrid Search | ✓ | `search_invoices()`: keyword + meaning merged with `$rankFusion` |
+| Automated Embedding | ✓ | `autoEmbed` on invoices' `search_text`: Atlas embeds on insert, no embedding code of ours |
+| Atlas Stream Processing | ✗ not built | |
+| Voyage AI | ✓ | `voyage-4`, behind Automated Embedding |
 
 ### Gemini 4 Argon
 - **Working live demo (50%):** _TBD_
