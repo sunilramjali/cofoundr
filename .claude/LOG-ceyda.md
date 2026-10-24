@@ -12,6 +12,19 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, 17:30 — Gmail autonomous intake (MVP1)
+- **Did:** `backend/inputs/gmail.py`: demo inbox over IMAP (app password). Reads PDF/image attachments, and invoices written in the email body when the subject mentions an invoice (the demo inbox's 2 invoices are body-only). Gmail label `CoFoundr/processed` = handled once; Gemini-busy → retried next check; nothing marked read. Background poll every `GMAIL_POLL_SECONDS` (60 in `fly.toml`) + **Check inbox now** button (`POST /check-inbox`). 13 tests (fake IMAP + fake Gemini) → 149 pass. Read-only preview on the real inbox: 2 invoices would be read, 6 other emails only labelled. PR #21 merged into `stage`
+- **Edits in Sunil's area:** `backend/pipeline.py` (`text/plain` allowed), `tests/test_middle.py` (unsupported example → zip), `fly.toml` (`GMAIL_POLL_SECONDS`)
+- **Status:** built; not run live yet (no real run against frozen Atlas; Fly secrets not set)
+- **Next:** live run once OK'd; Fly secrets; ship in release #19
+- **Blockers / notes for partner:** **Sunil, your to-do list is issue #22**: https://github.com/sunilramjali/cofoundr/issues/22 (approve #19, Fly Gmail secrets, Sunday release, OK the live Gmail run, weather/events storage, review my edits in your area)
+
+## Sat 24 Oct, 16:35 — Releases + working solo
+- **Did:** approved + merged release PR #3 (stage → main): deploy succeeded, live `/health` ok, live app now has MVP1 fixes, forecast, POS connector, till sync, weather/events inputs. Merged Sunil's PR #17 (Gemini retry with backoff) and my PR #18 (log + main's merge commit) into `stage`; `sunil`, `jade`, `main` all contained in `stage`. Opened release PR #19 (stage → main: #17 + log)
+- **Status:** PR #19 waiting for Sunil's approval
+- **Next:** merge #19 once approved, check deploy; continue on `jade`
+- **Blockers / notes for partner:** Sunil is out of Claude tokens, so I'm working solo: staying on `jade`, every change goes `jade` → PR → `stage`, merged as soon as CI is green (no direct pushes; `stage` is protected and I'm not admin). Sunil, **releases to `main` still need your approval on the GitHub website** (I can't approve my own); please approve #19, and look out for one more release Sunday morning before 12:00
+
 ## Sat 24 Oct, 16:15 — Weather + events inputs for the forecast (MVP2)
 - **Did:** `backend/inputs/`: `weather.py` (Open-Meteo daily forecast, no key, 7 days per pitch, London dates; verified live), `events.py` (Ticketmaster Discovery, events within 3 km over 7 days; venue distance, paging cap 5, dedupe, cancelled/malformed left out), `fetch.py` (stdlib HTTP helper; plain `FetchError`s, API keys never in messages), `pitches.py`. Both return plain dicts, never write MongoDB; formats in `backend/inputs/README.md`. CLIs: `python -m backend.inputs.weather` / `.events`. 24 tests (fake HTTP; autouse guard blocks real calls) → 132 pass. PR #16 merged into `stage`
 - **Status:** inputs done; events not run live (no `TICKETMASTER_API_KEY` yet); nothing stored yet

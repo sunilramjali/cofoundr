@@ -199,8 +199,10 @@ def test_find_never_raises_on_bad_input(db):
 # --- pipeline (the inputs → middle seam)
 def test_pipeline_rejects_unsupported_files_without_saving(db, gemini_down):
     before = db[schema.INVOICES].count_documents({})
-    assert ingest_invoice(b"hello", "text/plain", "email").error == "unsupported_type"
+    assert ingest_invoice(b"PK", "application/zip", "email").error == "unsupported_type"
     assert ingest_invoice(b"x", "", "email").error == "unsupported_type"
+    # text is allowed: invoices written in an email body (Gmail intake)
+    assert ingest_invoice(b"Invoice 7802", "text/plain", "email").error == "gemini_unavailable"
     # MIME parameters and case are fine: it gets past the type check (then Gemini is down)
     assert ingest_invoice(b"%PDF", "Application/PDF; charset=binary", "email").error == "gemini_unavailable"
     assert db[schema.INVOICES].count_documents({}) == before
@@ -542,3 +544,77 @@ def test_template_fallback_is_logged_for_the_owner(db, gemini_down):
     assert log and log["detail"]["refs"] == [a["ref"] for a in new if a["drafted_by"] == "template"]
     overdue.run()  # nothing new drafted → no second fallback line
     assert db[schema.AGENT_LOG].count_documents({"kind": "gemini_fallback"}) == 1
+
+
+# --- prioritisation
+from backend.ai import prioritise  # noqa: E402
+
+
+def _ranked_by_gemini(monkeypatch, pick):
+    """Fake Gemini: `pick(ids)` returns the ids in the order Gemini 'chose' (may drop or invent some)."""
+    def fake(tasks):
+        return {i: prioritise.Ranked(id=i, impact="high", reason=f"because {i[-4:]}") for i in pick([t["_id"] for t in tasks])}
+    monkeypatch.setattr(prioritise, "gemini_rank", fake)
+
+
+def _setup_tasks(db, fake_extraction):
+    overdue.run()  # 4 pending approvals (templates: Gemini is down)
+    fake_extraction(make_invoice(invoice_number="EDC-BAD", printed_total=99.0))  # total doesn't match → review
+    assert ingest_invoice(b"%PDF", "application/pdf", "pdf").needs_review
+    sales.record_orders(POS.iter_sales(until="2026-10-24"), now=CLOCK)
+    forecast.run(now=datetime(2026, 10, 24, 11, 0, tzinfo=timezone.utc))
+
+
+def test_tasks_are_gathered_from_the_database(db, fake_extraction):
+    _setup_tasks(db, fake_extraction)
+    tasks = prioritise.candidates(db, datetime(2026, 10, 24, 11, 0, tzinfo=timezone.utc))
+    kinds = [t["kind"] for t in tasks]
+    assert kinds.count("approval") == 4 and kinds.count("review_invoice") == 1 and kinds.count("prep_day") == 1
+    prep = next(t for t in tasks if t["kind"] == "prep_day")
+    assert "today" in prep["title"] and "Flat White" in prep["facts"] or "Latte" in prep["facts"]
+    assert {t["approval_ref"] for t in tasks if t["kind"] == "approval"} == {1, 2, 3, 4}
+
+
+def test_gemini_order_is_kept_and_its_mistakes_corrected(db, fake_extraction, monkeypatch):
+    _setup_tasks(db, fake_extraction)
+    # Gemini reverses the list, invents a task and forgets one
+    _ranked_by_gemini(monkeypatch, lambda ids: [f"{prioritise.BUSINESS_ID}:approval:made-up"] + ids[::-1][:-1])
+    out = prioritise.run(now=datetime(2026, 10, 24, 11, 0, tzinfo=timezone.utc))
+    assert [t["rank"] for t in out] == list(range(1, 7))
+    assert "made-up" not in str([t["_id"] for t in out])
+    assert [t["ranked_by"] for t in out] == ["gemini"] * 5 + ["rule"]
+    assert db[schema.TASKS].count_documents({}) == 6
+    log = db[schema.AGENT_LOG].find_one({"kind": "gemini_fallback", "summary": {"$regex": "Priorities"}})
+    assert len(log["detail"]["invented"]) == 1 and len(log["detail"]["missed"]) == 1
+
+
+def test_priorities_fall_back_to_rules_when_gemini_is_down(db, fake_extraction):
+    _setup_tasks(db, fake_extraction)  # gemini_down is active through fake_extraction
+    out = prioritise.run(now=datetime(2026, 10, 24, 11, 0, tzinfo=timezone.utc))
+    assert out and {t["ranked_by"] for t in out} == {"rule"}
+    assert [t["rank"] for t in out] == list(range(1, len(out) + 1))
+    assert all(t["reason"].startswith("Rule:") for t in out)
+    assert "unavailable (429)" in db[schema.AGENT_LOG].find_one({"kind": "gemini_fallback", "summary": {"$regex": "Priorities"}})["summary"]
+
+
+def test_rule_ranking_puts_the_most_money_and_urgency_first():
+    def appr(amount, days):
+        return {"_id": f"a{amount}", "kind": "approval", "facts": "x", "score": amount * (1 + days / 7)}
+    out = prioritise.rule_rank([appr(50, 2), appr(400, 20), appr(400, 1)])
+    assert [t["_id"] for t in out] == ["a400", "a400", "a50"] and out[0]["score"] > out[1]["score"]
+
+
+def test_reranking_replaces_the_list_and_drops_done_tasks(db, fake_extraction):
+    _setup_tasks(db, fake_extraction)
+    now = datetime(2026, 10, 24, 11, 0, tzinfo=timezone.utc)
+    first = prioritise.run(now=now)
+    db[schema.APPROVALS].update_many({"ref": {"$in": [1, 2]}}, {"$set": {"status": "approved"}})
+    second = prioritise.run(now=now)
+    assert len(second) == len(first) - 2 and db[schema.TASKS].count_documents({}) == len(second)
+    assert prioritise.run(now=now, dry_run=True) and db[schema.AGENT_LOG].count_documents({"kind": "tasks_ranked"}) == 2
+
+
+def test_nothing_to_do_means_an_empty_list_and_no_gemini_call(db, monkeypatch):
+    monkeypatch.setattr(prioritise, "gemini_rank", lambda _t: (_ for _ in ()).throw(AssertionError("called")))
+    db[schema.INVOICES].delete_many({})
+    assert prioritise.run() == [] and db[schema.TASKS].count_documents({}) == 0

@@ -1,0 +1,54 @@
+{% extends "page.html" %}
+{% block title %}Invoices{% endblock %}
+{% block vt %}{{ "m-cash" if show == "overdue" else "m-invoices" }}{% endblock %}
+{% block eyebrow %}<svg class="ico"><use href="#i-doc"/></svg>Invoices{% endblock %}
+{% block heading %}{{ "What's overdue" if show == "overdue" else "Your invoices" }}{% endblock %}
+{% block lede %}Every invoice I know about: who owes whom, when it's due, and where it came from.{% endblock %}
+{% block stats %}
+<div class="stats">
+  <div class="stat"><b class="num">{{ brief.overdue_receivable_total|money0 }}</b><span>overdue to you</span></div>
+  <div class="stat"><b class="num">{{ brief.overdue_payable_total|money0 }}</b><span>you owe, overdue</span></div>
+  <div class="stat"><b class="num">{{ invoices|length }}</b><span>invoices</span></div>
+</div>
+{% endblock %}
+{% block body %}
+{%- set overdue_n = invoices|selectattr("status", "equalto", "overdue")|list|length -%}
+<div class="books">
+  <div class="filters" role="radiogroup" aria-label="Filter invoices">
+    <input type="radio" name="f" id="f-all"{% if show != "overdue" %} checked{% endif %}><label for="f-all">All<span>{{ invoices|length }}</span></label>
+    <input type="radio" name="f" id="f-overdue"{% if show == "overdue" %} checked{% endif %}><label for="f-overdue">Overdue<span>{{ overdue_n }}</span></label>
+    <input type="radio" name="f" id="f-in"><label for="f-in">Owed to you<span>{{ invoices|selectattr("direction", "equalto", "receivable")|list|length }}</span></label>
+    <input type="radio" name="f" id="f-out"><label for="f-out">You owe<span>{{ invoices|selectattr("direction", "equalto", "payable")|list|length }}</span></label>
+    {% if review %}<input type="radio" name="f" id="f-review"><label for="f-review">Needs a look<span>{{ review|length }}</span></label>{% endif %}
+  </div>
+  <ul class="rows">
+    {% for i in invoices %}
+    {%- set incoming = i.direction == "receivable" -%}
+    <li class="row{% if incoming %} row--in{% endif %}" data-dir="{{ i.direction }}"{% if i.status == "overdue" %} data-overdue{% endif %}{% if i.needs_review and i.status != "paid" %} data-review{% endif %}>
+      <span class="avatar" aria-hidden="true">{{ (i.counterparty or "?")[:1] }}</span>
+      <div style="min-width:0">
+        <div class="row__who">{{ i.counterparty }}</div>
+        <div class="row__sub"><span>{{ i.invoice_number }}</span>
+          {% if i.source == "email" %}<span class="src src--email"><svg class="ico"><use href="#i-mail"/></svg>Email</span>
+          {% elif i.source == "whatsapp_photo" %}<span class="src"><svg class="ico"><use href="#i-chat"/></svg>WhatsApp</span>
+          {% elif i.verification_issues is defined %}<span class="src"><svg class="ico"><use href="#i-upload"/></svg>Upload</span>
+          {% else %}<span class="src">Demo data</span>{% endif %}
+        </div>
+      </div>
+      <span class="row__due{% if i.status == 'overdue' %} row__due--late{% endif %}">{{ due_label(i, now.date()) }}</span>
+      <span class="row__amt num">{{ i.amount|money }}<small>{{ "owed to you" if incoming else "you owe" }}</small></span>
+      <span class="row__status">
+        {% if i.status == "overdue" %}<span class="chip chip--rust">Overdue</span>
+        {% elif i.status == "paid" %}<span class="chip chip--sage">Paid</span>
+        {% else %}<span class="chip chip--sky">Open</span>{% endif %}
+      </span>
+      {% if i.needs_review and i.status != "paid" %}
+      <p class="row__issue"><svg class="ico"><use href="#i-alert"/></svg>{{ (i.verification_issues or ["Needs checking"])[0] }}</p>
+      {% endif %}
+    </li>
+    {% else %}
+    <li class="empty"><svg class="ico"><use href="#i-doc"/></svg><div><b>No invoices yet.</b>Drop one on the Inbox page or email it in.</div></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

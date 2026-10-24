@@ -1,0 +1,53 @@
+{% extends "page.html" %}
+{% block title %}Inbox{% endblock %}
+{% block vt %}m-inbox{% endblock %}
+{% block eyebrow %}<svg class="ico"><use href="#i-mail"/></svg>Inbox{% endblock %}
+{% block heading %}Bring me an invoice{% endblock %}
+{% block lede %}Drop a photo or PDF, or just email it. Gemini reads it, checks the numbers add up, and asks you if anything looks off. It never guesses.{% endblock %}
+{% block body %}
+{%- set from_email = invoices|selectattr("source", "equalto", "email")|list -%}
+<div class="two">
+  <form class="drop" method="post" action="/upload" enctype="multipart/form-data">
+    <input type="hidden" name="back" value="/inbox">
+    <input type="file" name="file" accept="image/*,application/pdf" required aria-label="Invoice photo or PDF">
+    <span class="drop__ico"><svg class="ico"><use href="#i-upload"/></svg></span>
+    <h3>Drop an invoice here</h3>
+    <p>or click to choose a photo or PDF · up to 10 MB</p>
+    <span class="drop__file" aria-live="polite"></span>
+    <button class="btn" type="submit" data-busy="Reading with Gemini…">Read it <svg class="ico"><use href="#i-arrow"/></svg></button>
+  </form>
+  <div class="mail">
+    <h3>Or just email it</h3>
+    <p>Suppliers can send invoices straight to the demo inbox. I pick up attachments and invoices written in the email itself, and label each email so it's only read once.</p>
+    {% if inbox.address %}
+    <div class="address"><svg class="ico"><use href="#i-mail"/></svg><span>{{ inbox.address }}</span><button class="btn" type="button" data-copy="{{ inbox.address }}">Copy</button></div>
+    {% endif %}
+    <p class="status"><i class="dot {{ 'dot--live' if inbox.configured and inbox.polling else ('dot--warn' if inbox.last and not inbox.last.ok else '') }}"></i>
+      {% if not inbox.configured %}Not connected yet.{% elif inbox.polling %}Checked every {{ inbox.polling }} seconds{% if inbox.last %}, last {{ inbox.last.at|ago }}{% endif %}.{% else %}Checked when you click below{% if inbox.last %}, last {{ inbox.last.at|ago }}{% endif %}.{% endif %}</p>
+    {% if inbox.last %}<p class="muted" style="font-size:13px">{{ inbox.last.message }}</p>{% endif %}
+    <div class="actions">
+      <form method="post" action="/check-inbox"><input type="hidden" name="back" value="/inbox">
+        <button class="btn" data-busy="Checking…"><svg class="ico"><use href="#i-mail"/></svg>Check inbox now</button></form>
+    </div>
+  </div>
+</div>
+
+<section class="block">
+  <h2>Read from email <small>{{ from_email|length }} so far</small></h2>
+  {% if from_email %}
+  <ul class="rows">
+    {% for i in from_email %}
+    <li class="row{% if i.direction == 'receivable' %} row--in{% endif %}">
+      <span class="avatar" aria-hidden="true">{{ (i.counterparty or "?")[:1] }}</span>
+      <div style="min-width:0"><div class="row__who">{{ i.counterparty }}</div><div class="row__sub"><span>{{ i.invoice_number }}</span><span>read {{ i.created_at|ago }}</span></div></div>
+      <span class="row__due">{{ due_label(i, now.date()) }}</span>
+      <span class="row__amt num">{{ i.amount|money }}</span>
+      <span class="row__status">{% if i.needs_review %}<span class="chip chip--amber">Check</span>{% else %}<span class="chip chip--sage"><svg class="ico"><use href="#i-check"/></svg>Checked</span>{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty"><svg class="ico"><use href="#i-mail"/></svg><div><b>Nothing from email yet.</b>Send an invoice to the address above and click "Check inbox now".</div></div>
+  {% endif %}
+</section>
+{% endblock %}

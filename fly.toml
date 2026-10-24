@@ -6,6 +6,7 @@ primary_region = "lhr"
   GEMINI_MODEL = "gemini-4-argon"
   MONGODB_DB = "cofoundr-db"
   PUBLIC_URL = "https://cofoundr.fly.dev"
+  GMAIL_POLL_SECONDS = "60"  # check the demo inbox every minute (needs GMAIL_ADDRESS + GMAIL_APP_PASSWORD secrets)
 
 [http_service]
   internal_port = 8080

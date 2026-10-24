@@ -10,27 +10,47 @@ import html
 import os
 import re
 import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
 from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from backend import approvals
 from backend.ai import overdue
+from backend.inputs import gmail
 from backend.outputs.brief import build_brief
 from backend.outputs.updates import get_updates
 from backend.pipeline import ingest_invoice
 from backend.db import activity, schema
 from backend.db.client import get_db
+from bridge import view
 
-app = FastAPI(title="CoFoundr")
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    """GMAIL_POLL_SECONDS set (fly.toml) → check the demo inbox in the background; unset (local, tests) → only on click."""
+    every = int(os.environ.get("GMAIL_POLL_SECONDS") or 0)
+    stop = gmail.start_polling(every) if every > 0 else None
+    yield
+    if stop:
+        stop.set()
+
+
+app = FastAPI(title="CoFoundr", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["money"] = lambda v: f"£{v:,.2f}" if v is not None else "–"
 templates.env.filters["day"] = lambda d: d.strftime("%d %b") if d else "–"
 templates.env.filters["stamp"] = lambda d: d.strftime("%d %b %H:%M") if d else "–"
+templates.env.filters["money0"] = view.money0
+templates.env.filters["ago"] = view.ago
+templates.env.globals["due_label"] = view.due_label
 
 BUSINESS_ID = "gaia-coffee"
 MAX_UPLOAD = 10 * 1024 * 1024  # pipeline.ingest_invoice rejects anything larger
@@ -59,51 +79,88 @@ def _public_url(request: Request) -> str:
     return os.environ.get("PUBLIC_URL") or str(request.base_url).rstrip("/")
 
 
-def _back(msg: str) -> RedirectResponse:
-    return RedirectResponse(f"/?msg={quote(msg)}", status_code=303)
+PAGES = {"/", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp"}
 
 
-# ---------- Owner dashboard ----------
+def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
+    """Back to the page the owner acted on (only our own pages: never an open redirect)."""
+    return RedirectResponse(f"{to if to in PAGES else '/'}?msg={quote(msg)}", status_code=303)
 
-@app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, msg: Optional[str] = None):
+
+# ---------- Owner dashboard: a home of modules, each opening into its own page ----------
+
+def _context(request: Request, msg: Optional[str]) -> dict:
     db = get_db()
+    now = view.london_now()
     invoices = list(db[schema.INVOICES].find({"business_id": BUSINESS_ID}).sort([("status", -1), ("due_date", 1)]))
-    return templates.TemplateResponse(request, "index.html", {
+    pending = approvals.pending()
+    review = [i for i in invoices if i.get("needs_review") and i["status"] != "paid"]
+    brief = build_brief(_public_url(request))
+    forecasts = list(db[schema.FORECASTS].find({"business_id": BUSINESS_ID, "date": {"$gte": now.date().isoformat()}})
+                     .sort("date", 1).limit(7))
+    since = view.days_ago(now, 29)
+    orders = list(db[schema.ORDERS].find({"business_id": BUSINESS_ID, "placed_at": {"$gte": since}}, {"placed_at": 1, "total": 1}))
+    return {
         "msg": msg,
-        "pending": approvals.pending(),
-        "decided": approvals.recent_decided(),
+        "now": now,
+        "greeting": view.greeting(now),
+        "headline": view.headline(pending, brief["overdue_receivable_total"], review),
+        "pending": pending,
+        "tones": view.TONES,
         "invoices": invoices,
-        "review": [i for i in invoices if i.get("needs_review") and i["status"] != "paid"],
-        "brief": build_brief(_public_url(request)),
-        "activity": activity.recent(),
-    })
+        "review": review,
+        "brief": brief,
+        "timeline": view.timeline(activity.recent(30), now),
+        "week": view.week(forecasts, view.weather_by_date(), now.date()),
+        "sales": view.sales_history(orders, now.date()),
+        "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
+                  "polling": int(os.environ.get("GMAIL_POLL_SECONDS") or 0), "last": gmail.last_check},
+    }
+
+
+def _page(name: str):
+    def render(request: Request, msg: Optional[str] = None, show: Optional[str] = None):
+        ctx = _context(request, msg)
+        ctx.update(path=request.url.path, show=show)
+        return templates.TemplateResponse(request, f"{name}.html", ctx)
+    return render
+
+
+for _path, _name in [("/", "home"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
+                     ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp")]:
+    app.add_api_route(_path, _page(_name), methods=["GET"], response_class=HTMLResponse, name=f"page_{_name}")
 
 
 @app.post("/upload")
-def upload(file: UploadFile = File(...)):
+def upload(file: UploadFile = File(...), back: str = Form("/inbox")):
     data = file.file.read(MAX_UPLOAD + 1)
     mime = file.content_type or "application/octet-stream"
     result = ingest_invoice(data, mime, "pdf" if mime == "application/pdf" else "manual", origin="dashboard upload")
-    return _back(result.message)
+    return _back(result.message, back)
 
 
 @app.post("/approvals/{approval_id}/decide")
-def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Optional[str] = Form(None)):
+def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Optional[str] = Form(None),
+                          back: str = Form("/approvals")):
     approval = approvals.find(approval_id=approval_id)
     if not approval:
-        return _back("Approval not found.")
+        return _back("Approval not found.", back)
     try:
         result = approvals.decide(approval, decision, via="dashboard", edited_draft=draft)
     except approvals.DecisionError as e:
-        return _back(str(e))
-    return _back(f"#{result['ref']} {result['status']}: {result['effect']}.")
+        return _back(str(e), back)
+    return _back(f"#{result['ref']} {result['status']}: {result['effect']}.", back)
+
+
+@app.post("/check-inbox")
+def check_inbox(back: str = Form("/inbox")):
+    return _back(gmail.check_inbox().message, back)
 
 
 @app.post("/run-check")
-def run_check():
+def run_check(back: str = Form("/approvals")):
     drafted = overdue.run()
-    return _back(f"Overdue check done: {len(drafted)} new action(s) drafted." if drafted else "Overdue check done: nothing new.")
+    return _back(f"Overdue check done: {len(drafted)} new action(s) drafted." if drafted else "Overdue check done: nothing new.", back)
 
 
 # ---------- Saint endpoints ----------

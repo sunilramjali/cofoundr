@@ -87,9 +87,29 @@ def test_token_guard_handles_odd_tokens(db):
 # --- dashboard
 def test_dashboard_renders_with_real_data(db, gemini_down):
     overdue.run()
-    r = web.get("/", params={"msg": "<b>hi</b>"})
-    assert r.status_code == 200 and "Waiting for your approval" in r.text
-    assert "<b>hi</b>" not in r.text and "&lt;b&gt;hi&lt;/b&gt;" in r.text  # flash messages are escaped
+    home = web.get("/", params={"msg": "<b>hi</b>"})
+    assert home.status_code == 200 and "Your yes" in home.text and 'href="/approvals"' in home.text
+    assert "<b>hi</b>" not in home.text and "&lt;b&gt;hi&lt;/b&gt;" in home.text  # flash messages are escaped
+    page = web.get("/approvals")
+    assert "Waiting for your yes" in page.text and "Approve &amp; send" in page.text and "view-transition-name: m-approvals" in page.text
+
+
+@pytest.mark.parametrize("path,text", [
+    ("/sales", "Sales &amp; the week ahead"), ("/invoices", "Your invoices"), ("/invoices?show=overdue", "What&#39;s overdue"),
+    ("/inbox", "Bring me an invoice"), ("/activity", "What I did on my own"), ("/whatsapp", "Your brief, on WhatsApp"),
+])
+def test_every_module_opens_into_its_page(db, gemini_down, path, text):
+    overdue.run()
+    r = web.get(path)
+    assert r.status_code == 200 and text in r.text and 'class="back" href="/"' in r.text
+
+
+def test_actions_return_to_the_page_they_came_from_and_never_elsewhere(db):
+    r = web.post("/approvals/not-an-id/decide", data={"decision": "approve", "back": "/approvals"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/approvals?msg=")
+    for evil in ("https://evil.example.com", "//evil.example.com", "/approvals/../admin", "/nope"):
+        r = web.post("/approvals/not-an-id/decide", data={"decision": "approve", "back": evil}, follow_redirects=False)
+        assert r.headers["location"].startswith("/?msg="), evil
 
 
 def test_dashboard_decision_with_a_bad_id_does_not_crash(db):
@@ -108,7 +128,7 @@ def test_upload_route(db, fake_extraction):
     fake_extraction(make_invoice(invoice_number="EDC-5555"))
     r = web.post("/upload", files={"file": ("inv.png", b"img", "image/png")}, follow_redirects=False)
     assert "Added EDC-5555" in _flash(r)
-    r = web.post("/upload", files={"file": ("notes.txt", b"hello", "text/plain")}, follow_redirects=False)
+    r = web.post("/upload", files={"file": ("notes.zip", b"PK", "application/zip")}, follow_redirects=False)
     assert "Can't read" in _flash(r)
 
 
@@ -474,3 +494,254 @@ def test_weather_and_events_commands_print_a_clear_error(fake_http, monkeypatch,
     monkeypatch.delenv("TICKETMASTER_API_KEY", raising=False)
     with pytest.raises(SystemExit, match="TICKETMASTER_API_KEY"):
         events.main([])
+
+
+# ---------------------------------------------------------------- Gmail intake (fake IMAP inbox, fake Gemini)
+import imaplib  # noqa: E402
+from email.message import EmailMessage  # noqa: E402
+
+from backend.inputs import gmail  # noqa: E402
+
+BIG_IMAGE = b"\x89PNG" + b"0" * gmail.MIN_IMAGE_BYTES
+
+
+def _mail(subject, body="", sender="Sophie Clarke <billing@meadowfield.example.com>", html=None, attach=()):
+    msg = EmailMessage()
+    msg["From"], msg["To"], msg["Subject"], msg["Date"] = sender, "gaia.demo@gmail.com", subject, "Sat, 24 Oct 2026 10:00:00 +0100"
+    msg["Message-ID"] = f"<{abs(hash((subject, body)))}@example.com>"
+    msg.set_content(body)
+    if html is not None:
+        msg = EmailMessage()
+        msg["From"], msg["Subject"] = sender, subject
+        msg.set_content(html, subtype="html")
+    for data, maintype, subtype, filename, disposition in attach:
+        msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=filename, disposition=disposition)
+    return msg
+
+
+class FakeInbox:
+    """Just enough of Gmail's IMAP: SEARCH, FETCH (labels / message), STORE +X-GM-LABELS."""
+    def __init__(self, *messages, fail_login=False, drop_after=None):
+        self.mail = {str(i + 1).encode(): [bytes(m), set()] for i, m in enumerate(messages)}
+        self.fail_login, self.drop_after, self.fetched, self.logged_out = fail_login, drop_after, [], 0
+
+    def login(self, user, password):
+        if self.fail_login:
+            raise imaplib.IMAP4.error("[AUTHENTICATIONFAILED] Invalid credentials (Failure)")
+
+    def create(self, name):
+        return "NO", [b"[ALREADYEXISTS] Duplicate folder name"]
+
+    def select(self, box):
+        return "OK", [str(len(self.mail)).encode()]
+
+    def uid(self, command, *args):
+        if command == "SEARCH":
+            return "OK", [b" ".join(self.mail)]
+        if command == "STORE":
+            self.mail[args[0]][1].add(args[2].strip('"'))
+            return "OK", [b""]
+        uids, what = args
+        if what == "(X-GM-LABELS)":
+            return "OK", [b"%s (X-GM-LABELS (\"\\\\Inbox\" %s) UID %s)" % (u, b" ".join(b'"%s"' % lab.encode() for lab in self.mail[u][1]), u)
+                          for u in uids.split(b",")]
+        if self.drop_after is not None and len(self.fetched) >= self.drop_after:
+            raise OSError("connection reset")
+        self.fetched.append(uids)
+        return "OK", [(b"%s (UID %s BODY[] {1}" % (uids, uids), self.mail[uids][0]), b")"]
+
+    def logout(self):
+        self.logged_out += 1
+
+    def labelled(self):
+        return [u for u, (_m, labels) in self.mail.items() if gmail.LABEL in labels]
+
+
+@pytest.fixture
+def inbox_env(monkeypatch):
+    monkeypatch.setenv("GMAIL_ADDRESS", "gaia.demo@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "abcd efgh ijkl mnop")
+    monkeypatch.setattr(gmail, "_last_failure", None)
+
+
+@pytest.fixture
+def gemini_reads(monkeypatch, fake_extraction):
+    """Fake Gemini that records what it was shown: [(mime_type, text)]."""
+    from backend.ai import extract
+    shown = []
+
+    def use(extraction):
+        def ask(data, mime_type, prompt):
+            shown.append((mime_type, data.decode(errors="replace") if mime_type == "text/plain" else ""))
+            return extraction
+        monkeypatch.setattr(extract, "_ask_gemini", ask)
+        return shown
+    return use
+
+
+def test_gmail_reads_an_invoice_written_in_the_email_body(db, inbox_env, gemini_reads):
+    shown = gemini_reads(make_invoice(invoice_number="MDF-2310", issuer_name="Meadowfield Dairy"))
+    box = FakeInbox(_mail("Invoice 23/10/2026", "Hi GAIA Team,\nPlease find your invoice for the milk.\nTotal £20.00"),
+                    _mail("Partnership Idea – Flow State Pilates x GAIA Coffee", "Fancy a collab?"),
+                    _mail("Security alert", "New sign-in", sender="no-reply@accounts.google.com"))
+    r = gmail.check_inbox(connect=lambda: box)
+    assert r.ok and r.message == "Inbox checked: 3 new email(s), 1 invoice(s) added, 2 not an invoice."
+    assert len(shown) == 1 and shown[0][0] == "text/plain"  # only the invoice reached Gemini
+    assert "From: Sophie Clarke <billing@meadowfield.example.com>" in shown[0][1] and "invoice for the milk" in shown[0][1]
+    inv = db[schema.INVOICES].find_one({"invoice_number": "MDF-2310"})
+    assert inv and inv["source"] == "email"
+    assert sorted(box.labelled()) == [b"1", b"2", b"3"] and box.logged_out == 1
+    log = db[schema.AGENT_LOG].find_one({"kind": "gmail_checked"})
+    assert log and len(log["detail"]["emails"]) == 3
+
+
+def test_gmail_handles_each_email_once(db, inbox_env, gemini_reads):
+    shown = gemini_reads(make_invoice(invoice_number="EMB-2410"))
+    box = FakeInbox(_mail("Invoice 24/10/2026", "Weekly beans: £20.00"))
+    assert gmail.check_inbox(connect=lambda: box).ok
+    again = gmail.check_inbox(connect=lambda: box)
+    assert again.ok and again.message == "Inbox checked: nothing new." and len(shown) == 1 and box.fetched == [b"1"]
+    assert db[schema.AGENT_LOG].count_documents({"kind": "gmail_checked"}) == 1  # nothing new → no extra log line
+
+
+def test_gmail_reads_pdf_and_photo_attachments_but_not_logos(db, inbox_env, gemini_reads):
+    shown = gemini_reads(make_invoice(invoice_number="EDC-9100"))
+    box = FakeInbox(_mail("Your statement", "See attached.", attach=[
+        (b"%PDF-1.4 invoice", "application", "pdf", "EDC-9100.pdf", "attachment"),
+        (BIG_IMAGE, "image", "png", "receipt.png", "attachment"),
+        (b"\x89PNG tiny", "image", "png", "logo.png", "inline"),             # signature logo: too small
+        (b"%PDF-1.4", "application", "zip", "archive.zip", "attachment"),     # not a type the pipeline reads
+    ]))
+    r = gmail.check_inbox(connect=lambda: box)
+    assert [mime for mime, _ in shown] == ["application/pdf", "image/png"]  # no subject keyword needed
+    assert r.emails[0].results[0].created and not r.emails[0].results[1].created  # the photo is the same invoice
+
+
+def test_gmail_reads_html_only_invoice_emails(db, inbox_env, gemini_reads):
+    shown = gemini_reads(make_invoice(invoice_number="HTM-1"))
+    box = FakeInbox(_mail("INVOICE #HTM-1", html="<html><style>p{color:red}</style><p>Oat milk x10</p><p>Total <b>£20.00</b></p></html>"))
+    gmail.check_inbox(connect=lambda: box)
+    text = shown[0][1]
+    assert "Oat milk x10" in text and "Total £20.00" in text and "color:red" not in text
+
+
+def test_gmail_retries_an_email_when_gemini_is_busy(db, inbox_env, gemini_down):
+    box = FakeInbox(_mail("Invoice 24/10/2026", "Weekly beans: £20.00"))
+    r = gmail.check_inbox(connect=lambda: box)
+    assert not r.ok and "couldn't be read" in r.message and box.labelled() == []  # left for the next check
+    assert gmail.check_inbox(connect=lambda: box).emails  # ...which tries it again
+
+
+def test_gmail_not_an_invoice_after_all_is_labelled_not_retried(db, inbox_env, gemini_reads):
+    from backend.ai.extract import Extraction
+    gemini_reads(Extraction())  # Gemini finds nothing invoice-like
+    box = FakeInbox(_mail("Re: invoice question", "Can you resend?"))
+    r = gmail.check_inbox(connect=lambda: box)
+    assert not r.ok and box.labelled() == [b"1"] and db[schema.INVOICES].count_documents({"source": "email"}) == 0
+
+
+def test_gmail_is_off_without_credentials(monkeypatch):
+    monkeypatch.delenv("GMAIL_ADDRESS", raising=False)
+    r = gmail.check_inbox(connect=lambda: pytest.fail("must not connect"))
+    assert r.error == "not_configured" and not r.ok
+
+
+def test_gmail_login_failure_is_logged_once_and_never_shows_the_password(db, inbox_env):
+    box = FakeInbox(fail_login=True)
+    first, second = gmail.check_inbox(connect=lambda: box), gmail.check_inbox(connect=lambda: box)
+    assert first.error == second.error == "login_failed" and "app password" in first.message
+    assert "abcd" not in first.message and box.logged_out == 2
+    assert db[schema.AGENT_LOG].count_documents({"kind": "gmail_check_failed"}) == 1  # not every minute
+
+
+def test_gmail_unreachable_or_dropped_connection_is_reported(db, inbox_env, gemini_reads):
+    def down():
+        raise OSError("no route to host")
+    assert gmail.check_inbox(connect=down).error == "unreachable"
+    gemini_reads(make_invoice(invoice_number="DRP-1"))
+    box = FakeInbox(_mail("Invoice A", "£20.00"), _mail("Invoice B", "£20.00"), drop_after=1)
+    r = gmail.check_inbox(connect=lambda: box)
+    assert r.error == "unreachable" and "after 1 email(s)" in r.message and box.labelled() == [b"1"]
+
+
+def test_gmail_never_runs_two_checks_at_once(inbox_env):
+    assert gmail._lock.acquire(blocking=False)
+    try:
+        assert gmail.check_inbox(connect=lambda: pytest.fail("must not connect")).error == "busy"
+    finally:
+        gmail._lock.release()
+
+
+def test_check_inbox_button(db, inbox_env, gemini_reads, monkeypatch):
+    gemini_reads(make_invoice(invoice_number="BTN-1"))
+    box = FakeInbox(_mail("Invoice BTN-1", "£20.00"))
+    monkeypatch.setattr(gmail, "_connect", lambda: box)
+    r = web.post("/check-inbox", follow_redirects=False)
+    assert r.status_code == 303 and _flash(r) == "Inbox checked: 1 new email(s), 1 invoice(s) added."
+    assert "Check inbox now" in web.get("/inbox").text
+
+
+def test_gmail_poller_checks_now_and_stops(monkeypatch):
+    import threading
+    ran = threading.Event()
+    monkeypatch.setattr(gmail, "check_inbox", lambda: ran.set())
+    stop = gmail.start_polling(3600)
+    assert ran.wait(2)
+    stop.set()
+
+
+# ---------------------------------------------------------------- dashboard view helpers
+from datetime import date as _date  # noqa: E402
+
+from bridge import view  # noqa: E402
+
+
+@pytest.mark.parametrize("pending,owed,review,expected", [
+    ([], 0, [], "Nothing needs you right now."),
+    ([{}], 0, [], "One thing needs your yes."),
+    ([{}] * 4, 1193.0, [], "Four things need your yes. £1,193 is overdue to come in."),
+    ([], 0, [{}], "One invoice needs a second look."),
+    ([{}, {}], 0, [{}, {}], "Two things need your yes, and two invoices need a second look."),
+    ([{}] * 12, 0, [], "12 things need your yes."),
+])
+def test_hero_headline_reads_naturally(pending, owed, review, expected):
+    assert view.headline(pending, owed, review) == expected
+
+
+def test_due_labels():
+    today = _date(2026, 10, 24)
+    at = lambda d: datetime(d.year, d.month, d.day, 12, tzinfo=timezone.utc)  # noqa: E731
+    assert view.due_label({"status": "overdue", "due_date": at(_date(2026, 10, 3))}, today) == "21 days overdue"
+    assert view.due_label({"status": "overdue", "due_date": at(_date(2026, 10, 23))}, today) == "1 day overdue"
+    assert view.due_label({"status": "open", "due_date": at(today)}, today) == "Due today"
+    assert view.due_label({"status": "open", "due_date": at(_date(2026, 10, 25))}, today) == "Due in 1 day"
+    assert view.due_label({"status": "open", "due_date": at(_date(2026, 11, 17))}, today) == "Due 17 Nov"
+    assert view.due_label({"status": "paid", "due_date": at(_date(2026, 9, 1))}, today) == "Paid"
+    assert view.due_label({"status": "open", "due_date": None}, today) == "No due date"
+
+
+def test_week_strip_scales_bars_and_survives_missing_weather():
+    fc = [{"date": "2026-10-24", "trading": True, "final_revenue": 600, "low_revenue": 500, "high_revenue": 700},
+          {"date": "2026-10-25", "trading": False, "final_revenue": 0},
+          {"date": "not a date"},
+          {"date": "2026-10-26", "trading": True, "final_revenue": 350, "low_revenue": 300, "high_revenue": 400}]
+    wk = view.week(fc, {"2026-10-24": {"weather_code": 63, "summary": "Rain"}}, _date(2026, 10, 24))
+    assert [d["bar"] for d in wk["days"]] == [86, 0, 50] and wk["total"] == 950 and wk["trading_days"] == 2
+    assert wk["days"][0]["wx_icon"] == "rain" and wk["days"][2]["wx_icon"] == "none" and wk["next"]["is_today"]
+    assert view.week([], {}, _date(2026, 10, 24)) == {"days": [], "total": 0, "trading_days": 0, "next": None}
+
+
+def test_weather_outage_never_breaks_the_page(db, monkeypatch):
+    monkeypatch.setattr(view, "_weather", {"at": 0.0, "ttl": 0, "days": {}})
+    monkeypatch.setattr(weather, "forecast", lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("down")))
+    assert view.weather_by_date() == {}
+    r = web.get("/")
+    assert r.status_code == 200 and "Nothing needs your yes right now" in r.text and "Forecast appears once" in r.text
+    assert "No forecast yet" in web.get("/sales").text
+
+
+@pytest.mark.parametrize("secs,expected", [(5, "just now"), (240, "4 min ago"), (3 * 3600, "3 h ago"), (30 * 3600, "yesterday")])
+def test_ago(secs, expected):
+    now = datetime(2026, 10, 24, 12, tzinfo=timezone.utc)
+    assert view.ago(now - timedelta(seconds=secs), now) == expected
+    assert view.ago(None) == "never"
