@@ -1,8 +1,8 @@
 # bridge: the CoFoundr web app (FastAPI on Fly.io)
-**Owner: Sunil**
+**Owner: Jade**
 
 One app serving:
-- **Dashboard pages** for the owner (server-rendered HTML in `templates/`): upload, invoices, approval queue
-- **Saint endpoints**: `GET /brief`, `POST /approve`, `GET /health`
+- **Dashboard UI** for the owner (server-rendered HTML in `templates/`)
+- **Saint endpoints**: `GET /brief`, `GET /updates`, `POST /approve`, `GET /health`
 
-Talks to Gemini (`backend/ai`) and MongoDB (`backend/db`). See project-plan.md §3a.
+Routes stay thin: inputs call `backend.pipeline`, decisions call `backend.approvals`, output text comes from `backend.outputs`.

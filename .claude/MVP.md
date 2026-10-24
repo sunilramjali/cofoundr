@@ -45,19 +45,55 @@ Forecasting, prioritisation, events/weather, WhatsApp photo input, Atlas Search/
 | Overdue check + reminder draft | Sunil |
 | Dashboard pages on Fly.io: upload + approval queue | Sunil |
 | `/brief` on Fly.io | Sunil |
-| **Gmail autonomous intake** (incl. setting up the demo Gmail account) | **Jade** |
-| **Saint test** (WhatsApp → `/brief`, `/approve`) | **Jade** (proposed) |
-| **WhatsApp automatic updates**: `/updates` feed (Sunil) + Saint/Twilio sending | **Sunil** (proposed) |
-| **Upload retest + demo reset** | **Sunil** (proposed) |
-| **Review PR #3, PR #6** | **Jade** |
+| **Gmail autonomous intake** (demo Gmail account + `backend/inputs/gmail.py` → `pipeline.ingest_invoice`) | **Jade** (input) |
+| **Saint test** (WhatsApp → `/brief`, `/approve`) | **Jade** (input/output) |
+| **WhatsApp automatic updates**: `/updates` feed ✓ built (Sunil); Saint polling it / Twilio fallback | **Jade** (output) |
+| **Upload retest + demo reset** (when Gemini's cap lifts) | **Sunil** (middle) |
+| **Review PR #3** | **Jade** |
 
-Items above the bold rows were built by Sunil solo. Bold rows: Jade owns Gmail intake (confirmed); the rest is proposed, confirm or swap.
+Items above the bold rows were built by Sunil solo. From now on: **Jade = inputs + outputs, Sunil = the middle** (see `CLAUDE.md` → Code layout & ownership).
 **Open question for the Saint team:** can Saint message the owner unprompted, run on a schedule, or receive a webhook?
 
 ---
 
-## MVP2: WhatsApp loop + forecast + priorities (outline)
-Invoice photo and approvals via Saint/WhatsApp (`POST /invoice`, `POST /approve`), revenue forecast with Gemini reasoning, task prioritisation, morning brief, Atlas Search + Vector Search. *To be detailed once MVP1 is done.*
+## MVP2: CoFoundr runs the owner's morning (DRAFT, review together)
+
+**Target:** Sat 24 Oct, 23:00 · **Starts:** when MVP1 is ticked off
+
+### Goal
+Each morning the owner gets a WhatsApp brief **without asking**: what's coming in (a forecast with Gemini's reasons), what to do first (ranked priorities, one line of reasoning each) and what's waiting for a yes. Invoices can also come in as a WhatsApp photo, approved reminders are **really emailed**, and the data behind it all shows off more MongoDB Atlas features.
+
+### Must have (done criteria)
+**Inputs (Jade)**
+- [ ] **WhatsApp invoice photos:** Saint forwards a photo to `POST /invoice` (token) → `pipeline.ingest_invoice(..., source="whatsapp_photo")` → Saint replies with `result.message`
+- [ ] **Weather + events data:** Open-Meteo (no key) daily forecast for the truck's pitches + an events source (Ticketmaster or via Treg) stored in MongoDB (`events`), refreshed on a schedule
+
+**Middle (Sunil)**
+- [ ] **Sales history:** ~6 months of synthetic GAIA POS sales in a MongoDB **time-series** collection (`sales`)
+- [ ] **Forecast:** baseline per day for the next 7 days from sales history, then **Gemini adjusts** for weather + nearby events and **explains why** ("+28% Sat: market nearby + sunny"); stored in `forecasts`
+- [ ] **Prioritisation:** Gemini ranks open tasks (approvals, review flags, forecast prep like "order extra oat milk") by impact with a one-line reason each; stored in `tasks`
+- [ ] **Atlas Search:** full-text search over invoices/suppliers (index + query function)
+- [ ] **Vector Search / Automated Embedding:** semantic match of events to the business profile ("worth trading at?"), or similar past invoices; **Hybrid Search** if time allows
+- [ ] **Error hardening:** Gemini 429s retried with backoff; every failure logged in `agent_log` and surfaced to the owner, never silent
+
+**Outputs (Jade)**
+- [ ] **Real reminder emails:** `outputs/email.py` sends approved reminders (Gmail SMTP from the demo inbox); `effect` shows "sent", never sends without approval
+- [ ] **Morning brief pushed automatically** at ~08:00 via Saint: forecast + top 3 priorities + pending approvals (extends `brief.py`)
+- [ ] **Dashboard:** forecast chart with Gemini's reasons, ranked priorities, invoice search box
+
+### Out of scope for MVP2
+Treg partnership finder, events heatmap, waste estimator, voice order entry (all MVP3).
+
+### MVP2 demo (≤ 90 s, after the MVP1 demo)
+1. Owner's phone: the 08:00 brief arrives unprompted with the forecast ("+28% Sat: market nearby + sunny") and top priorities.
+2. Owner sends an invoice photo on WhatsApp → Saint replies "Added … checked ✓".
+3. Owner replies "approve 2" → a real reminder email lands in the customer's (demo) inbox.
+4. Dashboard: forecast chart with reasons, ranked priorities, search "dairy" finds the supplier's invoices (Atlas Search).
+
+### Seams to agree before starting
+- `POST /invoice` contract (Jade ↔ Sunil): multipart file + token → `IngestResult.message`
+- `forecasts` and `tasks` document shapes in `schema.py` (Sunil defines, Jade's dashboard/brief reads)
+- Weather/events shape in `events` (Jade writes, Sunil's forecast reads)
 
 ## MVP3: Polish + nice-to-haves (outline)
 Events heatmap, waste estimator, partnership finder (Treg), voice order entry; demo video, README judging section. *To be detailed later.*

@@ -1,11 +1,22 @@
-# Each folder has one owner who must review PRs touching it.
+# Jade owns the edges (inputs + outputs), Sunil owns the middle (data + analysis + errors).
 # Enforced with the GitHub rulesets on main/stage once "Require review from Code Owners" is switched on.
 
-/backend/db/   @sunilramjali
-/data/         @sunilramjali
-/backend/ai/   @sunilramjali
-/bridge/       @sunilramjali
+# Middle: Sunil
+/backend/db/          @sunilramjali
+/backend/ai/          @sunilramjali
+/backend/pipeline.py  @sunilramjali
+/backend/approvals.py @sunilramjali
+/data/                @sunilramjali
+/Dockerfile           @sunilramjali
+/fly.toml             @sunilramjali
+/.github/workflows/   @sunilramjali
 
-# Shared docs: both review
-/.claude/      @sunilramjali @JadeAlpay
-/README.md     @sunilramjali @JadeAlpay
+# Edges: Jade
+/backend/inputs/      @JadeAlpay
+/backend/outputs/     @JadeAlpay
+/bridge/              @JadeAlpay
+
+# Shared
+/.claude/             @sunilramjali @JadeAlpay
+/README.md            @sunilramjali @JadeAlpay
+/tests/               @sunilramjali @JadeAlpay

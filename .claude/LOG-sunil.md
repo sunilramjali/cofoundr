@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — Ownership split + pipeline seam + MVP2 draft
+- **Did:** split agreed: **Jade = inputs + outputs, Sunil = the middle**. Moved `brief.py`, `updates.py` → `backend/outputs/`; new `backend/inputs/` (Jade); new `backend/pipeline.py` `ingest_invoice()` = the single inputs→middle hand-off (upload route now uses it; logs `ingest_failed` on Gemini errors); `backend/outputs/email.py` stub called by `approvals.decide` after approval. CLAUDE.md ownership table, CODEOWNERS, folder READMEs updated. Seed `--reset` now also clears `agent_log` + `/updates` cursors. MVP2 drafted in MVP.md with owners
+- **Status:** done, 9 tests pass. Gemini still 429 → upload retest + demo reset postponed
+- **Next:** review MVP2 draft with Jade; demo reset once Gemini works
+- **Blockers / notes for partner:** Jade, inputs call `pipeline.ingest_invoice` only; see `backend/inputs/README.md`
+
 ## Sat 24 Oct — /updates feed for WhatsApp automatic updates (MVP1)
 - **Did:** `backend/updates.py` + `GET /updates` (token; `since` cursor or server-side cursor per consumer; `format=text`; `peek`). Messages built from `agent_log`: new invoice ✓ / needs check, new drafts with "reply approve N", dashboard decisions (WhatsApp decisions skipped, owner already got a reply)
 - **Fix:** overdue check re-drafted a reminder the same day one was sent → added 3-day `REMINDER_GAP` (`due_for_action`)

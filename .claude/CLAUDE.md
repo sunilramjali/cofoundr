@@ -66,21 +66,34 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 
 ## Code layout & ownership
 
-| Folder | Contents | Owner |
-|---|---|---|
-| `backend/db/` | MongoDB Atlas: connection, collections, indexes, search | **Sunil** |
-| `backend/db/schema.py` | **Shared data contract**: collection names + document shapes | **Sunil** |
-| `data/` | Synthetic seed data | **Sunil** |
-| `backend/ai/` | Gemini, forecast, invoice extraction, prioritisation | Sunil |
-| `bridge/` | **The Fly.io web app** (FastAPI): dashboard pages (`templates/`) + Saint endpoints `/brief`, `/approve` | Sunil |
+**The split: Jade owns the edges (inputs + outputs), Sunil owns the middle (data + analysis + errors).**
 
-- **Jade (Ceyda) has joined.** Sunil owns the existing folders; when you split work, update this table, `.github/CODEOWNERS` and the owners in `MVP.md` together.
-- No Streamlit. The dashboard is server-rendered HTML in the same Fly.io app, so Saint can read it too.
+```
+ INPUTS (Jade)                 MIDDLE (Sunil)                        OUTPUTS (Jade)
+ Gmail, WhatsApp/Saint in,  →  pipeline.ingest_invoice()          →  dashboard UI, Saint outbox on
+ external APIs, upload         Gemini read + verify, MongoDB,        WhatsApp (/brief, /updates),
+                               overdue, approval rules, errors       emails sent after approval
+```
+
+| Folder / file | Contents | Owner |
+|---|---|---|
+| `backend/inputs/` | Input channels: Gmail intake, WhatsApp photos via Saint, external APIs (weather, events, Treg) | **Jade** |
+| `backend/pipeline.py` | **Inputs → middle hand-off**: `ingest_invoice(bytes, mime, source, origin)` does extract → verify → save → log → overdue check. Every input calls this, nothing else | **Sunil** |
+| `backend/ai/` | Gemini: invoice extraction + verification loop, overdue drafts, forecast, prioritisation | **Sunil** |
+| `backend/approvals.py` | Approval rules; the only place a decision is applied. Calls `outputs.email.send_reminder` after approval | **Sunil** |
+| `backend/db/`, `backend/db/schema.py` | MongoDB connection, activity log, indexes/search; **the shared data contract** | **Sunil** |
+| `data/` | Synthetic seed data, sample invoices | **Sunil** |
+| `backend/outputs/` | Owner-facing output: `brief.py` (WhatsApp brief), `updates.py` (`/updates` messages), `email.py` (sending after approval) | **Jade** |
+| `bridge/` | **The Fly.io web app**: routes in `main.py`, dashboard UI in `templates/` | **Jade** |
+| `tests/` | Fast tests, no network | Whoever changes the code |
+| `Dockerfile`, `fly.toml`, `.github/workflows/` | Deploy + CI/CD | **Sunil** |
 | `.claude/` | Shared docs (protected by the hook) | Both |
 
+- **The two seams.** Inputs → middle: call `pipeline.ingest_invoice` and use its `IngestResult`. Middle → outputs: read MongoDB through `schema.py` names; outputs never change data except via `approvals.decide`. Changing either seam = tell your partner first.
 - **Each folder has one owner.** To change something in your partner's folder, tell them first or ask them to make the change.
 - **Data contract:** never hard-code collection names or change document shapes outside `backend/db/schema.py`. Any change there gets announced to the partner and noted in your log *before* merging.
-- `.github/CODEOWNERS` mirrors this table (placeholders until GitHub usernames are added).
+- No Streamlit. The dashboard is server-rendered HTML in the same Fly.io app, so Saint can read it too.
+- `.github/CODEOWNERS` mirrors this table.
 
 ## Edit permissions (to prevent clashes)
 

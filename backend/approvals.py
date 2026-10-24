@@ -12,6 +12,7 @@ from bson import ObjectId
 
 from backend.db import activity, schema
 from backend.db.client import get_db
+from backend.outputs import email
 
 BUSINESS_ID = "gaia-coffee"
 DECISIONS = {"approve": "approved", "edit": "edited", "reject": "rejected"}
@@ -63,8 +64,8 @@ def decide(approval: dict, decision: str, via: str, edited_draft: Optional[str] 
     if decision in ("approve", "edit"):
         invoice_id = ObjectId(approval["target_id"])
         if approval["action_type"] == "invoice_reminder":
+            effect = email.send_reminder({**approval, **update})  # Jade's output channel; only runs after approval
             db[schema.INVOICES].update_one({"_id": invoice_id}, {"$inc": {"reminders_sent": 1}, "$set": {"last_reminder_at": now}})
-            effect = f"reminder sent to {approval.get('to_email')} (simulated)"
         elif approval["action_type"] == "supplier_payment":
             db[schema.INVOICES].update_one({"_id": invoice_id}, {"$set": {"status": "paid", "paid_at": now}})
             effect = "invoice marked paid (simulated payment)"
