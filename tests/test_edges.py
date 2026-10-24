@@ -88,7 +88,8 @@ def test_token_guard_handles_odd_tokens(db):
 def test_dashboard_renders_with_real_data(db, gemini_down):
     overdue.run()
     home = web.get("/", params={"msg": "<b>hi</b>"})
-    assert home.status_code == 200 and "Your yes" in home.text and 'href="/approvals"' in home.text
+    assert home.status_code == 200 and "Invoice to be paid" in home.text and "reminders ready to send" in home.text
+    assert 'action="/saint"' in home.text and 'href="/inventory"' in home.text  # Saint chat bar + sidebar
     assert "<b>hi</b>" not in home.text and "&lt;b&gt;hi&lt;/b&gt;" in home.text  # flash messages are escaped
     page = web.get("/approvals")
     assert "Waiting for your yes" in page.text and "Approve &amp; send" in page.text and "view-transition-name: m-approvals" in page.text
@@ -97,11 +98,12 @@ def test_dashboard_renders_with_real_data(db, gemini_down):
 @pytest.mark.parametrize("path,text", [
     ("/sales", "Sales &amp; the week ahead"), ("/invoices", "Your invoices"), ("/invoices?show=overdue", "What&#39;s overdue"),
     ("/inbox", "Bring me an invoice"), ("/activity", "What I did on my own"), ("/whatsapp", "Your brief, on WhatsApp"),
+    ("/inventory", "What's on the truck"), ("/settings", "Approval rule"),
 ])
 def test_every_module_opens_into_its_page(db, gemini_down, path, text):
     overdue.run()
     r = web.get(path)
-    assert r.status_code == 200 and text in r.text and 'class="back" href="/"' in r.text
+    assert r.status_code == 200 and text in r.text and 'class="sheet__back" href="/"' in r.text
 
 
 def test_actions_return_to_the_page_they_came_from_and_never_elsewhere(db):
@@ -736,7 +738,7 @@ def test_weather_outage_never_breaks_the_page(db, monkeypatch):
     monkeypatch.setattr(weather, "forecast", lambda *a, **k: (_ for _ in ()).throw(fetch.FetchError("down")))
     assert view.weather_by_date() == {}
     r = web.get("/")
-    assert r.status_code == 200 and "Nothing needs your yes right now" in r.text and "Forecast appears once" in r.text
+    assert r.status_code == 200 and "No forecast yet" in r.text and "All clear" in r.text
     assert "No forecast yet" in web.get("/sales").text
 
 
@@ -745,3 +747,55 @@ def test_ago(secs, expected):
     now = datetime(2026, 10, 24, 12, tzinfo=timezone.utc)
     assert view.ago(now - timedelta(seconds=secs), now) == expected
     assert view.ago(None) == "never"
+
+
+# ---------------------------------------------------------------- home feed: Saint chat bar, stock, opportunities, chart
+def test_saint_chat_bar_decides_like_whatsapp_and_never_guesses(db, gemini_down, sent):
+    overdue.run()
+    r = web.post("/saint", data={"text": "approve 4", "back": "/"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/?msg=") and "#4 approved" in _flash(r)
+    assert db[schema.APPROVALS].find_one({"ref": 4})["decided_via"] == "dashboard"
+    for text, expected in [("don't approve 1", "isn't connected"), ("what's on today?", "isn't connected"), ("", "Type a message"),
+                           ("approve 99", "no #99"), ("approve 4", "already")]:
+        assert expected in _flash(web.post("/saint", data={"text": text, "back": "/"}, follow_redirects=False)), text
+    assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "pending"  # the negated message changed nothing
+
+
+def _count(cid, kind, day, **qty):
+    return {"_id": cid, "kind": kind, "counted_at": datetime(2026, 9, day, 8, tzinfo=timezone.utc),
+            "items": [{"sku": k, "item_name": k.title(), "unit": "unit", "qty": v} for k, v in qty.items()]}
+
+
+def test_stock_estimate_flags_what_runs_out_and_suggests_orders():
+    counts = [_count("o", "opening", 1, napkins=300, cups=200, cake=10), _count("c", "closing", 11, napkins=100, cups=150, cake=10),
+              _count("o2", "opening", 12, napkins=60, cups=150, cake=10)]
+    est = view.stock_estimate(counts, datetime(2026, 9, 14, 8, tzinfo=timezone.utc))  # 2 days after the last count
+    rows = {r["sku"]: r for r in est["rows"]}
+    assert rows["napkins"]["per_day"] == 20 and rows["napkins"]["estimate"] == 20 and rows["napkins"]["cover"] == 1 and rows["napkins"]["low"]
+    assert rows["napkins"]["order"] == 20 * 14 - 20 and not rows["cups"]["low"] and rows["cake"]["cover"] is None
+    assert [r["sku"] for r in est["low"]] == ["napkins"] and est["days_since"] == 2 and "01 Sep" in est["basis"]
+    gone = view.stock_estimate(counts, datetime(2026, 9, 30, tzinfo=timezone.utc))["rows"][0]
+    assert gone["sku"] == "napkins" and gone["out"] and gone["estimate"] == 0
+    assert view.stock_estimate([], datetime.now(timezone.utc))["rows"] == []
+    only_one = view.stock_estimate([_count("o", "opening", 1, napkins=5)], datetime(2026, 9, 2, tzinfo=timezone.utc))
+    assert only_one["rows"][0]["cover"] is None and not only_one["low"]  # no usage known: never "low"
+
+
+def test_opportunities_come_from_set_aside_emails_once():
+    logs = [{"at": datetime(2026, 10, 24, tzinfo=timezone.utc), "detail": {"emails": [
+        {"subject": "Partnership Idea – Flow State Pilates x GAIA Coffee", "from": "a@x.com"},
+        {"subject": "Invoice 24/10/2026", "from": "b@x.com"}, {"subject": "", "from": "c@x.com"},
+        {"subject": "Collaboration Opportunity – Sunday Run Club x GAIA Coffee", "from": "d@x.com"}]}},
+        {"at": datetime(2026, 10, 23, tzinfo=timezone.utc), "detail": {"emails": [{"subject": "partnership idea – flow state pilates x gaia coffee"}]}}]
+    opps = view.opportunities(logs)
+    assert [o["who"] for o in opps] == ["Flow State Pilates", "Sunday Run Club"] and opps[0]["sender"] == "a@x.com"
+    assert view.opportunities([{"detail": None}]) == []
+
+
+def test_trend_chart_geometry():
+    sales = {"days": [{"orders": 1, "revenue": r} for r in (500, 600, 550)]}
+    wk = {"days": [{"trading": True, "revenue": 580}, {"trading": False, "revenue": 0}]}
+    t = view.trend(sales, wk)
+    assert t["actual"].startswith("M0.0,") and t["forecast"].startswith(f"M{t['split']},") and t["area"].endswith("Z")
+    assert t["split"] == round(100 * 2 / 3, 2) and t["dot"][0] == t["split"]
+    assert view.trend({"days": []}, {"days": []})["actual"] == ""

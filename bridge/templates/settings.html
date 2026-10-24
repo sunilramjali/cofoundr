@@ -1,0 +1,23 @@
+{% extends "page.html" %}
+{% block title %}Settings{% endblock %}
+{% block vt %}m-settings{% endblock %}
+{% block eyebrow %}<svg class="ico"><use href="#i-gear"/></svg>Settings{% endblock %}
+{% block heading %}Settings{% endblock %}
+{% block lede %}How CoFoundr is connected to GAIA Coffee. Read-only for now; these can be made editable later.{% endblock %}
+{% block body %}
+<div class="settings">
+  <div class="setting"><span class="gem"><svg class="ico"><use href="#i-home"/></svg></span>
+    <div><b>GAIA Coffee</b><span>Mobile coffee truck · Broadway Market, Hackney · trades Mon, Wed, Fri, Sat · all data is synthetic demo data</span></div></div>
+  <div class="setting"><span class="gem gem--sky"><svg class="ico"><use href="#i-mail"/></svg></span>
+    <div><b>Invoice inbox</b><span>{% if inbox.configured %}{{ inbox.address }} · {{ "checked every " ~ inbox.polling ~ " s" if inbox.polling else "checked on demand" }}{% if inbox.last %} · last {{ inbox.last.at|ago }}{% endif %}{% else %}Not connected: set GMAIL_ADDRESS and GMAIL_APP_PASSWORD{% endif %}</span></div>
+    <span class="chip {{ 'chip--sage' if inbox.configured else 'chip--amber' }}">{{ "Connected" if inbox.configured else "Off" }}</span></div>
+  <div class="setting"><span class="gem gem--sage"><svg class="ico"><use href="#i-chat"/></svg></span>
+    <div><b>Saint on WhatsApp</b><span>Reads your brief from <code>/brief</code> and relays "approve 1" / "reject 1" replies</span></div>
+    <a class="btn btn--soft" href="/whatsapp">Open</a></div>
+  <div class="setting"><span class="gem gem--rose"><svg class="ico"><use href="#i-till"/></svg></span>
+    <div><b>Till (POS)</b><span>{% if sales.last %}Last sale day {{ sales.last.date|day }} · {{ sales.trading_days }} trading days in the last four weeks{% else %}No sales synced yet{% endif %}</span></div></div>
+  <div class="setting"><span class="gem gem--lilac"><svg class="ico"><use href="#i-check"/></svg></span>
+    <div><b>Approval rule</b><span>Nothing involving money is sent or paid without your yes, here or on WhatsApp. This can't be switched off.</span></div>
+    <span class="chip chip--sage">Always on</span></div>
+</div>
+{% endblock %}

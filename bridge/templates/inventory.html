@@ -1,0 +1,43 @@
+{% extends "page.html" %}
+{% block title %}Inventory{% endblock %}
+{% block vt %}m-inventory{% endblock %}
+{% block eyebrow %}<svg class="ico"><use href="#i-box"/></svg>Inventory{% endblock %}
+{% block heading %}What's on the truck{% endblock %}
+{% block lede %}{% if stock.counted_at %}My estimate for today: your last physical count ({{ stock.counted_at|day }}, {{ stock.days_since }} days ago) minus what you usually use, based on {{ stock.basis or "your counts" }}. Deliveries aren't recorded yet, so recount anything that looks off.{% else %}No stock counts yet. Once the truck's stock is counted, I'll estimate what's left and what to order.{% endif %}{% endblock %}
+{% block stats %}
+{% if stock.rows %}
+<div class="stats">
+  <div class="stat"><b class="num">{{ stock.low|length }}</b><span>running low</span></div>
+  <div class="stat"><b class="num">{{ stock.rows|length }}</b><span>items tracked</span></div>
+</div>
+{% endif %}
+{% endblock %}
+{% block body %}
+{% if stock.rows %}
+<div class="books">
+  <div class="filters" role="radiogroup" aria-label="Filter stock">
+    <input type="radio" name="f" id="f-all"{% if not stock.low %} checked{% endif %}><label for="f-all">Everything<span>{{ stock.rows|length }}</span></label>
+    <input type="radio" name="f" id="f-low"{% if stock.low %} checked{% endif %}><label for="f-low">Running low<span>{{ stock.low|length }}</span></label>
+  </div>
+  <ul class="rows">
+    {% for i in stock.rows %}
+    {%- set pct = 100 if i.cover is none else [[(i.cover / 28 * 100)|round|int, 3]|max, 100]|min -%}
+    <li class="row{% if i.low %} row--low{% endif %}"{% if i.low %} data-low{% endif %}>
+      <span class="avatar" aria-hidden="true">{{ i.name[:1] }}</span>
+      <div style="min-width:0">
+        <div class="row__who">{{ i.name }}</div>
+        <div class="meter" aria-hidden="true"><i style="--w:{{ pct }}%"></i></div>
+      </div>
+      <span class="row__due{% if i.low %} row__due--late{% endif %}">
+        {% if i.out %}Probably out{% elif i.cover is none %}Not used recently{% else %}~{{ i.cover|round|int }} day{{ "s" if (i.cover|round|int) != 1 }} left{% endif %}</span>
+      <span class="row__amt num">{{ i.estimate|round(1) if i.unit in ("kg", "litre") else i.estimate|round|int }}<small>{{ (i.unit ~ " ") if i.unit not in ("unit", "") else "" }}left (est.)</small></span>
+      <span class="row__status">{% if i.order %}<span class="chip {{ 'chip--rust' if i.low else '' }}">Order ~{{ i.order }}{{ " " ~ i.unit if i.unit not in ("unit", "") else "" }}</span>{% else %}<span class="chip chip--sage">Fine</span>{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+<p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>Suggested orders top each item up to about two weeks of your usual use. Ordering straight from here, with your approval, is the next step.</span></p>
+{% else %}
+<div class="empty"><svg class="ico"><use href="#i-box"/></svg><div><b>No stock counts yet.</b>They arrive with the till sync.</div></div>
+{% endif %}
+{% endblock %}
