@@ -6,6 +6,7 @@
 /backend/ai/          @sunilramjali
 /backend/pipeline.py  @sunilramjali
 /backend/approvals.py @sunilramjali
+/backend/sales.py     @sunilramjali
 /data/                @sunilramjali
 /Dockerfile           @sunilramjali
 /fly.toml             @sunilramjali

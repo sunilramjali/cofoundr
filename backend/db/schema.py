@@ -21,6 +21,8 @@ APPROVALS = "approvals"
 AGENT_LOG = "agent_log"  # every agent action / decision, for the "clear record" judging criterion
 CURSORS = "cursors"  # per-consumer read position in agent_log for /updates, _id = "<business_id>:<consumer>"
 COUNTERS = "counters"  # atomic sequences, e.g. _id = "<business_id>:approval_ref"
+ORDERS = "orders"  # one doc per till order (idempotency + order totals); its lines live in SALES
+STOCK_COUNTS = "stock_counts"  # physical ingredient counts on the truck (beans, milk, cups), one doc per count
 
 
 def counterparty_key(name: Optional[str]) -> str:
@@ -104,4 +106,87 @@ class Approval(TypedDict):
     synthetic: bool
 
 
-# TODO(Sunil, MVP2): Product, Sale, Event, Forecast, Task shapes
+# ---------------------------------------------------------------- POS: products, orders, sales, stock (MVP2)
+# INPUT format = Jade's POS export (backend/inputs/pos/data, "illustrative_pos_orders_export_v2"):
+#   {"order_id", "placed_at" (ISO, with offset), "location_id", "source", "fulfilment",
+#    "items": [{"sku", "name", "variant", "quantity", "unit_price_gbp", "modifiers": [{"name","value","price_gbp"}],
+#               "line_total_gbp"}], "subtotal_gbp", "discount_gbp", "total_gbp",
+#    "payment": {"method", "status", "payment_reference"}, "order_status"}
+# Inputs pass orders in that format to backend.sales.record_orders(); only backend.sales writes these collections.
+
+class Product(TypedDict):
+    """A menu item, kept up to date from the till: one per POS SKU."""
+    _id: str  # POS SKU, e.g. "FLW"
+    business_id: str
+    name: str  # "Flat White"
+    category: Optional[Literal["coffee", "tea", "cold", "food", "other"]]
+    price: float  # latest unit price seen at the till, GBP
+    variants: List[str]  # e.g. ["Almond Croissant", "Pain au Chocolat"] for "Fresh Pastry"
+    first_sold_at: datetime
+    last_sold_at: datetime
+    synthetic: bool
+
+
+class Order(TypedDict):
+    _id: str  # "<business_id>:<order_id>": recording the same order twice is a no-op
+    business_id: str
+    order_id: str  # the till's id, e.g. "GAIA-20261002-001358"
+    placed_at: datetime  # UTC
+    location_id: str  # e.g. "GAIA-TRUCK-01"
+    source: str  # e.g. "in_person_pos"
+    fulfilment: Optional[str]
+    subtotal: float
+    discount: float
+    total: float
+    item_count: int  # sum of quantities
+    payment_method: Optional[str]
+    synthetic: bool
+    synced_at: datetime
+
+
+class Modifier(TypedDict):
+    name: str  # "Milk", "Extra Espresso Shot"
+    value: str  # "Oat Milk", "1 additional shot"
+    price: float
+
+
+class SaleMeta(TypedDict):
+    business_id: str
+    sku: str
+    location_id: str
+
+
+class Sale(TypedDict):
+    """SALES is a MongoDB **time-series** collection (timeField "ts", metaField "meta"): one doc per order line."""
+    ts: datetime  # = Order.placed_at
+    meta: SaleMeta
+    order_id: str
+    line_no: int
+    name: str
+    variant: Optional[str]
+    qty: float
+    unit_price: float
+    modifiers: List[Modifier]
+    line_total: float
+    synthetic: bool
+
+
+class StockItem(TypedDict):
+    sku: str  # ingredient SKU, e.g. "INV-001" (not a menu SKU)
+    item_name: str  # "Espresso Coffee Beans"
+    unit: str  # "kg", "litre", "each"
+    qty: float
+
+
+class StockCount(TypedDict):
+    _id: str  # the count's id, e.g. "GAIA-COUNT-OPENING-20261002"
+    business_id: str
+    location_id: str
+    counted_at: datetime  # UTC
+    kind: Literal["opening", "closing", "other"]
+    method: Optional[str]
+    items: List[StockItem]
+    synthetic: bool
+
+
+# TODO(Sunil, MVP2): Event, Forecast, Task shapes
