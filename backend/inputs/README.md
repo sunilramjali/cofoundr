@@ -34,6 +34,15 @@ Failures raise `fetch.FetchError` with a plain-English message (API keys never a
 ```
 Try them: `python -m backend.inputs.weather`, `python -m backend.inputs.events`.
 
+## WhatsApp via Twilio (`whatsapp.py`)
+Twilio posts each message to `POST /whatsapp/twilio`. The bridge checks `X-Twilio-Signature` (HMAC-SHA1 with `TWILIO_AUTH_TOKEN` over `PUBLIC_URL` + path + sorted fields), answers Twilio at once, then `handle()` runs in the background:
+- only `OWNER_WHATSAPP` is acted on; other numbers are logged (`whatsapp_ignored`) and get no reply
+- photo/PDF → downloaded from Twilio (credentials only ever sent to `api.twilio.com`) → `ingest_invoice(source="whatsapp_photo")`; the reply is the pipeline's message
+- exactly "approve 4" / "reject 2" → `approvals.decide(via="whatsapp")`, never via Gemini
+- anything else → `backend.outputs.assistant` (Gemini, read-only tools)
+
+Setup: Twilio Console → Messaging → Try it out → Send a WhatsApp message; join the sandbox from the owner's phone; set "When a message comes in" to `https://cofoundr.fly.dev/whatsapp/twilio` (POST).
+
 ## Gmail intake (`gmail.py`)
 The demo inbox (`GMAIL_ADDRESS` + a 16-letter `GMAIL_APP_PASSWORD`) is checked over IMAP every `GMAIL_POLL_SECONDS` (60 on Fly, off locally) and by the dashboard's **Check inbox now** button (`POST /check-inbox`).
 - PDF/image attachments are always read; an email without one is read as text **only if its subject mentions an invoice** (pitches and Google alerts never reach Gemini). Logos under 10 KB are ignored.

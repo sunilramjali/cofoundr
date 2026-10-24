@@ -99,11 +99,11 @@
   {% endif %}
 </div>
 
-<form class="chatbar" method="post" action="/saint">
-  <span class="chatbar__who" aria-hidden="true">S</span>
+<form class="chatbar" method="post" action="/ask">
+  <span class="chatbar__who" aria-hidden="true">C</span>
   <input type="hidden" name="back" value="/">
-  <label class="sr" for="saint-msg">Message Saint</label>
-  <input id="saint-msg" name="text" autocomplete="off" placeholder="Message Saint… try “approve 1”">
-  <button class="btn send" aria-label="Send to Saint" data-busy="…"><svg class="ico"><use href="#i-up"/></svg></button>
+  <label class="sr" for="ask-msg">Ask CoFoundr</label>
+  <input id="ask-msg" name="text" autocomplete="off" placeholder="Ask CoFoundr… try “who owes me money?” or “approve 1”">
+  <button class="btn send" aria-label="Ask CoFoundr" data-busy="…"><svg class="ico"><use href="#i-up"/></svg></button>
 </form>
 {% endblock %}
