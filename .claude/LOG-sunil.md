@@ -12,6 +12,14 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — /updates feed for WhatsApp automatic updates (MVP1)
+- **Did:** `backend/updates.py` + `GET /updates` (token; `since` cursor or server-side cursor per consumer; `format=text`; `peek`). Messages built from `agent_log`: new invoice ✓ / needs check, new drafts with "reply approve N", dashboard decisions (WhatsApp decisions skipped, owner already got a reply)
+- **Fix:** overdue check re-drafted a reminder the same day one was sent → added 3-day `REMINDER_GAP` (`due_for_action`)
+- **Tested:** 8 unit tests; end-to-end on Atlas with a test consumer (3 updates, then 0; server cursor same); cleaned up. Endpoint: 403 no token, 400 bad cursor, peek leaves cursor untouched
+- **Contract change (`schema.py`):** new `cursors` collection
+- **Status:** done on our side; Saint (or Twilio) still has to poll it
+- **Next:** Saint team answers → wire Saint to poll `/updates`; needs PR #3 merged so it is live
+
 ## Sat 24 Oct — CI/CD (MVP1)
 - **Did:** `tests/test_core.py` (5 fast tests: verification checks, direction, /health, token guard), `.github/workflows/ci.yml` (PRs to stage/main), `.github/workflows/deploy.yml` (push to main → fly deploy + health check); `checks` is now a required status check on stage + main
 - **Status:** CI live; CD waiting on GitHub secret `FLY_API_TOKEN` (Sunil to set; Claude was blocked from writing secrets)

@@ -59,6 +59,7 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 |---|---|---|
 | `GET /brief?token=…&format=html\|json` | Owner asks Saint for the brief | Reads tasks, invoices, forecasts, approvals → returns a WhatsApp-ready message |
 | `POST /approve` `{id, decision}` | Owner replies "approve 1" / "reject 1" | Checks the action exists and is `pending` → updates `approvals` (decision, `decided_via: "whatsapp"`, timestamp) → dashboard reflects it |
+| `GET /updates?token=…[&since=…][&format=text][&peek=true]` | Saint polls on a schedule (e.g. every minute) | Returns WhatsApp-ready messages for anything new since last time: new invoices (or "needs your check"), new drafts with "reply approve N", dashboard decisions. Without `since`, the server remembers what was delivered. `format=text` returns an empty body when there's nothing to send |
 | `POST /invoice` (later) | Owner sends an invoice photo | Sends the photo to Gemini for extraction → saves to `invoices` |
 | `GET /health` | Fly.io health check | Returns `ok` |
 

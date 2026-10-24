@@ -22,6 +22,7 @@ from backend import approvals
 from backend.ai import overdue
 from backend.ai.extract import extract_invoice, save_invoice, to_invoice_doc
 from backend.brief import build_brief
+from backend.updates import get_updates
 from backend.db import activity, schema
 from backend.db.client import get_db
 
@@ -120,6 +121,22 @@ def brief(request: Request, token: Optional[str] = Query(None), format: str = "t
     if format == "html":
         return HTMLResponse(f"<!doctype html><html><body><pre>{data['text']}</pre></body></html>")
     return PlainTextResponse(data["text"])
+
+
+@app.get("/updates")
+def updates(token: Optional[str] = Query(None), x_token: Optional[str] = Header(None),
+            since: Optional[str] = None, format: str = "json", peek: bool = False):
+    """What the owner should hear about, unprompted. Saint polls this and sends each message on WhatsApp.
+    No `since` → the server remembers what was delivered (advances unless peek=true).
+    format=text → just the messages, or an empty body when there's nothing to send."""
+    _check_token(token or x_token)
+    try:
+        data = get_updates(since=since, peek=peek)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if format == "text":
+        return PlainTextResponse(data["text"])
+    return JSONResponse(data)
 
 
 @app.post("/approve")

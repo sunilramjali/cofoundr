@@ -15,7 +15,7 @@ Usage (from the repo root):
     python -m backend.ai.overdue --dry-run  # print drafts, write nothing
 """
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 from google.genai import errors, types
@@ -42,8 +42,17 @@ class Drafts(BaseModel):
     drafts: List[Draft]
 
 
+REMINDER_GAP = timedelta(days=3)  # don't chase the same customer again within 3 days of the last reminder
+
+
 def _level(reminders_sent: int) -> int:
     return min(reminders_sent, 2)
+
+
+def due_for_action(inv: dict, today: datetime) -> bool:
+    """Receivables wait REMINDER_GAP after the last reminder; supplier bills are always actionable."""
+    last = inv.get("last_reminder_at")
+    return not (inv["direction"] == "receivable" and last and today - last < REMINDER_GAP)
 
 
 def _template(inv: dict, days: int) -> Draft:
@@ -106,7 +115,7 @@ def run(dry_run: bool = False) -> List[dict]:
 
     overdue = list(invoices.find({"business_id": BUSINESS_ID, "status": "overdue", "needs_review": {"$ne": True}}).sort("due_date", 1))
     pending_targets = {a["target_id"] for a in approvals.find({"business_id": BUSINESS_ID, "status": "pending"}, {"target_id": 1})}
-    todo = [inv for inv in overdue if str(inv["_id"]) not in pending_targets]
+    todo = [inv for inv in overdue if str(inv["_id"]) not in pending_targets and due_for_action(inv, today)]
     skipped = len(overdue) - len(todo)
 
     receivables = [inv for inv in todo if inv["direction"] == "receivable"]
@@ -168,7 +177,7 @@ def run(dry_run: bool = False) -> List[dict]:
         activity.log("overdue_check", f"Overdue check: {len(overdue)} overdue, {len(new)} new action(s) drafted for approval",
                      refs=[a["ref"] for a in new])
     print(f"{len(overdue)} overdue invoice(s): {len(new)} new approval(s) "
-          f"{'drafted (dry run, not saved)' if dry_run else 'saved as pending'}, {skipped} already pending.")
+          f"{'drafted (dry run, not saved)' if dry_run else 'saved as pending'}, {skipped} already pending or reminded recently.")
     return new
 
 
