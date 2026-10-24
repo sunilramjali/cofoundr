@@ -12,6 +12,15 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, ~21:00 — Handover to a new session
+- **Open PR #31** (`sunil` → stage): hybrid search + price check + supplier loyalty + weather/events/transport storage. CI was green on the previous push; **merge it**, then pull stage
+- **Release PR #27** (stage → main) needs **Jade's approval**; after #31 merges it should be refreshed so the live app gets everything. Gmail secrets are staged on Fly and go live with that deploy
+- **Tell Jade:** schema changes (`Invoice.search_text`, `Business.preferred_suppliers`, `Task.kind` price_rise/price_match, `WEATHER`/`WeatherDay`, `Event`, `TRANSPORT`/`TransportDisruption`); new agent_log kinds (`search_fallback`, `price_checked`, `price_check_failed`, `weather_synced`, `transport_synced`, `*_sync_failed`); her poller should run `record_weather(weather.forecast_all())` + `conditions.sync_transport()` every ~3 h; review my edits in `backend/inputs/transport.py` + `fetch.py`
+- **Atlas state:** 16 invoices (4 earlier paid Eastside bills added), pending approvals still #1–#4, search indexes `invoices_text` + `invoices_semantic` READY (1 of 3 M0 slots free, for events), 7 days of weather, 1 active TfL disruption
+- **Before the demo:** `python -m backend.db.search --check` (all ✓ now); prepare a fresh **Eastside Dairy** invoice email with whole milk at **£1.95** → shows read ✓ → "price up 5.4%" → price task with loyalty context
+- **Decisions this session:** no Ticketmaster for now; transport built end to end by Sunil; Stream Processing parked (stretch, needs billing + live till sync)
+- **Next (in order):** 1) Gemini forecast adjustment using `conditions_for(dates)` (weather + transport) with visible reasons; 2) function calling (Gemini queries MongoDB/search as tools); 3) events source + events autoEmbed index ("worth trading at?"); 4) tick shipped items in `winning-criteria.md` (shared doc: both pull first)
+
 ## Sat 24 Oct, ~20:45 — Transport: TfL disruptions near the pitch (MVP2)
 - **Decision (Sunil): Sunil builds transport end to end**, including the fetcher in Jade's `inputs/` (flagged in the PR)
 - **Inputs:**
