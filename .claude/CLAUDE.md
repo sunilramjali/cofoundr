@@ -31,15 +31,23 @@ jade  ──┘
 
 | Branch | Who | Rules |
 |---|---|---|
-| `main` | Nobody directly | **Protected** (GitHub ruleset "main branch"): PR required, no force-push, no deletion. Only updated by a PR from `stage`. |
-| `stage` | Integration branch | **For now Sunil may push directly** (Jade hasn't started). Once Jade starts, switch to PRs from `sunil`/`jade` and protect it. |
-| `sunil` | Sunil's working branch | Sunil only |
-| `jade` | Ceyda's working branch (Jade = Ceyda) | Ceyda only |
+| `main` | Nobody directly | **Protected** (ruleset "main branch"): PR from `stage` only, **1 approval from the other person**, no force-push, no deletion. |
+| `stage` | Integration branch | **Protected** (ruleset "stage branch"): PR from `sunil`/`jade` only, no direct pushes, no force-push, no deletion. |
+| `sunil` | Sunil's working branch (GitHub `@sunilramjali`) | Sunil only |
+| `jade` | Ceyda's working branch (Jade = Ceyda, GitHub `@JadeAlpay`) | Jade only |
+
+**The formal flow (both of you, every change):**
+1. Start from the latest stage: `git switch <you> && git pull origin stage`
+2. Work and commit on your branch (`MVP<n>: …` messages), push: `git push origin <you>`
+3. Open a PR **`<you>` → `stage`**: `gh pr create --base stage --head <you> --title "MVP<n>: …"`
+4. Tell your partner; merge when green (stage PRs don't need an approval, so you're never blocked)
+5. Your partner pulls: `git pull origin stage`
+6. Releases: PR **`stage` → `main`**, **approved by the other person**, then merged
 
 - **Pull from `stage` often, at least every 1–2 hours** (`git pull origin stage` into your branch). Small, frequent merges rarely clash.
 - Never keep two separate copies of the project. One repo.
 - Before starting work, Claude checks the current branch. If it's `main` or `stage`, it switches to the person's own branch first.
-- The hook also **blocks Claude from pushing to `main`** (🚫🔴 BLOCKED: direct push to main).
+- The hook also **blocks Claude from pushing to `main` or `stage`** (🚫🔴 BLOCKED: direct push). Claude pushes only to the person's own branch and opens PRs.
 - Don't create `sunil/...` or `stage/...` sub-branches: git can't have both `sunil` and `sunil/x`.
 
 ### Commit messages
@@ -58,9 +66,9 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 | `backend/db/schema.py` | **Shared data contract**: collection names + document shapes | **Sunil** |
 | `data/` | Synthetic seed data | **Sunil** |
 | `backend/ai/` | Gemini, forecast, invoice extraction, prioritisation | Sunil |
-| `bridge/` | **The Fly.io web app** (FastAPI): dashboard pages (`templates/`) + Saint endpoints `/brief`, `/approve` | Sunil (→ Jade later) |
+| `bridge/` | **The Fly.io web app** (FastAPI): dashboard pages (`templates/`) + Saint endpoints `/brief`, `/approve` | Sunil |
 
-- **Sunil is solo for now** and owns everything. Ownership gets split when Jade (Ceyda) joins.
+- **Jade (Ceyda) has joined.** Sunil owns the existing folders; when you split work, update this table, `.github/CODEOWNERS` and the owners in `MVP.md` together.
 - No Streamlit. The dashboard is server-rendered HTML in the same Fly.io app, so Saint can read it too.
 | `.claude/` | Shared docs (protected by the hook) | Both |
 

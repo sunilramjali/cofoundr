@@ -43,7 +43,7 @@ Forecasting, prioritisation, events/weather, WhatsApp photo input, `/approve` vi
 | Dashboard pages on Fly.io: upload + approval queue | Sunil |
 | `/brief` on Fly.io + Saint test | Sunil |
 
-Sunil is solo for now; tasks can move to Jade (Ceyda) when she joins.
+Built by Sunil solo; Jade (Ceyda) has now joined: assign remaining MVP1 items (Saint test, upload retest) and MVP2 work between you.
 
 ---
 

@@ -1,12 +1,11 @@
 # Each folder has one owner who must review PRs touching it.
-# TODO: add (Jade) when she joins.
-# Enforced only with GitHub branch protection on main ("Require review from Code Owners").
+# Enforced with the GitHub rulesets on main/stage once "Require review from Code Owners" is switched on.
 
 /backend/db/   @sunilramjali
 /data/         @sunilramjali
 /backend/ai/   @sunilramjali
 /bridge/       @sunilramjali
 
-# Shared docs (add Jade when she joins)
-/.claude/      @sunilramjali
-/README.md     @sunilramjali
+# Shared docs: both review
+/.claude/      @sunilramjali @JadeAlpay
+/README.md     @sunilramjali @JadeAlpay
