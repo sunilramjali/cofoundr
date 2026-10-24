@@ -6,7 +6,7 @@ Any change to a shape here must be announced to your partner (and logged) before
 from typing import Literal, TypedDict
 from datetime import datetime
 
-DB_NAME = "cofoundr"
+DB_NAME = "cofoundr-db"
 
 # Collection names (single source of truth: never hard-code these elsewhere)
 BUSINESSES = "businesses"
