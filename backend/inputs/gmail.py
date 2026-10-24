@@ -5,6 +5,11 @@
 - Each email is handled once: afterwards it gets the Gmail label "CoFoundr/processed" (the inbox is the record;
   nothing here writes MongoDB). An email that failed only because Gemini was busy stays unlabelled and is retried
   15 minutes later (not every minute, so an outage doesn't burn quota or flood the activity log). Messages are fetched with BODY.PEEK, so nothing is marked as read.
+- Saint (Thea, our WhatsApp agent) can read links but can't POST, so she emails the demo inbox instead. An email
+  from SAINT_EMAIL is the owner's WhatsApp channel: a photo/PDF is ingested as source="whatsapp_photo", and a line
+  that is exactly "approve 4" / "reject 2" is decided via approvals.decide(via="whatsapp"). It counts only when
+  Gmail's own Authentication-Results show DKIM, DMARC or SPF passing for Saint's domain: a forged From: gets
+  logged and its decision ignored. The result reaches the owner through /updates, which Saint already polls.
 - Never raises: every outcome comes back as an InboxResult. A check that found new email is one line in the
   agent log (each invoice also gets the pipeline's own line); a connection or login failure is logged once, not
   every minute.
@@ -27,7 +32,9 @@ from email.utils import parseaddr
 from html.parser import HTMLParser
 from typing import Callable, List, Optional, Tuple
 
+from backend import approvals
 from backend.db import activity
+from backend.inputs.replies import parse_reply
 from backend.pipeline import ALLOWED_TYPES, IngestResult, ingest_invoice
 
 IMAP_HOST = "imap.gmail.com"
@@ -52,6 +59,7 @@ class EmailOutcome:
     sender: str
     results: List[IngestResult]  # one per document handed to the pipeline; empty = skipped
     note: str  # one line: what happened
+    decision: Optional[str] = None  # Saint emails only: what the owner's "approve N" / "reject N" did
 
 
 @dataclass
@@ -108,10 +116,80 @@ def documents(msg: EmailMessage) -> List[Tuple[bytes, str, str]]:
     return docs
 
 
+def _saint_address() -> str:
+    return os.environ.get("SAINT_EMAIL", "").strip().lower()
+
+
+def from_saint(msg: EmailMessage, sender: str) -> Optional[bool]:
+    """None if the email doesn't claim to be from Saint; True if Gmail verified it is; False if it's a forgery.
+    Only the topmost Authentication-Results counts: Gmail adds it on arrival, anything below came with the email."""
+    saint = _saint_address()
+    if not saint or sender.lower() != saint:
+        return None
+    domain = re.escape(saint.rsplit("@", 1)[1]) + r"(?=[\s;]|$)"  # exactly Saint's domain, not saint.work.evil.com
+    top = " ".join(str((msg.get_all("Authentication-Results") or [""])[0]).split())
+    if not top.lower().startswith("mx.google.com;"):
+        return False
+    return any(re.search(p, top, re.IGNORECASE) for p in (
+        rf"\bdmarc=pass\b[^;]*\bheader\.from={domain}",
+        rf"\bdkim=pass\b[^;]*\bheader\.(?:i=@|d=){domain}",
+        rf"\bspf=pass\b[^;]*\bsmtp\.mailfrom=[^\s;@]*@{domain}"))
+
+
+def commands(text: str) -> set:
+    """The decisions in an email body, one per line; quoted earlier messages don't count."""
+    found = set()
+    for line in text.splitlines():
+        if line.lstrip().startswith(">") or re.match(r"^\s*On .+wrote:\s*$", line):
+            break
+        parsed = parse_reply(line)
+        if parsed:
+            found.add(parsed)
+    return found
+
+
+def _decide(text: str) -> Optional[str]:
+    """Apply the owner's one decision from a verified Saint email. Returns what happened, or None if there was none."""
+    found = commands(text)
+    if not found:
+        return None
+    if len(found) > 1:
+        return "nothing decided: send one \"approve N\" or \"reject N\" per email"
+    decision, ref = found.pop()
+    approval = approvals.find(ref=ref)
+    if not approval:
+        return f"nothing decided: there's no #{ref}"
+    try:
+        result = approvals.decide(approval, decision, via="whatsapp")
+    except approvals.DecisionError as e:
+        return f"nothing decided: {e}"
+    return f"#{result['ref']} {result['status']}: {result['effect']}"
+
+
+def _handle_saint(msg: EmailMessage, subject: str) -> Tuple[EmailOutcome, bool]:
+    sender = _saint_address()
+    origin = f"WhatsApp via Saint: '{subject[:80]}'"
+    docs = documents(msg)
+    results = [ingest_invoice(data, mime, source="whatsapp_photo", origin=origin if len(docs) == 1 else f"{origin} ({name})")
+               for data, mime, name in docs]
+    decision = _decide(body_text(msg))
+    notes = [r.message for r in results] + ([f"Saint relayed a decision: {decision}."] if decision else [])
+    if not notes:
+        notes = ["from Saint, but no invoice photo and no \"approve N\" / \"reject N\" line"]
+    retry = any(r.error in RETRY for r in results)
+    return EmailOutcome(subject, sender, results, " ".join(notes), decision), retry
+
+
 def handle(msg: EmailMessage) -> Tuple[EmailOutcome, bool]:
-    """Send one email's invoice(s) to the pipeline. Returns (outcome, retry_later)."""
+    """Send one email's invoice(s) to the pipeline (or, from Saint, the owner's decision too). Returns (outcome, retry_later)."""
     subject = str(msg.get("Subject") or "").strip()
     sender = parseaddr(str(msg.get("From") or ""))[1] or "unknown sender"
+    saint = from_saint(msg, sender)
+    if saint:
+        return _handle_saint(msg, subject)
+    if saint is False:
+        activity.log("saint_email_rejected", f"Ignored a decision in an email claiming to be from Saint ({sender}): "
+                     "Gmail couldn't verify the sender", subject=subject[:80])
     origin = f"email from {sender}: '{subject[:80]}'"
     docs = documents(msg)
     if not docs and INVOICE_SUBJECT.search(subject):
@@ -225,8 +303,10 @@ def _check_inbox(limit: int, connect: Optional[Callable[[], imaplib.IMAP4]]) -> 
     parts = [f"{len(outcomes)} new email(s)", f"{len(added)} invoice(s) added"]
     if any(r.needs_review for r in added):
         parts[-1] += f" ({sum(r.needs_review for r in added)} need(s) your review)"
-    if sum(not o.results for o in outcomes):
-        parts.append(f"{sum(not o.results for o in outcomes)} not an invoice")
+    if sum(o.decision is not None for o in outcomes):
+        parts.append(f"{sum(o.decision is not None for o in outcomes)} decision(s) from Saint")
+    if sum(not o.results and o.decision is None for o in outcomes):
+        parts.append(f"{sum(not o.results and o.decision is None for o in outcomes)} not an invoice")
     if sum(not r.ok for r in results):
         parts.append(f"{sum(not r.ok for r in results)} couldn't be read")
     message = "Inbox checked: " + ", ".join(parts) + "."
