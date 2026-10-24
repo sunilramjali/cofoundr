@@ -1,6 +1,6 @@
 """The hand-off point between inputs (Jade) and processing (Sunil).
 
-Every input channel (dashboard upload, Gmail, WhatsApp photo via Saint, ...) calls
+Every input channel (dashboard upload, Gmail, WhatsApp photo via Twilio, ...) calls
 `ingest_invoice` with the raw document. Everything after that is processing:
 Gemini extraction + verification loop → save to MongoDB → activity log → price check (supplier bills) → overdue check.
 Input code should not call extract/save/overdue directly. It never raises: every
