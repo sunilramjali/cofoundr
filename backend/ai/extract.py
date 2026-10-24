@@ -20,7 +20,7 @@ from typing import List, Optional, Tuple
 from google.genai import errors, types
 from pydantic import BaseModel, Field
 
-from backend.ai.gemini import MODEL, get_client
+from backend.ai.gemini import MODEL, get_client, with_retry
 from backend.db import schema
 
 BUSINESS_ID = "gaia-coffee"
@@ -68,11 +68,11 @@ keep the values exactly as printed and explain the inconsistency in `notes`."""
 
 
 def _ask_gemini(data: bytes, mime_type: str, prompt: str) -> Extraction:
-    response = get_client().models.generate_content(
+    response = with_retry(lambda: get_client().models.generate_content(
         model=MODEL,
         contents=[types.Part.from_bytes(data=data, mime_type=mime_type), prompt],
         config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=Extraction),
-    )
+    ))
     if not response.text:  # e.g. blocked by safety filters
         raise ValueError("Gemini returned an empty response.")
     return Extraction.model_validate_json(response.text)

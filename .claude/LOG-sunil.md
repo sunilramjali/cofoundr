@@ -12,6 +12,13 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — Gemini retry with backoff (MVP2 error hardening)
+- **Did:** `backend/ai/gemini.with_retry(call)`: retries 429/5xx twice (2 s, 5 s + jitter, ~7 s worst case), raises anything else or the last failure to the caller. Used by extraction (`extract._ask_gemini`) and reminder drafting (`overdue.draft_reminders`). Template fallback in the overdue check is now logged as `gemini_fallback` in `agent_log` (refs listed), not just printed
+- **Tests:** 5 new (busy → success, gives up after 3, no retry on 400, extraction survives one 429, fallback logged once) → 113 pass. `conftest` makes backoff instant in tests
+- **Status:** done
+- **Next:** prioritisation (Gemini ranks tasks → `tasks`)
+- **Blockers / notes for partner:** Jade, new Gemini calls should go through `with_retry`; `gemini_fallback` is a new `agent_log` kind you may want to show on the dashboard
+
 ## Sat 24 Oct, ~16:10 — Demo data frozen for Sunday + handover to a new chat
 - **Decision (Sunil): do NOT reset the seed.** Nothing refreshes automatically; `data.seed --reset` only exists to undo rehearsal changes, and it currently also wipes till data (sales/orders/products/stock) without reloading it. Don't run it unless Sunil asks
 - **Atlas demo state to keep for Sunday:** 10 invoices (4 overdue), 4 pending Gemini-drafted approvals (#1–#4), 2,422 POS orders (Jade's data, 2 Sep → 24 Oct), 15 products, 3 stock counts, 7-day forecast saved. Days-overdue grow by 1/day (fine)
