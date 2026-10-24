@@ -141,7 +141,7 @@ def to_invoice_doc(ex: Extraction, issues: List[str], attempts: int, source: str
     amount = ex.printed_total if ex.printed_total is not None else round(sum(li["qty"] * li["unit_price"] for li in items), 2)
     # 1.0 = clean first time, 0.9 = needed a second look, lower = owner must review
     confidence = 1.0 if attempts == 1 else (0.9 if not issues else round(max(0.1, 0.6 - 0.2 * len(issues)), 2))
-    return {
+    doc = {
         "business_id": BUSINESS_ID,
         "invoice_number": ex.invoice_number or f"UNKNOWN-{now:%Y%m%d%H%M%S}",
         "direction": "receivable" if receivable else "payable",
@@ -164,6 +164,8 @@ def to_invoice_doc(ex: Extraction, issues: List[str], attempts: int, source: str
         "synthetic": True,
         "created_at": now,
     }
+    doc["search_text"] = schema.invoice_search_text(doc)
+    return doc
 
 
 def save_invoice(doc: dict) -> Tuple[dict, bool]:

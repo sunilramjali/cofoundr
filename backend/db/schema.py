@@ -31,6 +31,14 @@ def counterparty_key(name: Optional[str]) -> str:
     return re.sub(r"[^a-z0-9]", "", (name or "").lower())
 
 
+def invoice_search_text(doc: dict) -> str:
+    """One line describing an invoice, for Atlas Search and Automated Embedding (Voyage) to index.
+    "Eastside Dairy Co | supplier bill (we pay) | EDC-7781 | Whole milk, 2L; Oat milk, 1L"."""
+    kind = "customer invoice (owed to us)" if doc.get("direction") == "receivable" else "supplier bill (we pay)"
+    items = "; ".join(li.get("description", "") for li in doc.get("line_items") or [])
+    return " | ".join([doc.get("counterparty") or "", kind, doc.get("invoice_number") or "", items])
+
+
 class AgentLogEntry(TypedDict):
     business_id: str
     kind: str  # e.g. "invoice_extracted", "overdue_check", "approval_decided", "brief_served"
@@ -78,6 +86,7 @@ class Invoice(TypedDict):
     verification_issues: List[str]  # what failed; empty when clean (seeded docs omit it)
     extraction_notes: Optional[str]  # Gemini notes on unclear values
     reminders_sent: int  # escalation level for receivables
+    search_text: str  # invoice_search_text(doc): what Atlas Search + Automated Embedding index (backend/db/search.py)
     synthetic: bool
     created_at: datetime
 

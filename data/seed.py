@@ -93,6 +93,7 @@ def build_invoices(today: datetime, now: datetime) -> list:
             "synthetic": True,
             "created_at": now,
         })
+        docs[-1]["search_text"] = schema.invoice_search_text(docs[-1])
     return docs
 
 

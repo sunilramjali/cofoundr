@@ -12,6 +12,27 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, ~18:00 — Invoice search: Atlas Search + Automated Embedding (Voyage) + Hybrid (MVP2)
+- **Did:** `backend/db/search.py`:
+  - `search_invoices(db, q)`: `$rankFusion` of keyword search (typos allowed only for 5+ letter words, English stemming, invoice number boosted) and vector search by meaning (`autoEmbed`, `voyage-4`, Atlas embeds both the documents and the query). Weak meaning-only hits are dropped (score <0.70 or >0.06 behind the best), and each hit says `matched_by`
+  - `similar_invoices(db, invoice)`
+  - `price_check(db, invoice)`: like-for-like line items across suppliers, e.g. Meadowfield whole milk £1.90 vs Eastside £1.85 (+2.7%)
+  - `ensure_search_indexes(db)`: idempotent
+  - CLI: `python -m backend.db.search --setup | "q" | --similar MF-2087`
+  - Falls back to a plain word match (`mode="basic"`) when Atlas Search isn't there
+- **Atlas:** indexes `invoices_text` (search) + `invoices_semantic` (vectorSearch autoEmbed, filters business_id/direction) are live and READY; `search_text` backfilled on all 12 invoices (field added, nothing else changed). 2 of the M0 limit of 3 search indexes used; the 3rd is kept for events
+- **Contract change (`schema.py`):** `Invoice.search_text` + `invoice_search_text(doc)`, set by `extract.to_invoice_doc` and the seed
+- **Tests:** 6 new (backfill, basic fallback, hybrid relevance filter with a fake Atlas, short-word typo rule, price check, no receivable/payable mixing) → 181 pass
+- **Next:** `GET /search` for the dashboard + Saint (Jade's bridge); price check into the pipeline / prioritisation; events index
+- **Blockers / notes for partner:** Jade, `search_invoices(get_db(), q)` returns `SearchResult(hits, mode)`; each hit has the invoice fields + `score` + `matched_by` (show "matched by keyword / meaning"). Ready for a search box and a Saint `/search?q=`
+
+## Sat 24 Oct, ~17:00 — Gmail secrets staged + release PR #27
+- **Did:** `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` staged on Fly (they go live with the next deploy). Release PR #27 (stage → main) opened; needs Jade's approval
+- **Decision:** let the poller process the 2 emails already in the demo inbox (first real end-to-end Gmail test on live)
+- **To do (Sunil, before the demo):** prepare a **fresh** invoice email (new supplier + invoice number, past due date, e.g. via `data/make_samples.py`) saved as a draft, to send live in demo step 1. Old samples (EDC-7802, GAIA-1050, BLR-2231) would be treated as duplicates
+- **Atlas feature probe (throwaway `_probe` collection, dropped after):** MongoDB 8.0.34. Atlas Search ✓ (fuzzy "diary" → Dairy), Vector Search ✓, **Automated Embedding ✓** (`autoEmbed` index, models `voyage-4` / `-lite` / `-large` / `code-*`; ready in ~70 s; query by plain text), **Hybrid `$rankFusion` ✓**. Voyage reranking would need its own key (`VOYAGE_API_KEY` is empty). If the cluster is M0, keep to ≤3 search indexes
+- **Next:** check the dashboard ~2 min after the #27 deploy; then build Search + autoEmbed + Hybrid on invoices/events
+
 ## Sat 24 Oct — Gemini task prioritisation (MVP2)
 - **Did:** `backend/ai/prioritise.py`: gathers open tasks from MongoDB (pending approvals, invoices to check, next trading day's prep). Gemini ranks them with a one-line reason each. The ranking is verified: invented tasks are dropped and missing ones are added back. Falls back to a rule ranking (money × urgency) if Gemini is down. Saved to `tasks`. New `schema.Task` shape
 - **Status:** done. Merged stage into `sunil` (clean, 168 pass); PR #25 → stage

@@ -618,3 +618,91 @@ def test_nothing_to_do_means_an_empty_list_and_no_gemini_call(db, monkeypatch):
     monkeypatch.setattr(prioritise, "gemini_rank", lambda _t: (_ for _ in ()).throw(AssertionError("called")))
     db[schema.INVOICES].delete_many({})
     assert prioritise.run() == [] and db[schema.TASKS].count_documents({}) == 0
+
+
+# --- invoice search (Atlas Search + Automated Embedding + Hybrid); mongomock has no $search, so "basic" mode runs
+
+MEADOWFIELD = {"business_id": "gaia-coffee", "invoice_number": "MF-1", "direction": "payable", "counterparty": "Meadowfield Dairy",
+               "amount": 54.1, "line_items": [{"description": "Whole Milk (2L)", "qty": 10, "unit_price": 1.90},
+                                              {"description": "Oat Barista Milk (1L)", "qty": 6, "unit_price": 1.90},
+                                              {"description": "Almond Barista Milk (1L)", "qty": 4, "unit_price": 2.20}]}
+
+
+class FakeAtlas:
+    """Stands in for the Atlas invoices collection: returns canned $rankFusion results and records the pipeline."""
+    def __init__(self, docs):
+        self.docs, self.pipeline = docs, None
+
+    def __getitem__(self, _name):
+        return self
+
+    def aggregate(self, pipeline):
+        self.pipeline = pipeline
+        return list(self.docs)
+
+
+def _fused(number, keyword=None, meaning=None):
+    details = [{"inputPipelineName": "keyword", "rank": 1 if keyword else 0, **({"value": keyword} if keyword else {})},
+               {"inputPipelineName": "meaning", "rank": 1 if meaning else 0, **({"value": meaning} if meaning else {})}]
+    return {"invoice_number": number, "score": 0.03, "details": {"details": details}}
+
+
+def test_every_invoice_gets_search_text_and_old_ones_are_backfilled(db):
+    from backend.db import schema, search
+    doc = to_invoice_doc(Extraction(**BASE, printed_total=237.0), [], 1, "pdf")
+    assert doc["search_text"] == "Bow Lane Roasters | supplier bill (we pay) | BLR-1 | Espresso 1kg; Decaf 1kg"
+    db[schema.INVOICES].update_many({}, {"$unset": {"search_text": ""}})
+    assert search.ensure_search_indexes(db) == {}  # no Atlas Search on mongomock: indexes skipped, backfill still runs
+    assert db[schema.INVOICES].count_documents({"search_text": {"$exists": False}}) == 0
+    assert "Oat milk, 1L" in db[schema.INVOICES].find_one({"invoice_number": "EDC-7781"})["search_text"]
+
+
+def test_search_falls_back_to_word_match_without_atlas_search(db):
+    from backend.db import search
+    result = search.search_invoices(db, "dairy milk")
+    assert result.mode == "basic" and result.error
+    assert result.hits[0]["invoice_number"] == "EDC-7781" and result.hits[0]["matched_by"] == ["keyword"]
+    assert search.search_invoices(db, "   ").hits == []
+    assert search.search_invoices(db, "submarine").hits == []
+
+
+def test_hybrid_search_keeps_keyword_hits_and_drops_weak_meaning_only_hits():
+    from backend.db import search
+    atlas = FakeAtlas([_fused("EDC-7781", keyword=0.6, meaning=0.64),  # exact number: weak meaning, kept by keyword
+                       _fused("MF-2087", meaning=0.83),                 # strong meaning match
+                       _fused("MEB-3310", meaning=0.79),                # close behind the best: kept
+                       _fused("GAIA-1041", meaning=0.72),               # above 0.70 but far behind the best: dropped
+                       _fused("CLS-0457", meaning=0.65)])               # vector search's leftover neighbour: dropped
+    result = search.search_invoices(atlas, "milk supplier")
+    assert result.mode == "hybrid"
+    assert [h["invoice_number"] for h in result.hits] == ["EDC-7781", "MF-2087", "MEB-3310"]
+    assert result.hits[0]["matched_by"] == ["keyword", "meaning"] and result.hits[1]["matched_by"] == ["meaning"]
+    fusion = atlas.pipeline[0]["$rankFusion"]["input"]["pipelines"]
+    assert fusion["meaning"][0]["$vectorSearch"]["query"] == {"text": "milk supplier"}  # Atlas embeds the query itself
+    assert fusion["keyword"][0]["$search"]["compound"]["filter"] == [{"equals": {"path": "business_id", "value": "gaia-coffee"}}]
+
+
+def test_typo_tolerance_only_for_longer_words():
+    from backend.db.search import _keyword_clauses
+    assert not any("fuzzy" in c["text"] for c in _keyword_clauses("milk"))  # "milk" must not match "Mile End"
+    fuzzy = [c["text"] for c in _keyword_clauses("diary milk") if "fuzzy" in c["text"]]
+    assert fuzzy and fuzzy[0]["query"] == "diary"
+
+
+def test_price_check_compares_like_for_like_items_across_suppliers(db):
+    from backend.db import search
+    check = search.price_check(db, MEADOWFIELD)
+    by_item = {c["item"]: c for c in check.comparisons}
+    assert by_item["Whole Milk (2L)"]["other_price"] == 1.85 and by_item["Whole Milk (2L)"]["change_pct"] == 2.7
+    assert by_item["Whole Milk (2L)"]["counterparty"] == "Eastside Dairy Co"
+    assert by_item["Oat Barista Milk (1L)"]["change_pct"] == -9.5  # cheaper than Eastside's "Oat milk, 1L"
+    assert "Almond Barista Milk (1L)" not in by_item  # nothing comparable: no guess
+    assert [c["item"] for c in check.rises] == ["Whole Milk (2L)"]
+
+
+def test_price_check_never_compares_customer_invoices_with_supplier_bills(db):
+    from backend.db import search
+    receivable = {**MEADOWFIELD, "direction": "receivable", "counterparty": "Some Café",
+                  "line_items": [{"description": "Oat milk upgrade", "qty": 1, "unit_price": 99.0}]}
+    assert all(c["invoice_number"].startswith("GAIA-") for c in search.price_check(db, receivable).comparisons)
+    assert search.price_check(db, {**MEADOWFIELD, "line_items": []}).comparisons == []
