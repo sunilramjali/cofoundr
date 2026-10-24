@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct — Jade joined: formal PR flow (MVP1)
+- **Did:** docs updated for 2 people (CLAUDE.md branch table + 6-step PR flow, plan team line, MVP owners); CODEOWNERS adds @JadeAlpay on shared docs; hook now blocks Claude pushing to `main` **and** `stage`; GitHub: `stage` ruleset (PR required), `main` needs 1 approval
+- **Status:** done
+- **Next:** Jade accepts the GitHub invite, syncs `jade` with `stage`, sets up `.claude/settings.local.json`; PR `stage` → `main` for MVP1
+- **Blockers / notes for partner:** Jade, your `jade` branch is behind; run `git switch jade && git pull origin stage` first
+
 ## Sat 24 Oct — Fly.io web app live (MVP1)
 - **Did:** `bridge/main.py` + `templates/index.html` (dashboard: approval queue with Approve/Edit/Reject, upload, invoices, brief, activity), `backend/approvals.py` (single decision path for dashboard + Saint), `backend/brief.py`, `backend/db/activity.py` (agent_log), approval `ref` numbers; `Dockerfile`, `fly.toml`, `.dockerignore`
 - **Live:** https://cofoundr.fly.dev (lhr, health passing). Secrets set via `fly secrets`; access log off (token in URLs); BRIEF_TOKEN rotated before deploy

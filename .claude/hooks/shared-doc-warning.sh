@@ -30,11 +30,11 @@ if [ "$tool" = "Bash" ]; then
   pushes=$(grep -oE 'git( -C [^ ]+)? push[^;&|"'\''$]*' <<<"$cmd")
   if [ -n "$pushes" ]; then
     branch=$(git -C "${CLAUDE_PROJECT_DIR:-.}" branch --show-current 2>/dev/null)
-    if grep -Eq '[ :+]main( |$)' <<<"$pushes" || { [ "$branch" = "main" ] && ! grep -Eq 'push( -[^ ]+)* [^ -][^ ]* [^ ]+' <<<"$pushes"; }; then
+    if grep -Eq '[ :+](main|stage)( |$)' <<<"$pushes" || { [[ "$branch" =~ ^(main|stage)$ ]] && ! grep -Eq 'push( -[^ ]+)* [^ -][^ ]* [^ ]+' <<<"$pushes"; }; then
       emit deny "$LINE
-🚫🔴 BLOCKED: direct push to main
-main only changes through a pull request from stage.
-Flow: sunil / jade → stage → PR → main
+🚫🔴 BLOCKED: direct push to main/stage
+Push to your own branch, then open a PR.
+Flow: sunil / jade → PR → stage → PR (approved) → main
 $LINE"
     fi
   fi

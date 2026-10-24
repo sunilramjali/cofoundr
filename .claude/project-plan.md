@@ -2,7 +2,7 @@
 
 **Event:** Encode London Hackathon 2026 (23–25 Oct), Encode Hub, Shoreditch
 **Submission deadline:** Sunday 25 Oct, 12:00
-**Team:** Sunil (solo for now; Jade (Ceyda) joins later)
+**Team:** Sunil (@sunilramjali) + Jade / Ceyda (@JadeAlpay)
 **Targets:** Main prize + MongoDB, Gemini and Saint sponsor bounties
 
 ---
@@ -115,9 +115,9 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 
 ## 7. Timeline
 
-> Sunil is solo for now and takes both columns. Jade (Ceyda) picks up the app/Saint column when she joins.
+> Sunil built MVP1 solo up to Sat ~13:30. Jade (Ceyda) has now joined; split the remaining columns between you.
 
-| When | Backend, data, Gemini (Sunil) | Web app, Saint (Sunil for now → Jade) |
+| When | Backend, data, Gemini (Sunil) | Web app, Saint (to split with Jade) |
 |---|---|---|
 | Sat 10:30–13:00 | Atlas schema; synthetic POS + invoices | FastAPI skeleton on Fly.io with `/brief`; test Saint can read it |
 | 13:00–17:00 | Gemini invoice extraction; forecast baseline + Gemini adjustment | Dashboard pages on Fly.io (priorities, invoices, forecast); approval queue → MongoDB |

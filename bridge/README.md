@@ -1,5 +1,5 @@
 # bridge: the CoFoundr web app (FastAPI on Fly.io)
-**Owner: Sunil** (→ Jade later)
+**Owner: Sunil**
 
 One app serving:
 - **Dashboard pages** for the owner (server-rendered HTML in `templates/`): upload, invoices, approval queue
