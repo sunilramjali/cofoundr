@@ -59,6 +59,7 @@ def statuses(line_ids: List[str], start: date, end: date, timeout: float = fetch
     """Every status other than good service on these lines between start and end (London dates, inclusive)."""
     if not line_ids:
         return []
+    end = max(end, start + timedelta(days=1))  # TfL answers 400 unless EndDate > StartDate; extra day is filtered later
     data = fetch.get_json(f"{TFL}/Line/{','.join(sorted(set(line_ids)))}/Status/{start.isoformat()}/to/{end.isoformat()}",
                           _params(), source="TfL", timeout=timeout, expect=list)
     fetched_at = datetime.now(timezone.utc).isoformat()

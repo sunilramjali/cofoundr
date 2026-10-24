@@ -50,3 +50,10 @@ The demo inbox (`GMAIL_ADDRESS` + a 16-letter `GMAIL_APP_PASSWORD`) is checked o
 - `check_inbox()` never raises → `InboxResult(ok, message, emails, error)`; one `gmail_checked` log line per check with new email; login/connection failures logged once, not every minute.
 - **Saint channel:** Thea (our Saint agent) reads links but can't POST, so she emails the inbox. An email from `SAINT_EMAIL` that Gmail verified (top `Authentication-Results` from `mx.google.com`, DKIM/DMARC/SPF pass for her exact domain): a photo/PDF → `ingest_invoice(source="whatsapp_photo")`; a body line that is exactly "approve 4" / "reject 2" → `approvals.decide(via="whatsapp")` (one per email; quoted replies ignored). A forged From: is logged as `saint_email_rejected` and decides nothing. The owner hears the result via `/updates`, which Thea polls. Reply parsing lives in `replies.py` (shared with `/approve` and the chat bar).
 - Try it: `python -m backend.inputs.gmail` (real inbox + real Gemini + Atlas: it labels emails and saves invoices).
+
+## Card payments: EVO CSV, Square, SumUp (`evo.py`, `square.py`, `sumup.py`; built by Sunil, flagged for Jade)
+Read-only. Card data is never stored: see `docs/privacy.md`. Real data is refused in the demo database.
+- **EVO** has no merchant API: the owner exports *Transactions* as CSV and uploads it on the **Sales** page (`POST /import/evo`) or runs `python -m backend.inputs.evo <path> [--dry-run]`. Only allow-listed columns are read → `backend.payments.record_payments`. Demo sample: `data/samples/evo_transactions_synthetic.csv` (`python -m data.make_evo_sample`).
+- **Square** (`SQUARE_ACCESS_TOKEN`, `SQUARE_ENV`, scope `ORDERS_READ`): completed orders **with items** → POS format → `sales.record_orders`. `python -m backend.inputs.square --days 7 --dry-run`
+- **SumUp** (`SUMUP_ACCESS_TOKEN`, `SUMUP_ENV`, scope `transactions.history`): payments → `record_payments`. `python -m backend.inputs.sumup --days 7 --dry-run`
+- Sandbox = synthetic, production = real (needs a non-demo `MONGODB_DB` + `PAYMENT_ID_SALT`). Not on the poller yet.

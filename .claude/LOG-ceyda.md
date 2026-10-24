@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, 22:30 — WhatsApp through Twilio (MVP1 auto-updates + MVP2 photos)
+- **Did:** Twilio WhatsApp sandbox as the owner's channel (Saint can't POST). In: `POST /whatsapp/twilio` (Twilio signature checked, owner's number only; photo → `ingest_invoice(source="whatsapp_photo")`, "approve 4" → `approvals.decide(via="whatsapp")`, anything else → read-only Gemini assistant `outputs/assistant.py`). Out: `outputs/whatsapp.py` pushes `/updates` every `WHATSAPP_PUSH_SECONDS` (30 in `fly.toml`), cursor only moves past what was really sent. Dashboard chat bar now `/ask` (same assistant). Keys checked against the real Twilio account (active trial); `TWILIO_WHATSAPP_FROM` must be the sandbox `+14155238886`. 24 h-window error now explained in `agent_log`. 343 tests pass
+- **Status:** done, PR into `stage`; not live yet
+- **Next:** owner's phone joins the sandbox; set the sandbox webhook to `https://cofoundr.fly.dev/whatsapp/twilio`; Fly secrets `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, `OWNER_WHATSAPP`; release to `main`
+- **Blockers / notes for partner:** Sunil, merged `stage` in: conflicts in `bridge/main.py` imports + `tests/conftest.py` (kept your `evo` + `forecast` alongside my `assistant`). Edits in your area: `fly.toml` (`WHATSAPP_PUSH_SECONDS`), `backend/outputs/updates.py` `advance()` is mine. Release needs your approval
+
 ## Sat 24 Oct, 21:00 — Saint (Thea) wired in by email: decisions + WhatsApp photos (MVP1/2)
 - **Did:** Thea answered: she reads URLs ✅, runs schedules + messages unprompted ✅, email ✅, **no HTTP POST** ❌. So: she reads `/brief` and polls `/updates` (both GET, already built); owner decisions and invoice photos come to us **by email** to the demo inbox. `backend/inputs/gmail.py`: emails from `SAINT_EMAIL` → photo/PDF = `ingest_invoice(source="whatsapp_photo")`; a body line that is exactly "approve 4"/"reject 2" = `approvals.decide(via="whatsapp")` (one per email, quoted replies ignored). Counts only if Gmail's top `Authentication-Results` (mx.google.com) shows DKIM/DMARC/SPF pass for exactly `saint.work`; forgeries logged as `saint_email_rejected`, decide nothing. `parse_reply` moved to `backend/inputs/replies.py` (bridge imports it). `SAINT_EMAIL` added to `.env.example`. 12 new tests (forged/lookalike/buried headers, ambiguous, already decided, photo) → 257 pass
 - **Status:** done, PR into `stage`; not live yet
