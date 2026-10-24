@@ -10,6 +10,7 @@ import html
 import os
 import re
 import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
@@ -20,13 +21,26 @@ from fastapi.templating import Jinja2Templates
 
 from backend import approvals
 from backend.ai import overdue
+from backend.inputs import gmail
 from backend.outputs.brief import build_brief
 from backend.outputs.updates import get_updates
 from backend.pipeline import ingest_invoice
 from backend.db import activity, schema
 from backend.db.client import get_db
 
-app = FastAPI(title="CoFoundr")
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    """GMAIL_POLL_SECONDS set (fly.toml) → check the demo inbox in the background; unset (local, tests) → only on click."""
+    every = int(os.environ.get("GMAIL_POLL_SECONDS") or 0)
+    stop = gmail.start_polling(every) if every > 0 else None
+    yield
+    if stop:
+        stop.set()
+
+
+app = FastAPI(title="CoFoundr", lifespan=lifespan)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["money"] = lambda v: f"£{v:,.2f}" if v is not None else "–"
 templates.env.filters["day"] = lambda d: d.strftime("%d %b") if d else "–"
@@ -98,6 +112,11 @@ def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Op
     except approvals.DecisionError as e:
         return _back(str(e))
     return _back(f"#{result['ref']} {result['status']}: {result['effect']}.")
+
+
+@app.post("/check-inbox")
+def check_inbox():
+    return _back(gmail.check_inbox().message)
 
 
 @app.post("/run-check")

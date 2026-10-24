@@ -42,7 +42,10 @@
 <body>
 <header>
   <div><h1>☕ CoFoundr · GAIA Coffee</h1><small>Your AI co-founder. Synthetic demo data.</small></div>
-  <form class="inline" method="post" action="/run-check"><button class="edit">Run overdue check</button></form>
+  <div>
+    <form class="inline" method="post" action="/check-inbox"><button class="edit">Check inbox now</button></form>
+    <form class="inline" method="post" action="/run-check"><button class="edit">Run overdue check</button></form>
+  </div>
 </header>
 <main>
   {% if msg %}<div class="msg">{{ msg }}</div>{% endif %}

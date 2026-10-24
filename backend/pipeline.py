@@ -18,7 +18,8 @@ from backend.db import activity
 Source = Literal["whatsapp_photo", "pdf", "email", "manual"]
 
 MAX_BYTES = 10 * 1024 * 1024
-ALLOWED_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"}
+ALLOWED_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif",
+                 "text/plain"}  # text: invoices written in an email body (Gmail intake)
 RETRYABLE = {429, 500, 502, 503, 504}  # Gemini busy/over quota → "try again"; other codes → can't read this file
 
 

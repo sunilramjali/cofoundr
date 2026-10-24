@@ -199,8 +199,10 @@ def test_find_never_raises_on_bad_input(db):
 # --- pipeline (the inputs → middle seam)
 def test_pipeline_rejects_unsupported_files_without_saving(db, gemini_down):
     before = db[schema.INVOICES].count_documents({})
-    assert ingest_invoice(b"hello", "text/plain", "email").error == "unsupported_type"
+    assert ingest_invoice(b"PK", "application/zip", "email").error == "unsupported_type"
     assert ingest_invoice(b"x", "", "email").error == "unsupported_type"
+    # text is allowed: invoices written in an email body (Gmail intake)
+    assert ingest_invoice(b"Invoice 7802", "text/plain", "email").error == "gemini_unavailable"
     # MIME parameters and case are fine: it gets past the type check (then Gemini is down)
     assert ingest_invoice(b"%PDF", "Application/PDF; charset=binary", "email").error == "gemini_unavailable"
     assert db[schema.INVOICES].count_documents({}) == before
