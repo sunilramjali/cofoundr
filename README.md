@@ -32,6 +32,41 @@ A big company would hire an ops manager, a bookkeeper and an analyst. A one-truc
 
 **Stack:** MongoDB Atlas (single source of truth + search) · Gemini 4 Argon (multimodal extraction + reasoning) · Saint (WhatsApp AI employee) · Treg (tool gateway) · FastAPI web app on Fly.io (dashboard + Saint bridge)
 
+## Architecture
+
+Invoices and requests come in from **Gmail, the dashboard, WhatsApp (via Saint) and external APIs**. The CoFoundr app on **Fly.io** uses **Gemini** to think and **MongoDB Atlas** to remember. Results go out to the **dashboard** and to **WhatsApp via Saint**, and nothing involving money happens without the owner's approval.
+
+```
+        INPUTS                     PROCESS (on Fly.io)                  OUTPUTS
+┌──────────────────────┐                                       ┌───────────────────────┐
+│ Gmail (autonomous)   │──┐                                ┌──►│ Dashboard (Fly.io)     │
+│  invoices by email   │  │    ┌────────────────────────┐  │   │  approval queue, log   │
+├──────────────────────┤  │    │  CoFoundr app          │  │   ├───────────────────────┤
+│ Dashboard upload     │──┼───►│  • reads + checks      │──┤   │ WhatsApp via Saint     │
+│  (fallback)          │  │    │  • finds overdue       │  ├──►│  • automatic updates   │
+├──────────────────────┤  │    │  • drafts actions      │  │   │  • brief on request    │
+│ WhatsApp via Saint   │──┤    │  • applies approvals   │  │   │  • "✅ approved" replies│
+│  "brief", "approve 1"│  │    └───┬──────────────┬─────┘  │   └───────────────────────┘
+│  photos (MVP2)       │  │        ▼              ▼        │
+├──────────────────────┤  │   ┌─────────┐   ┌──────────┐   │   Nothing involving money
+│ APIs (MVP2)          │──┘   │ Gemini  │   │ MongoDB  │   │   leaves without the
+│  weather, events,    │      │ thinks  │   │ remembers│   │   owner's approval.
+│  Treg tools          │      └─────────┘   └──────────┘   │
+└──────────────────────┘                                   │
+```
+
+| Piece | Role | Status |
+|---|---|---|
+| **Gmail** | Invoices arrive by email and are picked up automatically | MVP1, in progress |
+| **Dashboard upload** | Manual fallback for adding an invoice | ✓ Built |
+| **WhatsApp via Saint (in)** | Owner asks for the brief, replies "approve 1" | ✓ Endpoints built (`/brief`, `/approve`) |
+| **WhatsApp via Saint (out)** | Owner is messaged automatically when something needs them (`/updates`) | MVP1, in progress |
+| **WhatsApp photos** | Owner sends invoice photos to Saint | MVP2 |
+| **APIs** | Weather (Open-Meteo), events, Treg tools for the forecast and partnerships | MVP2 |
+| **Gemini 4 Argon** | Reads and double-checks invoices, drafts reminders | ✓ Built |
+| **MongoDB Atlas** | Business, invoices, approvals, agent activity log | ✓ Built |
+| **Fly.io** | Hosts the app: dashboard + Saint endpoints at https://cofoundr.fly.dev | ✓ Live |
+
 ## How it's different
 
 | | Accounting tools | General AI chatbots | Hiring help | **CoFoundr** |
