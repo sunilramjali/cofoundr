@@ -1,9 +1,9 @@
-"""CoFoundr web app (FastAPI on Fly.io): owner dashboard + Saint endpoints.
+"""CoFoundr web app (FastAPI on Fly.io): owner dashboard, WhatsApp (Twilio webhook) and the token-protected read-only feeds.
 
 Run locally (from the repo root):
     uvicorn bridge.main:app --reload --port 8000
 
-Pages are plain server-rendered HTML (no JS), so Saint can read them too.
+Pages are plain server-rendered HTML (no JS needed).
 Endpoints are sync `def` so blocking PyMongo / Gemini calls run in FastAPI's thread pool.
 """
 import html
@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote, urlsplit
 
-from fastapi import BackgroundTasks, Body, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -59,7 +59,7 @@ app = FastAPI(title="CoFoundr", lifespan=lifespan)
 @app.middleware("http")
 async def same_site_posts_only(request: Request, call_next):
     """Block cross-site form posts (CSRF): another website must never be able to approve, pay or upload for the owner.
-    Browsers send Origin (or at least Referer) on cross-site POSTs; Saint's server-to-server calls send neither."""
+    Browsers send Origin (or at least Referer) on cross-site POSTs; Twilio's server-to-server webhook calls send neither."""
     if request.method == "POST":
         source = request.headers.get("origin") or request.headers.get("referer")
         host = request.headers.get("host", "")
@@ -301,14 +301,14 @@ def run_check(back: str = Form("/approvals")):
     return _back(f"Overdue check done: {len(drafted)} new action(s) drafted." if drafted else "Overdue check done: nothing new.", back)
 
 
-# ---------- Saint endpoints ----------
+# ---------- token-protected feeds (read-only) ----------
 
 @app.get("/brief")
 def brief(request: Request, token: Optional[str] = Query(None), format: str = "text",
           x_token: Optional[str] = Header(None)):
     _check_token(token or x_token)
     data = build_brief(_public_url(request))
-    activity.log("brief_served", f"Brief served ({format}): {len(data['pending_approvals'])} pending approval(s)", actor="saint")
+    activity.log("brief_served", f"Brief served ({format}): {len(data['pending_approvals'])} pending approval(s)", actor="agent")
     if format == "json":
         return JSONResponse(data)
     if format == "html":  # text includes names read from invoices (untrusted): escape it
@@ -319,7 +319,7 @@ def brief(request: Request, token: Optional[str] = Query(None), format: str = "t
 @app.get("/updates")
 def updates(token: Optional[str] = Query(None), x_token: Optional[str] = Header(None),
             since: Optional[str] = None, format: str = "json", peek: bool = False):
-    """What the owner should hear about, unprompted. Saint polls this and sends each message on WhatsApp.
+    """What the owner should hear about, unprompted. The WhatsApp pusher sends each message (backend/outputs/whatsapp.py).
     No `since` → the server remembers what was delivered (advances unless peek=true).
     format=text → just the messages, or an empty body when there's nothing to send."""
     _check_token(token or x_token)
@@ -359,31 +359,6 @@ async def twilio_webhook(request: Request, background: BackgroundTasks):
         raise HTTPException(403, "Bad signature.")
     background.add_task(_reply_on_whatsapp, dict(params))
     return Response("<Response/>", media_type="text/xml")  # empty TwiML: the reply is sent separately
-
-
-@app.post("/approve")
-def approve(payload: dict = Body(...), token: Optional[str] = Query(None), x_token: Optional[str] = Header(None)):
-    """Saint relays an owner's WhatsApp reply.
-    Accepts {"ref": 1, "decision": "approve"} or {"text": "approve 1"} (also "reject 2", "yes 1")."""
-    _check_token(token or x_token)
-    ref, decision = payload.get("ref"), payload.get("decision")
-    if "text" in payload:
-        parsed = parse_reply(str(payload["text"]))
-        if not parsed:
-            raise HTTPException(400, 'Couldn\'t understand. Reply with just "approve 1" or "reject 1".')
-        decision, ref = parsed
-    if decision not in ("approve", "reject") or isinstance(ref, bool) or not str(ref).isdigit():
-        raise HTTPException(400, 'Send {"ref": 1, "decision": "approve" | "reject"} or {"text": "approve 1"}.')
-    approval = approvals.find(ref=int(ref))
-    if not approval:
-        raise HTTPException(404, f"No action #{ref}.")
-    try:
-        result = approvals.decide(approval, decision, via="whatsapp")
-    except approvals.DecisionError as e:
-        raise HTTPException(409, str(e))
-    emoji = "✅" if result["status"] == "approved" else "❌"
-    return {"ok": True, "ref": result["ref"], "status": result["status"], "effect": result["effect"],
-            "reply": f"{emoji} #{result['ref']} {result['status']}: {result['title']} ({result['effect']})"}
 
 
 @app.get("/health")

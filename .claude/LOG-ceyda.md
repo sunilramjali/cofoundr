@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, 23:15 — Saint code removed
+- **Did:** removed the Saint email channel from `backend/inputs/gmail.py` (`SAINT_EMAIL`, sender verification, email decisions) + its tests; removed `POST /approve` (only Saint called it; WhatsApp decisions now come through the signed Twilio webhook). Its edge cases (unknown #, negation, already decided) re-tested on the WhatsApp path; new test: an "approve 4" email never decides. `SAINT_API_KEY`/`SAINT_EMAIL` gone from `.env.example`. Saint wording replaced in READMEs, `docs/architecture.html`, comments. `/brief` and `/updates` kept (read-only, token). 386 tests pass
+- **Status:** done, PR into `stage`
+- **Next:** Twilio go-live (sandbox join, webhook, Fly secrets, release)
+- **Blockers / notes for partner:** Sunil, **edits in your area**: `backend/approvals.py`: WhatsApp decisions now log `actor="owner"` (was `"saint"`) with `via` in the detail; `backend/db/schema.py`: `AgentLogEntry.actor` is `"agent" | "owner"`; `updates.py` skips WhatsApp decisions by `detail.via`. `/updates` default consumer is now `"api"`. Comments only in `search.py`, `pipeline.py`, `fly.toml`, `docs/architecture.html`. Fly secret `SAINT_EMAIL` is unused (not removed yet)
+
 ## Sat 24 Oct, 22:45 — Saint dropped from the plan: WhatsApp = Twilio + Gemini
 - **Did:** `project-plan.md` (stack, architecture, endpoints, Twilio setup, demo flow, open questions) and `MVP.md` (MVP1 WhatsApp items, demo, owners; MVP2 photos + morning brief) rewritten without Saint
 - **Status:** done, PR into `stage`

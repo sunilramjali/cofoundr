@@ -69,7 +69,6 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 | `POST /whatsapp/twilio` | Twilio delivers a WhatsApp message | Checks the signature + sender → answers Twilio at once, handles the message in the background, sends the reply |
 | `POST /ask` | Owner types in the dashboard chat bar | Same rules as WhatsApp: exact decisions, otherwise the Gemini assistant |
 | `GET /brief?token=…&format=html\|json` | Owner asks for the brief | Reads tasks, invoices, forecasts, approvals → returns a WhatsApp-ready message |
-| `POST /approve` `{ref, decision}` | Token-protected API for decisions | Checks the action exists and is `pending` → updates `approvals` (decision, `decided_via`, timestamp) |
 | `GET /updates?token=…[&since=…][&format=text][&peek=true]` | The WhatsApp pusher (and any other consumer) | WhatsApp-ready messages for anything new: new invoices (or "needs your check"), new drafts with "reply approve N", dashboard decisions. Each consumer has its own cursor |
 | `GET /health` | Fly.io health check | Returns `ok` |
 

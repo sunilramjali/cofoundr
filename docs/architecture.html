@@ -74,7 +74,7 @@
   .owner { grid-column: 1; grid-row: 1; }
   .app { grid-column: 2; grid-row: 1 / span 2; }
   .phone { grid-column: 1; grid-row: 2; }
-  .saint { grid-column: 1; grid-row: 3; }
+  .twilio { grid-column: 1; grid-row: 3; }
   .gemini { grid-column: 3; grid-row: 1; }
   .mongo { grid-column: 3; grid-row: 2 / span 2; }
   .wire { grid-column: 2; grid-row: 3; }
@@ -149,11 +149,11 @@
   <section class="wide" aria-labelledby="sys">
     <p class="eyebrow">The system</p>
     <h2 id="sys">Four pieces, one web app in the middle</h2>
-    <div class="diagram" role="img" aria-label="Owner uses the dashboard in a browser or WhatsApp via Saint; both reach the CoFoundr web app on Fly.io, which talks to Gemini 4 Argon and MongoDB Atlas.">
+    <div class="diagram" role="img" aria-label="Owner uses the dashboard in a browser or WhatsApp via Twilio; both reach the CoFoundr web app on Fly.io, which talks to Gemini 4 Argon and MongoDB Atlas.">
       <div class="sys">
         <div class="node owner"><span class="role">Owner · browser</span><h3>Dashboard</h3><p style="font-size:.88rem">Approves, edits or rejects; uploads invoices.</p></div>
-        <div class="node phone"><span class="role">Owner · phone</span><h3>WhatsApp</h3><p style="font-size:.88rem">"brief" · "approve 1"</p></div>
-        <div class="node saint next"><span class="role">Voice · next to test</span><h3>Saint</h3><p style="font-size:.88rem">Calls <code>/brief</code> and <code>/approve</code> for the owner.</p><span class="tag amber">not connected yet</span></div>
+        <div class="node phone"><span class="role">Owner · phone</span><h3>WhatsApp</h3><p style="font-size:.88rem">photos · questions · "approve 1"</p></div>
+        <div class="node twilio next"><span class="role">Messenger</span><h3>Twilio</h3><p style="font-size:.88rem">Delivers WhatsApp messages to <code>/whatsapp/twilio</code> (signed) and sends replies and updates back.</p><span class="tag amber">sandbox · going live</span></div>
 
         <div class="node core app">
           <span class="role">Front door · FastAPI on Fly.io (London)</span>
@@ -161,11 +161,11 @@
           <p style="font-size:.88rem">One app, two doors. Both use the same approval code, so the rules are identical.</p>
           <div class="split">
             <div><b>Dashboard pages</b>approval queue · upload · invoices · brief · agent activity</div>
-            <div><b>Saint endpoints</b><span class="mono">/brief</span> · <span class="mono">/approve</span> (token) · <span class="mono">/health</span></div>
+            <div><b>WhatsApp + feeds</b><span class="mono">/whatsapp/twilio</span> (signed) · <span class="mono">/brief</span> · <span class="mono">/updates</span> (token) · <span class="mono">/health</span></div>
           </div>
           <span class="tag">live · cofoundr.fly.dev</span>
         </div>
-        <div class="wire"><div class="arrow">browser → app ← Saint<br>app ↔ Gemini · app ↔ MongoDB</div></div>
+        <div class="wire"><div class="arrow">browser → app ← Twilio<br>app ↔ Gemini · app ↔ MongoDB</div></div>
 
         <div class="node gemini"><span class="role">Brain</span><h3>Gemini 4 Argon</h3><ul><li>reads invoice photos/PDFs</li><li>checks its own work</li><li>drafts reminders</li></ul></div>
         <div class="node mongo"><span class="role">Memory · MongoDB Atlas</span><h3><span class="mono">cofoundr-db</span></h3><ul><li><span class="mono">businesses</span>: GAIA Coffee</li><li><span class="mono">invoices</span>: 10 seeded</li><li><span class="mono">approvals</span>: waiting for a yes/no</li><li><span class="mono">agent_log</span>: everything it did</li></ul></div>
@@ -179,8 +179,8 @@
     <div class="pieces">
       <div class="piece"><span class="role">Memory</span><h3>MongoDB Atlas</h3><p>One database, <code>cofoundr-db</code>. It holds the business, invoices (money owed <em>to</em> GAIA by customers, and money GAIA owes suppliers), the actions waiting for approval, and a log of everything the agent has done.</p></div>
       <div class="piece"><span class="role">Brain</span><h3>Gemini 4 Argon</h3><p>Reads an invoice photo into who, how much, when due and line items, then checks its own work: do the lines add up, are the dates valid? If not, it looks again. If the invoice itself is wrong, it flags it for the owner instead of guessing. It also drafts reminders that get firmer each time.</p></div>
-      <div class="piece"><span class="role">Front door</span><h3>Web app on Fly.io</h3><p>The owner's dashboard and the endpoints Saint uses, in one app at <a href="https://cofoundr.fly.dev" target="_blank" rel="noopener">cofoundr.fly.dev</a>. It's the only thing that talks to Gemini and MongoDB.</p></div>
-      <div class="piece"><span class="role">Voice</span><h3>Saint on WhatsApp</h3><p>The owner's assistant. It asks our app for the brief and passes "approve 1" or "reject 2" back. The endpoints are ready; connecting Saint is the next test.</p></div>
+      <div class="piece"><span class="role">Front door</span><h3>Web app on Fly.io</h3><p>The owner's dashboard and the WhatsApp webhook, in one app at <a href="https://cofoundr.fly.dev" target="_blank" rel="noopener">cofoundr.fly.dev</a>. It's the only thing that talks to Gemini and MongoDB.</p></div>
+      <div class="piece"><span class="role">Voice</span><h3>WhatsApp via Twilio</h3><p>The owner's channel. Twilio delivers photos, questions and "approve 1" / "reject 2" to our app; Gemini answers questions from the data (read-only), and the app messages the owner on its own when something needs them.</p></div>
     </div>
   </section>
 
@@ -211,7 +211,7 @@
       <li><span class="ok">✓</span> Overdue check + drafts</li>
       <li><span class="ok">✓</span> Approval queue</li>
       <li><span class="ok">✓</span> Live on Fly.io</li>
-      <li><span class="todo">○</span> Saint test: WhatsApp → <code>/brief</code>, <code>/approve</code></li>
+      <li><span class="todo">○</span> WhatsApp via Twilio: built, going live</li>
       <li><span class="todo">○</span> Upload retest (Gemini spend cap keeps returning 429)</li>
     </ul>
     <p class="muted" style="font-size:.9rem">Biggest risk: Gemini's billing account keeps hitting its monthly spend cap. Ask the Google DeepMind booth to raise it before the demo.</p>
@@ -225,7 +225,7 @@
         <tr><th>Path</th><th>What's in it</th></tr>
         <tr><td>backend/db/</td><td>MongoDB connection, <code>schema.py</code> (the data contract: read it before changing any data shape), activity log</td></tr>
         <tr><td>backend/ai/</td><td><code>extract.py</code> reads invoices · <code>overdue.py</code> finds overdue and drafts · <code>gemini.py</code> shared client</td></tr>
-        <tr><td>backend/approvals.py</td><td>The only place a decision is applied (dashboard and Saint both use it)</td></tr>
+        <tr><td>backend/approvals.py</td><td>The only place a decision is applied (dashboard, chat bar and WhatsApp all use it)</td></tr>
         <tr><td>backend/brief.py</td><td>The WhatsApp-ready brief</td></tr>
         <tr><td>bridge/</td><td>The web app: <code>main.py</code> routes, <code>templates/index.html</code> dashboard</td></tr>
         <tr><td>data/</td><td><code>seed.py</code> demo data · <code>samples/</code> 3 synthetic invoice images</td></tr>
@@ -270,7 +270,7 @@ cp .env.example .env     # your own Atlas user + keys; ask Sunil</pre>
     <ol class="steps" start="3" style="counter-reset: s 2">
       <li><p><b>Set up Claude Code:</b> create <code>.claude/settings.local.json</code> from the snippet in <code>CLAUDE.md</code> (with <code>COFOUNDR_USER: "ceyda"</code>), then restart Claude Code.</p></li>
       <li><p><b>Review and approve <a href="https://github.com/sunilramjali/cofoundr/pull/3" target="_blank" rel="noopener">PR #3</a></b>, the MVP1 release to <code>main</code>.</p></li>
-      <li><p><b>Agree the split with Sunil:</b> who takes the Saint test, who starts MVP2 (WhatsApp photos, forecast, priorities, Atlas Search).</p></li>
+      <li><p><b>Agree the split with Sunil:</b> who takes WhatsApp, who starts MVP2 (WhatsApp photos, forecast, priorities, Atlas Search).</p></li>
     </ol>
   </section>
 

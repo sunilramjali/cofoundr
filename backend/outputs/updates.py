@@ -1,10 +1,10 @@
 """WhatsApp automatic updates: what the owner should hear about, unprompted (MVP1).
 
-Built on the agent activity log. Saint polls `GET /updates` and sends each message
-to the owner on WhatsApp. Two ways to track what's already been delivered:
-- stateless: Saint passes `since=<cursor>` from the previous response's `next_since`
+Built on the agent activity log. backend/outputs/whatsapp.py sends each message to the owner
+on WhatsApp (Twilio); `GET /updates` serves the same feed. Two ways to track what's already been delivered:
+- stateless: the caller passes `since=<cursor>` from the previous response's `next_since`
 - server-side (default): no `since` → CoFoundr remembers the cursor per consumer and
-  advances it on each call, so Saint only needs to call the URL on a schedule.
+  advances it on each call, so the caller only needs to call it on a schedule.
 """
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -48,7 +48,7 @@ def messages_for(event: dict, db) -> List[dict]:
         refs = detail.get("refs") or []
         pending = db[schema.APPROVALS].find({"business_id": BUSINESS_ID, "ref": {"$in": refs}, "status": "pending"}).sort("ref", 1)
         return [{"kind": "approval_needed", "ref": a["ref"], "needs_reply": True, "message": approval_message(a)} for a in pending]
-    if kind == "approval_decided" and event.get("actor") != "saint":
+    if kind == "approval_decided" and detail.get("via") != "whatsapp":
         # Decisions made on the dashboard; the owner already got a reply for WhatsApp ones.
         emoji = "❌" if detail.get("decision") == "reject" else "✅"
         return [{"kind": kind, "needs_reply": False, "message": f"{emoji} {event['summary']}"}]
@@ -71,7 +71,7 @@ def advance(consumer: str, last_event_id: str) -> None:
                                         upsert=True)
 
 
-def get_updates(since: Optional[str] = None, consumer: str = "saint", peek: bool = False) -> dict:
+def get_updates(since: Optional[str] = None, consumer: str = "api", peek: bool = False) -> dict:
     db = get_db()
     cursors = db[schema.CURSORS]
     stored = None

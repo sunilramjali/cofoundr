@@ -1,6 +1,6 @@
 """Owner decisions on pending approvals. The only place money actions get applied.
 
-Used by both the dashboard and Saint (POST /approve), so the rules are identical:
+Used by the dashboard, the chat bar and WhatsApp (Twilio), so the rules are identical:
 an action must be `pending`, and only an owner decision moves it on.
 Sending is simulated for the demo: an approved reminder increments `reminders_sent`,
 an approved supplier payment marks the invoice paid.
@@ -98,7 +98,6 @@ def decide(approval: dict, decision: str, via: str, edited_draft: Optional[str] 
             db[schema.INVOICES].update_one({"_id": invoice_id}, {"$set": {"status": "paid", "paid_at": now}})
             effect = "invoice marked paid (simulated payment)"
 
-    actor = "saint" if via == "whatsapp" else "owner"
     activity.log("approval_decided", f"#{approval['ref']} {DECISIONS[decision]} via {via}: {approval['title']} → {effect}",
-                 actor=actor, approval_id=str(approval["_id"]), decision=decision)
+                 actor="owner", approval_id=str(approval["_id"]), decision=decision, via=via)
     return {**approval, **update, "effect": effect}

@@ -1,4 +1,4 @@
-/* CoFoundr dashboard: progressive enhancement only. Every page works (and Saint can read it) without this file. */
+/* CoFoundr dashboard: progressive enhancement only. Every page works without this file. */
 (() => {
   const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const $ = (s, el = document) => el.querySelector(s);

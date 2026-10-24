@@ -3,7 +3,8 @@
 
 One app serving:
 - **Dashboard UI** for the owner (server-rendered HTML in `templates/`)
-- **Saint endpoints**: `GET /brief`, `GET /updates`, `POST /approve`, `GET /health`
+- **WhatsApp** via Twilio: `POST /whatsapp/twilio` (signed webhook in) + replies and `/updates` pushed out
+- **Token-protected read-only feeds**: `GET /brief`, `GET /updates`; and `GET /health`
 
 Routes stay thin: inputs call `backend.pipeline`, decisions call `backend.approvals`, output text comes from `backend.outputs`.
 
@@ -18,4 +19,4 @@ email sending are off; the sidebar shows "Sandbox · local copy". See `tools/san
 
 ## Security
 Every POST checks the request came from CoFoundr's own pages (Origin/Referer must match the host), so another website
-can't approve, pay or upload for the owner. Saint's server-to-server calls (no Origin) still work with the token.
+can't approve, pay or upload for the owner. Twilio's signed webhook calls (no Origin) still work.
