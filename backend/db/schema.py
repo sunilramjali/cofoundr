@@ -25,6 +25,7 @@ CURSORS = "cursors"  # per-consumer read position in agent_log for /updates, _id
 COUNTERS = "counters"  # atomic sequences, e.g. _id = "<business_id>:approval_ref"
 ORDERS = "orders"  # one doc per till order (idempotency + order totals); its lines live in SALES
 STOCK_COUNTS = "stock_counts"  # physical ingredient counts on the truck (beans, milk, cups), one doc per count
+PAYMENTS = "payments"  # card payments from a card provider with no item detail (EVO CSV, SumUp), card data stripped
 
 
 def counterparty_key(name: Optional[str]) -> str:
@@ -203,6 +204,39 @@ class StockCount(TypedDict):
     synthetic: bool
 
 
+# ---------------------------------------------------------------- card payments (MVP2)
+# For card providers that know how much was paid but not what was sold (EVO's CSV export, SumUp). A provider that
+# knows the items (Square) goes through the POS format above instead. Privacy (docs/privacy.md): only the fields below
+# are ever stored. No card number (masked or not), cardholder name, auth code, card-network reference, card token or
+# issuer country; the provider's transaction id is stored only as a salted hash, for de-duplication.
+#
+# INPUT format (inputs → backend.payments.record_payments), one dict per payment:
+#   {"source": "evo" | "sumup", "source_id": str (provider's id: hashed, never stored), "paid_at": ISO timestamp with
+#    offset, or "YYYY-MM-DD" when the provider only gives the date, "amount_gbp": float, "fee_gbp": float | None,
+#    "currency": "GBP", "kind": "sale" | "refund" | "other", "status": "successful" | <anything else = skipped>,
+#    "card_product": "debit" | "credit" | None, "card_category": "consumer" | "corporate" | None,
+#    "region": "domestic" | "eea" | "international" | None, "brand": "Visa" | ... | None, "entry_mode": str | None}
+# Any other key is ignored. Real data (synthetic=False) is refused in the shared demo database (DB_NAME).
+
+class Payment(TypedDict):
+    _id: str  # "<business_id>:<source>:<id_hash>": importing the same payment twice is a no-op
+    business_id: str
+    source: Literal["evo", "sumup"]
+    id_hash: str  # HMAC-SHA256 of the provider's transaction id with PAYMENT_ID_SALT (first 24 hex chars)
+    date: str  # London day, "2026-10-24"
+    paid_at: Optional[datetime]  # UTC; None when the provider only gives the date (EVO's CSV)
+    amount: float  # GBP, always positive; `kind` says whether it came in or went back
+    fee: Optional[float]  # what the provider charged for it, GBP (EVO: MSC); None = not given
+    kind: Literal["sale", "refund"]
+    card_product: Optional[Literal["debit", "credit"]]
+    card_category: Optional[Literal["consumer", "corporate"]]
+    region: Optional[Literal["domestic", "eea", "international"]]
+    brand: Optional[str]
+    entry_mode: Optional[str]
+    synthetic: bool
+    imported_at: datetime
+
+
 # ---------------------------------------------------------------- forecast (MVP2)
 
 class ProductForecast(TypedDict):
@@ -211,11 +245,24 @@ class ProductForecast(TypedDict):
     expected_qty: float  # units expected that day
 
 
+class ForecastFactor(TypedDict):
+    kind: Literal["weather", "event", "transport"]
+    ref: str  # the condition it's based on: "weather:<date>", an Event _id or a TransportDisruption _id
+    label: str  # "Light rain", "Central line severe delays at Bethnal Green"
+    effect_pct: float  # this factor's share of the day's pct
+    why: str  # Gemini's short explanation
+
+
 class ForecastAdjustment(TypedDict):
-    """Gemini's change to the baseline, from weather + events (MVP2, after Jade's weather/events inputs)."""
-    pct: float  # e.g. +28.0
-    reason: str  # one line, e.g. "+28% Sat: Broadway Market nearby + sunny"
-    sources: List[str]  # what it looked at, e.g. ["weather", "events"]
+    """Gemini's change to the baseline from the day's weather, events and transport. Only stored after the checks in
+    backend.ai.forecast.check() pass (factors exist, add up, within limits, sensible direction, reason states the %)."""
+    pct: float  # e.g. +12.0
+    reason: str  # one line for the owner, e.g. "-18% Mon: heavy rain all day"
+    confidence: Literal["high", "medium", "low"]
+    by: Literal["gemini"]
+    sources: List[str]  # kinds of factor used, e.g. ["transport", "weather"]; [] = looked, no change
+    factors: List[ForecastFactor]
+    attempts: int  # 2 = accepted after Gemini fixed what the checks rejected
 
 
 class Forecast(TypedDict):
@@ -229,7 +276,8 @@ class Forecast(TypedDict):
     expected_orders: float
     low_revenue: float  # range from the same weekdays' history (min..max of the lookback)
     high_revenue: float
-    basis: str  # human-readable, e.g. "average of the last 6 Saturdays"
+    basis: str  # human-readable, e.g. "average of the last 6 Saturdays, leaving out 10 Oct (far below a usual Saturday)"
+    left_out: List[str]  # unusual past days not averaged (closed early, rained off, card machine down), "YYYY-MM-DD"
     products: List[ProductForecast]  # top sellers expected that day
     adjustment: Optional[ForecastAdjustment]  # None until Gemini adjusts it
     final_revenue: float  # baseline × (1 + pct/100), or the baseline when not adjusted

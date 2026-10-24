@@ -62,4 +62,18 @@
   <div class="empty"><svg class="ico"><use href="#i-till"/></svg><div><b>No till data yet.</b>Sales show up here once the till syncs.</div></div>
   {% endif %}
 </section>
+
+<section class="block">
+  <h2>Card payments from EVO <small>EVO has no live connection, so upload its export</small></h2>
+  <form class="drop" method="post" action="/import/evo" enctype="multipart/form-data">
+    <input type="hidden" name="back" value="/sales">
+    <input type="file" name="file" accept=".csv,text/csv" required aria-label="EVO transactions CSV">
+    <span class="gem"><svg class="ico"><use href="#i-upload"/></svg></span>
+    <h3>Drop EVO's transactions CSV here</h3>
+    <p>or click to choose it · up to 10 MB</p>
+    <span class="drop__file" aria-live="polite"></span>
+    <button class="btn" type="submit" data-busy="Importing…">Import <svg class="ico"><use href="#i-arrow"/></svg></button>
+  </form>
+  <p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>In EVO's portal, export Transactions as CSV. I keep the date, amount, fee and card type (debit/credit) of each payment. Card numbers, auth codes and card-network references are never stored. Square and SumUp connect directly instead.</span></p>
+</section>
 {% endblock %}

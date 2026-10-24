@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from pymongo.errors import DuplicateKeyError
 
 from backend.db import activity, schema
-from backend.db.client import get_db
+from backend.db.client import check_real_data_allowed, get_db
 
 BUSINESS_ID = "gaia-coffee"
 LONDON = ZoneInfo("Europe/London")  # the truck's time zone: timestamps without an offset are London time
@@ -64,7 +64,7 @@ def _num(value, name: str) -> float:
     return float(value)
 
 
-def _parse(order: dict, now: datetime) -> Optional[tuple]:
+def _parse(order: dict, now: datetime, synthetic: bool = True) -> Optional[tuple]:
     """Validate one POS order → (order_doc, sale_docs), None to skip it, or raise ValueError(reason)."""
     if order.get("order_status", "completed") != "completed" or (order.get("payment") or {}).get("status", "paid") != "paid":
         return None
@@ -98,7 +98,7 @@ def _parse(order: dict, now: datetime) -> Optional[tuple]:
         count += qty
         sales.append({"ts": placed, "meta": {"business_id": BUSINESS_ID, "sku": sku, "location_id": location},
                       "order_id": oid, "line_no": n, "name": it.get("name") or sku, "variant": it.get("variant"),
-                      "qty": qty, "unit_price": unit, "modifiers": mods, "line_total": round(line_total, 2), "synthetic": True})
+                      "qty": qty, "unit_price": unit, "modifiers": mods, "line_total": round(line_total, 2), "synthetic": synthetic})
 
     subtotal = _num(order.get("subtotal_gbp", items_total), "subtotal_gbp")
     discount = _num(order.get("discount_gbp", 0) or 0, "discount_gbp")
@@ -109,15 +109,15 @@ def _parse(order: dict, now: datetime) -> Optional[tuple]:
     doc = {"_id": f"{BUSINESS_ID}:{oid}", "business_id": BUSINESS_ID, "order_id": oid, "placed_at": placed,
            "location_id": location, "source": order.get("source") or "pos", "fulfilment": order.get("fulfilment"),
            "subtotal": round(subtotal, 2), "discount": round(discount, 2), "total": round(total, 2), "item_count": count,
-           "payment_method": (order.get("payment") or {}).get("method"), "synthetic": True, "synced_at": now}
+           "payment_method": (order.get("payment") or {}).get("method"), "synthetic": synthetic, "synced_at": now}
     return doc, sales
 
 
-def _update_products(db, sales: List[dict]) -> None:
+def _update_products(db, sales: List[dict], synthetic: bool = True) -> None:
     """Keep the menu in step with what the till actually sells (latest price wins)."""
     for s in sorted(sales, key=lambda s: s["ts"]):
         sku = s["meta"]["sku"]
-        update = {"$set": {"name": s["name"], "price": s["unit_price"], "business_id": BUSINESS_ID, "synthetic": True},
+        update = {"$set": {"name": s["name"], "price": s["unit_price"], "business_id": BUSINESS_ID, "synthetic": synthetic},
                   "$min": {"first_sold_at": s["ts"]}, "$max": {"last_sold_at": s["ts"]},
                   "$setOnInsert": {"category": CATEGORIES.get(sku)}}
         if s["variant"]:
@@ -125,10 +125,14 @@ def _update_products(db, sales: List[dict]) -> None:
         db[schema.PRODUCTS].update_one({"_id": sku}, update, upsert=True)
 
 
-def record_orders(orders: Iterable[dict], origin: str = "POS", now: Optional[datetime] = None) -> SyncResult:
+def record_orders(orders: Iterable[dict], origin: str = "POS", now: Optional[datetime] = None,
+                  synthetic: bool = True) -> SyncResult:
     """Store completed, paid POS orders (idempotent). One activity-log line per call, not per order.
-    `now` pins the clock (demo replays, tests), like PosClient(now=...): orders after it are refused as future."""
+    `now` pins the clock (demo replays, tests), like PosClient(now=...): orders after it are refused as future.
+    synthetic=False (a real till, e.g. Square production) is refused in the shared demo database."""
     db = get_db()
+    if not synthetic:
+        check_real_data_allowed(db)
     now = _utc(now) if now else datetime.now(timezone.utc)
     result, new_sales = SyncResult(), []
     for order in orders:
@@ -136,7 +140,7 @@ def record_orders(orders: Iterable[dict], origin: str = "POS", now: Optional[dat
             result.errors.append(f"?: not an order ({type(order).__name__})")
             continue
         try:
-            parsed = _parse(order, now)
+            parsed = _parse(order, now, synthetic)
         except (ValueError, TypeError) as e:
             result.errors.append(f"{order.get('order_id') or '?'}: {e}")
             continue
@@ -159,7 +163,7 @@ def record_orders(orders: Iterable[dict], origin: str = "POS", now: Optional[dat
         result.revenue += doc["total"]
         new_sales += sales
     if new_sales:
-        _update_products(db, new_sales)
+        _update_products(db, new_sales, synthetic)
     if result.new or result.errors:
         activity.log("sales_synced", f"{result.message} [{origin}]", new=result.new, duplicates=result.duplicates,
                      skipped=result.skipped, errors=result.errors[:10], revenue=round(result.revenue, 2))
