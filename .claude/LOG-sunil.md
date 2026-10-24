@@ -12,6 +12,20 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, ~19:45 — Weather + events storage (MVP2, issue #22)
+- **Did:** `backend/conditions.py` (same pattern as `sales.py`):
+  - `record_weather(days)`: one doc per pitch per London day; a changed forecast replaces the old one
+  - `record_events(events, covered=windows(days))`: any source; found near two pitches → the nearest is kept; events that drop out of a re-fetched window become `status: "removed"` (never deleted; restored if they come back)
+  - Both take Jade's input formats as-is, are idempotent, reject bad records into `errors`, and log `weather_synced` / `events_synced` only when something changed
+  - `conditions_for(dates)` → `{date: {weather, events}}` for the forecast
+  - CLI: `python -m backend.conditions --sync`
+- **Decision (Sunil): no Ticketmaster for now.** `--sync` fetches weather only; events storage is source-agnostic and ready for another feed
+- **Atlas:** new `weather` collection + indexes, `events` indexes; **7 days of real Open-Meteo weather stored** (rain all weekend at Broadway Market); re-run = 7 unchanged
+- **Contract changes (`schema.py`):** `WEATHER` collection, `WeatherDay`, `Event` (incl. `search_text` for a future autoEmbed index); real data → `synthetic: False`
+- **Tests:** 6 new → 227 pass
+- **Next:** Gemini forecast adjustment (weather → "−20% Sun: rain all day" with reasons)
+- **Blockers / notes for partner:** Jade, the storage from #22 is done. To keep it fresh on Fly, call `record_weather(weather.forecast_all())` every ~3 h from your poller (it's cheap and idempotent). Events: when you pick a non-Ticketmaster source, pass it to `record_events(events, covered=windows(days))`
+
 ## Sat 24 Oct, ~19:00 — Price check in the pipeline + priorities, supplier loyalty, live self-test (MVP2)
 - **Pipeline:** every new checked supplier bill is price-checked on arrival. Logged as `price_checked` (or `price_check_failed`, which never blocks the invoice); the owner's reply gets one line, e.g. "Eastside Dairy Co put Whole milk, 2L up 5.4% (£1.85 → £1.95 since EDC-7781)."
 - **Priorities:** new task kinds `price_rise` / `price_match` (recent unpaid bills, £ extra × 10, so they never outrank overdue money). The Gemini prompt now says "negotiate with a loyal supplier, never switch on price alone"

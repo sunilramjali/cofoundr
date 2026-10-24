@@ -14,7 +14,8 @@ BUSINESSES = "businesses"
 PRODUCTS = "products"
 SALES = "sales"
 INVOICES = "invoices"
-EVENTS = "events"
+EVENTS = "events"  # things happening near the truck's pitches (Ticketmaster), one doc per event
+WEATHER = "weather"  # daily weather forecast per pitch (Open-Meteo), one doc per pitch per London day
 FORECASTS = "forecasts"
 TASKS = "tasks"
 APPROVALS = "approvals"
@@ -257,4 +258,51 @@ class Task(TypedDict):
     synthetic: bool
 
 
-# TODO(Sunil, MVP2): Event shape
+# ---------------------------------------------------------------- weather + events around the pitches (MVP2)
+# INPUT formats = Jade's backend/inputs/weather.py and events.py (see backend/inputs/README.md), passed as-is to
+# backend.conditions.record_weather() / record_events(); only backend.conditions writes these collections.
+# Real public data (not synthetic), so synthetic=False.
+
+class WeatherDay(TypedDict):
+    """The latest forecast for one pitch on one day: a re-sync overwrites it (forecasts improve as the day nears)."""
+    _id: str  # "<business_id>:<pitch_id>:<date>"
+    business_id: str
+    pitch_id: str  # backend/inputs/pitches.py id, e.g. "broadway-market"
+    date: str  # London day, "2026-10-25"
+    summary: str  # "Light drizzle"
+    weather_code: Optional[int]  # WMO code; None = no data
+    temp_max_c: Optional[float]
+    temp_min_c: Optional[float]
+    precip_mm: Optional[float]
+    precip_chance_pct: Optional[float]
+    wind_max_kmh: Optional[float]
+    source: str  # "open-meteo"
+    fetched_at: datetime  # when the source produced this forecast
+    updated_at: datetime  # when we last stored a change
+    synthetic: bool
+
+
+class Event(TypedDict):
+    """One event near a pitch. Never deleted: an event that drops out of a later fetch for the same window and pitch
+    gets status "removed" (cancelled or moved), so the forecast stops counting it."""
+    _id: str  # "<business_id>:<source>:<source_id>"
+    business_id: str
+    source: str  # "ticketmaster"
+    source_id: str
+    name: str
+    category: Optional[str]  # "Music", "Sports", ...
+    genre: Optional[str]
+    date: str  # London day, "2026-10-25"
+    starts_at: Optional[datetime]  # UTC; None = time to be announced
+    status: str  # the source's status ("onsale", "rescheduled", ...) or "removed"
+    venue: Optional[str]
+    lat: Optional[float]
+    lon: Optional[float]
+    distance_km: Optional[float]  # to the nearest pitch
+    pitch_id: str  # nearest pitch (an event found near two pitches is stored once)
+    url: Optional[str]
+    search_text: str  # "name | category, genre | venue": for Automated Embedding (event ↔ business matching)
+    fetched_at: datetime
+    first_seen_at: datetime
+    last_seen_at: datetime
+    synthetic: bool

@@ -895,3 +895,88 @@ def test_similar_but_not_identical_items_are_named_so_the_owner_judges_quality(d
                                     "line_items": [{"description": "Oat milk, 1L", "qty": 36, "unit_price": 2.10}]}).lines()
     oat = next(ln for ln in lines if "Oat Barista" in ln)
     assert "vs £2.10 for your Oat milk, 1L (similar, not identical)" in oat
+
+
+# --- weather + events storage (backend/conditions.py), inputs' formats as-is
+
+def _wday(date="2026-10-25", **over):
+    return {"pitch_id": "broadway-market", "date": date, "summary": "Overcast", "weather_code": 3, "temp_max_c": 13.4,
+            "temp_min_c": 9.4, "precip_mm": 0.4, "precip_chance_pct": 98, "wind_max_kmh": 18.0, "source": "open-meteo",
+            "fetched_at": "2026-10-24T17:00:00+00:00", **over}
+
+
+def _event(source_id="E1", date="2026-10-25", **over):
+    return {"source": "test-feed", "source_id": source_id, "name": "Broadway Market Craft Fair", "category": "Arts",
+            "genre": "Market", "date": date, "starts_at": "2026-10-25T09:00:00Z", "status": "onsale", "venue": "London Fields",
+            "lat": 51.54, "lon": -0.06, "distance_km": 0.6, "pitch_id": "broadway-market", "url": None,
+            "fetched_at": "2026-10-24T17:00:00Z", **over}
+
+
+def test_weather_is_stored_once_per_pitch_and_day_and_updated_when_the_forecast_changes(db):
+    from backend import conditions
+    first = conditions.record_weather([_wday(), _wday("2026-10-26", summary="Heavy drizzle", weather_code=55)])
+    assert (first.new, first.updated, first.unchanged) == (2, 0, 0)
+    again = conditions.record_weather([_wday(fetched_at="2026-10-24T18:00:00Z")])  # same forecast, fetched later
+    assert (again.new, again.updated, again.unchanged) == (0, 0, 1)
+    better = conditions.record_weather([_wday(summary="Light rain", weather_code=61, precip_chance_pct=100)])
+    assert better.updated == 1 and db[schema.WEATHER].count_documents({}) == 2
+    assert db[schema.WEATHER].find_one({"date": "2026-10-25"})["summary"] == "Light rain"
+    assert db[schema.AGENT_LOG].count_documents({"kind": "weather_synced"}) == 2  # nothing logged when nothing changed
+
+
+def test_bad_weather_days_are_rejected_and_the_rest_still_stored(db):
+    from backend import conditions
+    r = conditions.record_weather([_wday(), _wday("25/10/2026"), _wday(pitch_id=""), _wday("2026-10-27", temp_max_c="warm"),
+                                   _wday("2026-10-28", weather_code=True), "junk",
+                                   _wday("2026-10-29", temp_max_c=None, precip_chance_pct=None)])  # gaps are fine
+    assert r.new == 2 and len(r.errors) == 5
+    assert db[schema.WEATHER].find_one({"date": "2026-10-29"})["temp_max_c"] is None
+    dup = conditions.record_weather([_wday("2026-10-30"), _wday("2026-10-30", summary="Clear")])  # same day twice
+    assert dup.new == 1 and db[schema.WEATHER].find_one({"date": "2026-10-30"})["summary"] == "Clear"
+
+
+def test_events_are_idempotent_keep_the_nearest_pitch_and_survive_a_garbled_start_time(db):
+    from backend import conditions
+    r = conditions.record_events([_event(), _event(pitch_id="victoria-park", distance_km=2.4),
+                                  _event("E2", starts_at="soon", name="Gig")])
+    assert r.new == 2 and r.errors == []
+    e1 = db[schema.EVENTS].find_one({"source_id": "E1"})
+    assert e1["pitch_id"] == "broadway-market" and e1["distance_km"] == 0.6 and e1["synthetic"] is False
+    assert e1["search_text"] == "Broadway Market Craft Fair | Arts, Market | London Fields"
+    assert db[schema.EVENTS].find_one({"source_id": "E2"})["starts_at"] is None  # time TBA, event kept
+    again = conditions.record_events([_event(), _event("E2", starts_at="soon", name="Gig")])
+    assert (again.new, again.updated, again.unchanged) == (0, 0, 2)
+    assert conditions.record_events([_event(date="2026-10-26")]).updated == 1  # rescheduled
+    assert db[schema.EVENTS].find_one({"source_id": "E1"})["first_seen_at"] == e1["first_seen_at"]
+    assert conditions.record_events([{"source": "test-feed", "name": "No id"}]).errors
+
+
+def test_events_missing_from_a_refetched_window_are_marked_removed_not_deleted(db):
+    from backend import conditions
+    conditions.record_events([_event("E1"), _event("E2", date="2026-10-26"), _event("E3", date="2026-11-20")])
+    window = [("broadway-market", "2026-10-25", "2026-10-31")]
+    r = conditions.record_events([_event("E1")], covered=window)  # E2 cancelled; E3 is outside the window
+    assert r.removed == 1 and db[schema.EVENTS].count_documents({}) == 3
+    assert db[schema.EVENTS].find_one({"source_id": "E2"})["status"] == "removed"
+    assert db[schema.EVENTS].find_one({"source_id": "E3"})["status"] == "onsale"
+    assert conditions.record_events([_event("E1")]).removed == 0  # no window given: nothing assumed gone
+    back = conditions.record_events([_event("E1"), _event("E2", date="2026-10-26")], covered=window)
+    assert back.updated == 1 and db[schema.EVENTS].find_one({"source_id": "E2"})["status"] == "onsale"
+
+
+def test_the_forecast_reads_weather_and_live_events_per_day(db):
+    from backend import conditions
+    conditions.record_weather([_wday()])
+    conditions.record_events([_event("E1"), _event("E2", distance_km=0.2, name="Closer"), _event("E3", date="2026-10-26")])
+    conditions.record_events([_event("E1"), _event("E2", distance_km=0.2, name="Closer")],
+                             covered=[("broadway-market", "2026-10-26", "2026-10-26")])  # E3 removed
+    got = conditions.conditions_for(["2026-10-25", "2026-10-26", "2026-10-27"])
+    assert got["2026-10-25"]["weather"]["summary"] == "Overcast"
+    assert [e["name"] for e in got["2026-10-25"]["events"]] == ["Closer", "Broadway Market Craft Fair"]
+    assert got["2026-10-26"]["events"] == [] and got["2026-10-27"] == {"weather": None, "events": []}
+
+
+def test_timestamps_without_an_offset_are_london_time(db):
+    from backend import conditions
+    conditions.record_events([_event(starts_at="2026-07-01T09:00:00")])  # BST: 09:00 London = 08:00 UTC
+    assert db[schema.EVENTS].find_one({})["starts_at"].hour == 8
