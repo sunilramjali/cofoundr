@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, 22:45 — Saint dropped from the plan: WhatsApp = Twilio + Gemini
+- **Did:** `project-plan.md` (stack, architecture, endpoints, Twilio setup, demo flow, open questions) and `MVP.md` (MVP1 WhatsApp items, demo, owners; MVP2 photos + morning brief) rewritten without Saint
+- **Status:** done, PR into `stage`
+- **Next:** go-live steps for Twilio (sandbox join, webhook, Fly secrets, release)
+- **Blockers / notes for partner:** Sunil, **stack change**: please pull. Not touched yet: `winning-criteria.md` (Saint bounty section), `CLAUDE.md` (mentions Saint), and the Saint code paths (`SAINT_EMAIL` in `gmail.py`, `/approve`, `/updates?consumer=saint`) still exist but are unused
+
 ## Sat 24 Oct, 22:30 — WhatsApp through Twilio (MVP1 auto-updates + MVP2 photos)
 - **Did:** Twilio WhatsApp sandbox as the owner's channel (Saint can't POST). In: `POST /whatsapp/twilio` (Twilio signature checked, owner's number only; photo → `ingest_invoice(source="whatsapp_photo")`, "approve 4" → `approvals.decide(via="whatsapp")`, anything else → read-only Gemini assistant `outputs/assistant.py`). Out: `outputs/whatsapp.py` pushes `/updates` every `WHATSAPP_PUSH_SECONDS` (30 in `fly.toml`), cursor only moves past what was really sent. Dashboard chat bar now `/ask` (same assistant). Keys checked against the real Twilio account (active trial); `TWILIO_WHATSAPP_FROM` must be the sandbox `+14155238886`. 24 h-window error now explained in `agent_log`. 343 tests pass
 - **Status:** done, PR into `stage`; not live yet
