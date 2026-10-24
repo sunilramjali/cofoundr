@@ -15,7 +15,7 @@ TOKEN = os.environ["BRIEF_TOKEN"]
 @pytest.fixture(autouse=True)
 def no_real_services(monkeypatch):
     """Tests never reach the real Atlas cluster or Gemini, even when .env has real keys."""
-    from backend.ai import board, extract, forecast, gemini, overdue, prioritise
+    from backend.ai import board, extract, forecast, gemini, overdue, prioritise, review
     from backend.db import client
 
     def no_db():
@@ -30,6 +30,7 @@ def no_real_services(monkeypatch):
     monkeypatch.setattr(prioritise, "get_client", no_gemini)
     monkeypatch.setattr(forecast, "get_client", no_gemini)
     monkeypatch.setattr(board, "get_client", no_gemini)
+    monkeypatch.setattr(review, "get_client", no_gemini)
     monkeypatch.setattr(gemini, "_sleep", lambda _s: None)  # retries back off instantly in tests
 
 
@@ -52,7 +53,7 @@ def db(monkeypatch):
 @pytest.fixture
 def gemini_down(monkeypatch):
     """Every Gemini call fails with the 429 spend-cap error we saw on Saturday."""
-    from backend.ai import board, extract, forecast, overdue, prioritise
+    from backend.ai import board, extract, forecast, overdue, prioritise, review
 
     def boom(*_a, **_k):
         raise genai_errors.ClientError(429, {"error": {"code": 429, "message": "spending cap", "status": "RESOURCE_EXHAUSTED"}})
@@ -62,6 +63,7 @@ def gemini_down(monkeypatch):
     monkeypatch.setattr(prioritise, "get_client", boom)
     monkeypatch.setattr(forecast, "get_client", boom)
     monkeypatch.setattr(board, "get_client", boom)
+    monkeypatch.setattr(review, "get_client", boom)
 
 
 @pytest.fixture

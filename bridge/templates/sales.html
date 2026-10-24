@@ -40,7 +40,7 @@
     </div>
     {% endfor %}
   </div>
-  <p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>Baseline from the same weekday over recent weeks; the striped band is the usual range. Weather from Open-Meteo. Next: Gemini adjusts each day for the weather and nearby events, and says why.</span></p>
+  <p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>Baseline from the same weekday over recent weeks; the striped band is the usual range. Weather from Open-Meteo. Gemini adjusts each day for the weather, nearby events and transport, and says why; point at a day to see it.</span></p>
   {% else %}
   <div class="empty"><svg class="ico"><use href="#i-chart"/></svg><div><b>No forecast yet.</b>Once the till has a few weeks of sales, I'll plan the week here.</div></div>
   {% endif %}
@@ -60,6 +60,27 @@
   <div class="hist__axis"><span>{{ sales.days[0].date.strftime("%-d %b") }}</span><span>yesterday</span></div>
   {% else %}
   <div class="empty"><svg class="ico"><use href="#i-till"/></svg><div><b>No till data yet.</b>Sales show up here once the till syncs.</div></div>
+  {% endif %}
+</section>
+
+<section class="block">
+  <h2>How my forecasts did <small>graded against what you actually took</small></h2>
+  {% if record.overall %}
+  <div class="stats">
+    <div class="stat"><b class="num">{{ record.overall.baseline_error }}%</b><span>off with your usual-day average</span></div>
+    <div class="stat"><b class="num">{{ record.overall.adjusted_error }}%</b><span>off after my weather adjustments</span></div>
+    <div class="stat"><b class="num">±{{ record.cap|round|int }}%</b><span>most I may adjust a day by now</span></div>
+  </div>
+  <p class="muted">{{ "My adjustments" if record.overall.adjusted_error < record.overall.baseline_error else "My adjustments made things worse:" }} they helped on {{ record.overall.helped }} of {{ record.overall.days }} graded days. {% if not record.full_cap %}So I've limited myself to ±{{ record.cap|round|int }}% until they earn more trust ({{ record.why }}).{% endif %}</p>
+  {% if record.lessons %}
+  <h3 style="margin:14px 0 6px">What I learned</h3>
+  <ul>{% for l in record.lessons %}<li>{{ l.text }} <span class="muted">(checked against {{ l.measured.days }} graded days)</span></li>{% endfor %}</ul>
+  {% endif %}
+  <details style="margin-top:10px"><summary class="muted">Recent grades</summary>
+    <ul style="margin:8px 0 0;padding-left:18px">{% for r in record.days %}<li class="muted">{{ r.date }} {{ r.weekday[:3] }}: forecast {{ r.final|money0 }}{% if r.adjustment_pct %} ({{ "%+g"|format(r.adjustment_pct) }}%){% endif %}, took {{ r.actual|money0 }} · {{ "helped" if r.helped else ("hurt" if r.helped == false else "no adjustment") }}{% if r.mode == "backtest" %} · replayed{% endif %}</li>{% endfor %}</ul>
+  </details>
+  {% else %}
+  <div class="empty"><svg class="ico"><use href="#i-chart"/></svg><div><b>No grades yet.</b>After each trading day I compare my forecast with what you took, and learn from the misses.</div></div>
   {% endif %}
 </section>
 

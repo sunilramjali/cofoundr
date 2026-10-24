@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from backend import approvals, payments
-from backend.ai import board, overdue
+from backend.ai import board, overdue, review
 from backend.inputs import evo, gmail
 from backend.inputs.replies import parse_reply  # noqa: F401 (also imported from here by tests)
 from backend.outputs.brief import build_brief
@@ -134,11 +134,21 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "nav": NAV,
         "memo": db[schema.BOARD_MEMOS].find_one({"business_id": BUSINESS_ID}, sort=[("generated_at", -1)]),
         "memo_running": _board_running.locked(),
+        "record": _forecast_record(db),
         "checks": view.payment_checks(pending, invoices),
         "sandbox": bool(os.environ.get("COFOUNDR_SANDBOX")),
         "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
                   "polling": int(os.environ.get("GMAIL_POLL_SECONDS") or 0), "last": gmail.last_check},
     }
+
+
+def _forecast_record(db) -> dict:
+    """How the forecasts did against actual takings (backend/ai/review.py), for the Sales page."""
+    reviews = list(db[schema.FORECAST_REVIEWS].find({"business_id": BUSINESS_ID}).sort("date", -1).limit(30))
+    cap, why = review.earned_cap(db)
+    return {"overall": review.stats(reviews).get("overall"), "days": reviews[:8], "cap": cap, "why": why,
+            "full_cap": cap >= review.forecast.MAX_PCT,
+            "lessons": list(db[schema.LESSONS].find({"business_id": BUSINESS_ID, "active": True}).sort("created_at", -1))}
 
 
 def _page(name: str):

@@ -25,6 +25,8 @@ CURSORS = "cursors"  # per-consumer read position in agent_log for /updates, _id
 COUNTERS = "counters"  # atomic sequences, e.g. _id = "<business_id>:approval_ref"
 ORDERS = "orders"  # one doc per till order (idempotency + order totals); its lines live in SALES
 STOCK_COUNTS = "stock_counts"  # physical ingredient counts on the truck (beans, milk, cups), one doc per count
+FORECAST_REVIEWS = "forecast_reviews"  # past forecasts graded against actual takings (backend/ai/review.py)
+LESSONS = "lessons"  # what the forecaster learned from its grades; the active ones go into the next forecast
 BOARD_MEMOS = "board_memos"  # Gemini's checked board memo, one per business per day (backend/ai/board.py)
 PAYMENTS = "payments"  # card payments from a card provider with no item detail (EVO CSV, SumUp), card data stripped
 
@@ -236,6 +238,38 @@ class Payment(TypedDict):
     entry_mode: Optional[str]
     synthetic: bool
     imported_at: datetime
+
+
+# ---------------------------------------------------------------- forecast reviews + lessons (MVP2)
+
+class ForecastReview(TypedDict):
+    _id: str  # "<business_id>:<live|backtest>:<YYYY-MM-DD>"
+    business_id: str
+    date: str
+    weekday: str
+    mode: Literal["live", "backtest"]  # backtest = replayed with observed weather, Gemini saw only earlier takings
+    expected: float  # baseline
+    final: float  # after Gemini's adjustment
+    actual: float
+    baseline_error_pct: Optional[float]
+    final_error_pct: Optional[float]
+    adjustment_pct: Optional[float]
+    factors: List[dict]  # [{"kind", "label", "effect_pct"}]
+    helped: Optional[bool]  # measured by code: adjustment moved the forecast closer to actual; None = no adjustment
+    graded_at: datetime
+    synthetic: bool
+
+
+class ForecastLesson(TypedDict):
+    business_id: str
+    text: str  # one sentence, goes into the next forecast's prompt while active
+    about: Literal["weather", "event", "transport", "overall"]
+    direction: Literal["adjust_less", "keep", "adjust_more"]  # checked against `measured`
+    evidence_dates: List[str]
+    measured: dict  # {"days", "baseline_error", "adjusted_error", "helped", "dates"} it was checked against
+    active: bool  # a newer set of lessons deactivates the old one
+    created_at: datetime
+    synthetic: bool
 
 
 # ---------------------------------------------------------------- board memo (MVP2)
