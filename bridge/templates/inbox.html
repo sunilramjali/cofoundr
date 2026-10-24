@@ -10,7 +10,7 @@
   <form class="drop" method="post" action="/upload" enctype="multipart/form-data">
     <input type="hidden" name="back" value="/inbox">
     <input type="file" name="file" accept="image/*,application/pdf" required aria-label="Invoice photo or PDF">
-    <span class="drop__ico"><svg class="ico"><use href="#i-upload"/></svg></span>
+    <span class="gem"><svg class="ico"><use href="#i-upload"/></svg></span>
     <h3>Drop an invoice here</h3>
     <p>or click to choose a photo or PDF · up to 10 MB</p>
     <span class="drop__file" aria-live="polite"></span>
@@ -31,6 +31,19 @@
     </div>
   </div>
 </div>
+
+{% if opportunities %}
+<section class="block" id="opportunities">
+  <h2>Opportunities <small>emails I set aside for you</small></h2>
+  <div class="opps">
+    {% for o in opportunities %}
+    <div class="setting"><span class="gem gem--lilac"><svg class="ico"><use href="#i-bulb"/></svg></span>
+      <div><b>{{ o.who }}</b><span>“{{ o.subject }}” · from {{ o.sender }} · {{ o.at|ago }}</span></div>
+      <a class="btn btn--soft" href="mailto:{{ o.sender }}?subject={{ ('Re: ' ~ o.subject)|urlencode }}">Reply</a></div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <section class="block">
   <h2>Read from email <small>{{ from_email|length }} so far</small></h2>

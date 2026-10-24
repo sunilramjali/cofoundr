@@ -79,7 +79,7 @@ def _public_url(request: Request) -> str:
     return os.environ.get("PUBLIC_URL") or str(request.base_url).rstrip("/")
 
 
-PAGES = {"/", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp"}
+PAGES = {"/", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings"}
 
 
 def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
@@ -88,6 +88,12 @@ def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
 
 
 # ---------- Owner dashboard: a home of modules, each opening into its own page ----------
+
+NAV = [  # sidebar: (label, path, icon); pages not listed here are reached from the home feed
+    ("Home", "/", "home"), ("Insights", "/sales", "chart"), ("Finances", "/invoices", "pound"), ("Inventory", "/inventory", "box"),
+    ("Saint", "/whatsapp", "chat"), ("Tasks", "/approvals", "yes"),
+]
+
 
 def _context(request: Request, msg: Optional[str]) -> dict:
     db = get_db()
@@ -100,6 +106,9 @@ def _context(request: Request, msg: Optional[str]) -> dict:
                      .sort("date", 1).limit(7))
     since = view.days_ago(now, 29)
     orders = list(db[schema.ORDERS].find({"business_id": BUSINESS_ID, "placed_at": {"$gte": since}}, {"placed_at": 1, "total": 1}))
+    week = view.week(forecasts, view.weather_by_date(), now.date())
+    sales = view.sales_history(orders, now.date())
+    gmail_logs = list(db[schema.AGENT_LOG].find({"business_id": BUSINESS_ID, "kind": "gmail_checked"}).sort("at", -1).limit(20))
     return {
         "msg": msg,
         "now": now,
@@ -111,8 +120,12 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "review": review,
         "brief": brief,
         "timeline": view.timeline(activity.recent(30), now),
-        "week": view.week(forecasts, view.weather_by_date(), now.date()),
-        "sales": view.sales_history(orders, now.date()),
+        "week": week,
+        "sales": sales,
+        "trend": view.trend(sales, week),
+        "stock": view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now),
+        "opportunities": view.opportunities(gmail_logs),
+        "nav": NAV,
         "inbox": {"configured": gmail.configured(), "address": os.environ.get("GMAIL_ADDRESS", ""),
                   "polling": int(os.environ.get("GMAIL_POLL_SECONDS") or 0), "last": gmail.last_check},
     }
@@ -127,7 +140,8 @@ def _page(name: str):
 
 
 for _path, _name in [("/", "home"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
-                     ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp")]:
+                     ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp"), ("/inventory", "inventory"),
+                     ("/settings", "settings")]:
     app.add_api_route(_path, _page(_name), methods=["GET"], response_class=HTMLResponse, name=f"page_{_name}")
 
 
@@ -147,6 +161,26 @@ def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Op
         return _back("Approval not found.", back)
     try:
         result = approvals.decide(approval, decision, via="dashboard", edited_draft=draft)
+    except approvals.DecisionError as e:
+        return _back(str(e), back)
+    return _back(f"#{result['ref']} {result['status']}: {result['effect']}.", back)
+
+
+@app.post("/saint")
+def message_saint(text: str = Form(""), back: str = Form("/")):
+    """The chat bar. Decisions ("approve 1", "reject 2") follow exactly the WhatsApp rules; anything else waits for Saint."""
+    text = text.strip()
+    if not text:
+        return _back("Type a message for Saint first.", back)
+    parsed = parse_reply(text)
+    if not parsed:
+        return _back('Saint isn\'t connected to the chat bar yet. Decisions work now: "approve 1" or "reject 1".', back)
+    decision, ref = parsed
+    approval = approvals.find(ref=ref)
+    if not approval:
+        return _back(f"There's no #{ref} waiting for you.", back)
+    try:
+        result = approvals.decide(approval, decision, via="dashboard")
     except approvals.DecisionError as e:
         return _back(str(e), back)
     return _back(f"#{result['ref']} {result['status']}: {result['effect']}.", back)

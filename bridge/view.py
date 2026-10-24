@@ -1,4 +1,6 @@
 """Read-only helpers that turn MongoDB documents into what the dashboard shows. No writes, never raises on bad data."""
+import math
+import re
 import threading
 import time
 from datetime import date, datetime, time as dtime, timezone
@@ -195,3 +197,70 @@ def sales_history(orders: List[dict], today: date, days: int = 28) -> dict:
     return {"days": out, "total": round(sum(d["revenue"] for d in trading), 2), "trading_days": len(trading),
             "last": trading[-1] if trading else None,
             "average": round(sum(d["revenue"] for d in trading) / len(trading), 2) if trading else 0}
+
+
+LOW_COVER_DAYS = 7  # flag stock that will last less than a week
+ORDER_COVER_DAYS = 14  # suggested order tops stock up to two weeks
+OPPORTUNITY = re.compile(r"partner|collab|opportunit|pop-?up|sponsor|event", re.IGNORECASE)
+
+
+def stock_estimate(counts: List[dict], now: datetime) -> dict:
+    """What's probably on the truck today: the latest physical count minus usage since, where usage per day comes from
+    the most recent opening → closing pair of counts. An estimate (deliveries aren't recorded), labelled as such."""
+    counts = sorted([c for c in counts if isinstance(c.get("counted_at"), datetime)], key=lambda c: c["counted_at"])
+    if not counts:
+        return {"rows": [], "low": [], "counted_at": None, "days_since": None, "basis": None}
+    latest = counts[-1]
+    usage, basis = {}, None
+    for close in reversed(counts):
+        opening = next((c for c in reversed(counts) if c.get("kind") == "opening" and c["counted_at"] < close["counted_at"]), None)
+        if close.get("kind") == "closing" and opening:
+            days = max(1, (close["counted_at"] - opening["counted_at"]).days)
+            before = {i["sku"]: i.get("qty") or 0 for i in opening.get("items", [])}
+            usage = {i["sku"]: max(0.0, (before.get(i["sku"], 0) - (i.get("qty") or 0)) / days) for i in close.get("items", [])}
+            basis = f"usage between the {opening['counted_at'].astimezone(LONDON):%d %b} and {close['counted_at'].astimezone(LONDON):%d %b} counts"
+            break
+    since = max(0, (now - latest["counted_at"]).days)
+    items = []
+    for i in latest.get("items", []):
+        per_day = usage.get(i["sku"])
+        est = (i.get("qty") or 0) - (per_day or 0) * since
+        cover = est / per_day if per_day else None
+        items.append({"sku": i["sku"], "name": i.get("item_name") or i["sku"], "unit": i.get("unit") or "", "counted": i.get("qty") or 0,
+                      "per_day": per_day, "estimate": max(0.0, est), "out": est <= 0, "cover": None if cover is None else max(0.0, cover),
+                      "low": cover is not None and cover < LOW_COVER_DAYS,
+                      "order": max(0, math.ceil(per_day * ORDER_COVER_DAYS - max(0.0, est))) if per_day else 0})
+    items.sort(key=lambda x: (x["cover"] is None, x["cover"] if x["cover"] is not None else 0))
+    return {"rows": items, "low": [x for x in items if x["low"]], "counted_at": latest["counted_at"], "days_since": since, "basis": basis}
+
+
+def opportunities(gmail_logs: List[dict]) -> List[dict]:
+    """Partnership / event emails the inbox check set aside (newest first, one per subject)."""
+    seen, out = set(), []
+    for log in gmail_logs:
+        for e in (log.get("detail") or {}).get("emails") or []:
+            subject = (e.get("subject") or "").strip()
+            if subject and OPPORTUNITY.search(subject) and subject.lower() not in seen:
+                seen.add(subject.lower())
+                who = re.search(r"[–-]\s*(.+?)\s+[x×]\s+", subject)
+                out.append({"subject": subject, "sender": e.get("from") or "", "at": log.get("at"),
+                            "who": who.group(1).strip() if who else subject})
+    return out
+
+
+def trend(sales: dict, wk: dict, days: int = 14) -> dict:
+    """SVG geometry for 'takings vs forecast': the last `days` trading days of actuals, then the forecast days ahead."""
+    actual = [d for d in sales.get("days", []) if d["orders"]][-days:]
+    ahead = [d for d in wk.get("days", []) if d["trading"]]
+    values = [d["revenue"] for d in actual] + [d["revenue"] for d in ahead]
+    if len(values) < 2:
+        return {"actual": "", "forecast": "", "area": "", "dot": None, "labels": []}
+    top, low = max(values) * 1.08, min(values) * .82
+    n = len(values)
+    pt = lambda i, v: (round(100 * i / (n - 1), 2), round(100 - 100 * (v - low) / (top - low or 1), 2))  # noqa: E731
+    pts = [pt(i, v) for i, v in enumerate(values)]
+    split = len(actual) - 1
+    line = lambda ps: " ".join(f"{'M' if k == 0 else 'L'}{x},{y}" for k, (x, y) in enumerate(ps))  # noqa: E731
+    return {"actual": line(pts[:split + 1]), "forecast": line(pts[split:]) if ahead else "",
+            "area": line(pts[:split + 1]) + f" L{pts[split][0]},100 L0,100 Z", "dot": pts[split] if actual else None,
+            "split": pts[split][0] if actual else 0}
