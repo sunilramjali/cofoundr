@@ -123,7 +123,13 @@ def check_lesson(lesson: Lesson, measured: Dict[str, dict]) -> List[str]:
 
 def earned_cap(db) -> Tuple[float, str]:
     """(max ±% Gemini may adjust a day by, why). Shrinks when its recent adjustments mostly made forecasts worse."""
-    recent = list(db[schema.FORECAST_REVIEWS].find({"business_id": BUSINESS_ID, "helped": {"$ne": None}}).sort("date", -1).limit(RECORD_DAYS))
+    recent, seen = [], set()
+    for r in db[schema.FORECAST_REVIEWS].find({"business_id": BUSINESS_ID, "helped": {"$ne": None}}).sort([("date", -1), ("mode", -1)]):
+        if r["date"] not in seen:  # a day graded live and in a backtest counts once (live sorts first)
+            seen.add(r["date"])
+            recent.append(r)
+        if len(recent) == RECORD_DAYS:
+            break
     if len(recent) < MIN_RECORD:
         return forecast.MAX_PCT, f"{len(recent)} graded adjustment(s): not enough to judge yet"
     helped = sum(1 for r in recent if r["helped"])
@@ -191,7 +197,7 @@ def grade_stored(db, now: datetime) -> List[dict]:
 def backtest(db, days: int, now: datetime) -> Tuple[List[dict], dict]:
     """Replay the last `days` days' trading days as forecasts made the day before, with observed weather. Returns
     (graded reviews, the adjustment summary). Gemini only sees takings from before the first replayed day."""
-    from backend.inputs import weather
+    from backend.inputs import fetch, weather
     today = now.astimezone(LONDON).date()
     real, history = actuals(db, today)
     targets = sorted(d for d in history if today - timedelta(days=days) <= d < today and history[d]["revenue"] > 0)
@@ -203,7 +209,10 @@ def backtest(db, days: int, now: datetime) -> Tuple[List[dict], dict]:
         if f["trading"]:
             f["synthetic"] = not real
             forecasts.append(f)
-    observed = {w["date"]: w for w in weather.history(targets[0], targets[-1])}
+    try:
+        observed = {w["date"]: w for w in weather.history(targets[0], targets[-1])}
+    except (fetch.FetchError, ValueError):  # archive down: grade the plain baselines, nothing for Gemini to adjust
+        observed = {}
     conditions = {f["date"]: {"weather": observed.get(f["date"]), "events": [], "transport": []} for f in forecasts}
     before = {d: v for d, v in history.items() if d < targets[0]}  # no peeking at the answers
     summary = forecast.adjust(forecasts, conditions, before, synthetic=not real)

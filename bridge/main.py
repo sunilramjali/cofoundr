@@ -10,6 +10,7 @@ import html
 import os
 import secrets
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -204,6 +205,8 @@ def import_fees(file: UploadFile = File(...), back: str = Form("/sales")):
     mime = file.content_type or "application/octet-stream"
     if len(data) > MAX_UPLOAD or not (mime.startswith("image/") or mime == "application/pdf"):
         return _back("Upload the fee summary as a photo or PDF (10 MB max).", back)
+    if _too_soon("fees", FEES_EVERY):
+        return _back("I'm still on the last fee summary. Try again in a minute.", back)
     try:
         doc = fees.run(data, mime)
     except RealDataRefused as e:
@@ -258,11 +261,28 @@ def check_inbox(back: str = Form("/inbox")):
 
 
 _board_running = threading.Lock()
+BOARD_EVERY = 600  # seconds between board meetings: each one reads ~170k tokens, so a public button must not be spammable
+FEES_EVERY = 60  # seconds between fee summary uploads (one Gemini read each)
+_last_run: dict = {}  # what → time.monotonic() of its last run; absent = never (monotonic starts near 0 after a reboot)
+
+
+def _too_soon(what: str, every: int) -> Optional[int]:
+    """Seconds left before `what` may run again, or None (and the clock restarts now)."""
+    left = int(_last_run[what] + every - time.monotonic()) if what in _last_run else 0
+    if left > 0:
+        return left
+    _last_run[what] = time.monotonic()
+    return None
 
 
 @app.post("/board/run")
 def run_board(back: str = Form("/board")):
-    """Gemini reads everything (about a minute), so it runs in the background; one at a time."""
+    """Gemini reads everything (about a minute), so it runs in the background; one at a time, at most every 10 minutes."""
+    if _board_running.locked():
+        return _back("A board meeting is already running. Refresh in a minute.", back)
+    left = _too_soon("board", BOARD_EVERY)
+    if left:
+        return _back(f"The last board meeting was just now. The next one can start in {left // 60 + 1} minutes.", back)
     if not _board_running.acquire(blocking=False):
         return _back("A board meeting is already running. Refresh in a minute.", back)
 

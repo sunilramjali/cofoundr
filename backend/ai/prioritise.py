@@ -111,7 +111,7 @@ def price_tasks(db, now: datetime) -> List[dict]:
 
 def fee_tasks(db) -> List[dict]:
     """The latest card fee audit, if the provider charged more than its own fee summary allows."""
-    doc = db[schema.FEE_AUDITS].find_one({"business_id": BUSINESS_ID, "audit": {"$ne": None}}, sort=[("created_at", -1)])
+    doc = db[schema.FEE_AUDITS].find_one({"business_id": BUSINESS_ID}, sort=[("created_at", -1)])  # an untrusted newer read wins
     a = (doc or {}).get("audit") or {}
     if not a.get("overcharged"):
         return []
