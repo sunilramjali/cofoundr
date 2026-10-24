@@ -78,7 +78,8 @@ def test_every_planted_overcharge_is_found_and_nothing_else(sample_payments):
 
 
 def test_months_under_the_minimum_charge_are_flagged():
-    few = [{"date": "2026-10-03", "amount": 4.0, "fee": 0.04, "kind": "sale", "region": "domestic", "card_product": "debit"}]
+    few = [{"date": d, "amount": 4.0, "fee": 0.04, "kind": "sale", "region": "domestic", "card_product": "debit"}
+           for d in ("2026-09-30", "2026-10-03", "2026-11-01")]  # October is fully covered by the export
     a = fees.audit(few, _schedule())
     assert a["below_minimum"] == [{"month": "2026-10", "fees": 0.04, "minimum": 10.0, "topped_up_by": 9.96}]
 

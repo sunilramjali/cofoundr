@@ -160,8 +160,11 @@ def audit(payments: List[dict], schedule: FeeSchedule) -> dict:
         else:
             matched += 1
     minimum = schedule.min_monthly_gbp or 0
+    dates = sorted(p["date"] for p in payments if p.get("fee") is not None and p.get("kind") == "sale")
+    first_month, last_month = (dates[0][:7], dates[-1][:7]) if dates else (None, None)
+    # Only whole months can be judged: the export's first and last months are usually partly covered
     below_minimum = [{"month": m, "fees": round(f, 2), "minimum": minimum, "topped_up_by": round(minimum - f, 2)}
-                     for m, f in sorted(monthly.items()) if minimum and f < minimum]
+                     for m, f in sorted(monthly.items()) if minimum and f < minimum and first_month < m < last_month]
     return {"checked": checked, "matched": matched, "overcharged": over, "extra_total": round(sum(o["extra"] for o in over), 2),
             "not_covered": not_covered, "below_minimum": below_minimum,
             "first_day": min((p["date"] for p in payments), default=None), "last_day": max((p["date"] for p in payments), default=None)}
