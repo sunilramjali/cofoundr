@@ -12,6 +12,13 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, ~04:45 — Demo prep run on the demo DB + board £ bug fixed
+- **Did (demo DB, Jade told on PR #48):** backtest 21 days → 11 graded, adjustments hurt (5.4% → 7.9% error, helped 4/11) → 2 lessons ("cut less for rain") → cap ±10%. Week forecast: rain now −5% (was −12…−16%). Board memo: 3 verified, 1 corrected (4 wrong numbers caught), 169k tokens. On Fly: synthetic EVO CSV 1,030 payments; fee summary → 888 checked, 4 overcharged (£0.60), 0 false alarms. Prioritise: 7 tasks incl. the fee refund
+- **Bug found live + fixed:** board recheck sent the memo back via `json.dumps` (ASCII escapes) → Gemini merged `\u00a3` with digits ("£276.00" → "ɶ.00"), corrected insights garbled though numbers checked. Fix: `ensure_ascii=False` (`board.py`), regression test in `test_board.py` (387 pass). Stored memo re-run clean
+- **Status:** done; fix in PR → stage, needs a release for the Fly button
+- **Next:** release (Jade approves), rehearse, backup video, README judging + user guide
+- **Blockers / notes for partner:** Jade, demo DB now holds forecast, lessons, memo, payments, fee audit and ranked tasks: please don't reset. Approve the next release so the board button has the fix
+
 ## Sun 25 Oct, ~04:15 — Docs caught up with release #43
 - **Did:** `project-plan.md` (Gemini roles, "built beyond the plan": card payments, self-grading forecast, board meeting, fee audit; data + real-data rule; full collections list; demo step 5 + Sunday prep; Twilio open question), `MVP.md` (my MVP2 extras ticked, release noted), `CLAUDE.md` (`payments.py` seam, `backend/ai/` contents, real-data + no-reset rules, test count), `README.md` (new jobs, status table, Atlas features table filled with evidence). Built on top of Jade's PR #46 (Saint removal) to avoid conflicts
 - **Status:** done, PR into `stage`

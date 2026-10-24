@@ -99,6 +99,17 @@ def test_wrong_numbers_go_back_once_and_are_corrected_withdrawn_or_shown_failed(
     assert doc["read"]["tokens"] == 123456 and doc["read"]["sales_lines"] > 1000 and doc["synthetic"] is True
 
 
+def test_the_recheck_shows_gemini_its_memo_with_pound_signs_not_escapes(till, gemini):
+    # live: the memo went back as £276.00 and Gemini returned "ɶ.00" (the escape merged with the digits)
+    answers, calls = gemini
+    owed = board.compute(till, _claim(kind="owed_to_us", value=0), TODAY)[0]
+    bad = _claim(kind="owed_to_us", value=owed + 100, says="£276.00 owed")
+    answers += [Memo(headline="h", insights=[_insight("Owed", bad)]), Memo(headline="h", insights=[])]
+    board.write_memo(till, NOW)
+    memo_part = calls[1].split("database check found")[0]
+    assert "£276.00 owed" in memo_part and "\\u00a3" not in calls[1]
+
+
 def test_the_prompt_holds_every_complete_day_and_nothing_from_today(till, gemini):
     answers, calls = gemini
     answers.append(Memo(headline="h", insights=[]))
