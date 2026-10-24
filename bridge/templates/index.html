@@ -1,143 +1,349 @@
+{%- set n = pending|length -%}
+{%- set wk = week -%}
+{%- set next_day = wk.next -%}
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CoFoundr · GAIA Coffee</title>
-<style>
-  :root { --ink:#1d1d1f; --muted:#6b6b70; --line:#e4e2dd; --bg:#faf8f4; --card:#fff; --brand:#3d2b1f; --ok:#1e7a46; --warn:#b45309; --bad:#b42318; }
-  * { box-sizing:border-box; }
-  body { margin:0; font:15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:var(--bg); }
-  header { background:var(--brand); color:#fff; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
-  header h1 { margin:0; font-size:20px; } header small { opacity:.75; }
-  main { max-width:1100px; margin:0 auto; padding:20px 16px 48px; display:grid; gap:20px; }
-  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
-  h2 { margin:0 0 12px; font-size:17px; }
-  .msg { background:#eef6ff; border:1px solid #bcd7f5; border-radius:10px; padding:10px 14px; }
-  .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:20px; }
-  .stats { display:flex; gap:12px; flex-wrap:wrap; }
-  .stat { flex:1; min-width:150px; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
-  .stat b { display:block; font-size:22px; } .stat span { color:var(--muted); font-size:13px; }
-  .approval { border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; }
-  .approval h3 { margin:0 0 4px; font-size:15px; }
-  .why { color:var(--muted); font-size:13px; margin:0 0 8px; }
-  .meta { font-size:13px; margin:0 0 6px; }
-  textarea { width:100%; min-height:120px; font:inherit; font-size:14px; padding:8px; border:1px solid var(--line); border-radius:8px; }
-  .actions { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
-  button { font:inherit; border:0; border-radius:8px; padding:8px 14px; cursor:pointer; }
-  .approve { background:var(--ok); color:#fff; } .edit { background:#e8e4dc; } .reject { background:#fbe9e7; color:var(--bad); }
-  .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; background:#eee; }
-  .overdue { background:#fde8e6; color:var(--bad); } .open { background:#eef2ff; } .paid { background:#e7f5ec; color:var(--ok); }
-  .review { background:#fff4e5; color:var(--warn); }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { text-align:left; padding:7px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; }
-  .table-wrap { overflow-x:auto; }
-  pre { white-space:pre-wrap; background:#f4f1ec; border-radius:8px; padding:12px; margin:0; font-size:13px; }
-  ul.log { list-style:none; padding:0; margin:0; font-size:13px; } ul.log li { padding:5px 0; border-bottom:1px solid var(--line); }
-  .muted { color:var(--muted); } .empty { color:var(--muted); font-style:italic; }
-  form.inline { display:inline; }
-</style>
+<meta name="description" content="CoFoundr, the AI co-founder for GAIA Coffee (synthetic demo data).">
+<meta name="theme-color" content="#140d08">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..600,0..100;1,9..144,300..600,0..100&family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/cofoundr.css?v=4">
+<script>
+  // Motion styles only apply with JS; if the script never loads, show everything after a moment.
+  document.documentElement.classList.add("js");
+  setTimeout(function () { if (!window.__cofoundr) document.documentElement.classList.remove("js"); }, 2500);
+</script>
 </head>
 <body>
-<header>
-  <div><h1>☕ CoFoundr · GAIA Coffee</h1><small>Your AI co-founder. Synthetic demo data.</small></div>
-  <div>
-    <form class="inline" method="post" action="/check-inbox"><button class="edit">Check inbox now</button></form>
-    <form class="inline" method="post" action="/run-check"><button class="edit">Run overdue check</button></form>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-partsun" viewBox="0 0 24 24"><path d="M8 3v1.5M3.5 8H2M4.4 4.4l1 1M12.6 5.4l-1 1"/><path d="M5.3 10.6A3.5 3.5 0 1 1 11 7"/><path d="M17.5 19H9a4 4 0 1 1 .9-7.9A5 5 0 0 1 19.5 13a3 3 0 0 1-2 6Z"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H8a5 5 0 1 1 1.2-9.9A6 6 0 0 1 20.5 12a3.5 3.5 0 0 1-3 7Z"/></symbol>
+  <symbol id="i-drizzle" viewBox="0 0 24 24"><path d="M17.5 15H8a5 5 0 1 1 1.2-9.9A6 6 0 0 1 20.5 8a3.5 3.5 0 0 1-3 7Z"/><path d="M9 18v1M13 19v1M17 18v1"/></symbol>
+  <symbol id="i-rain" viewBox="0 0 24 24"><path d="M17.5 14H8a5 5 0 1 1 1.2-9.9A6 6 0 0 1 20.5 7a3.5 3.5 0 0 1-3 7Z"/><path d="m9 17-1 3M13 17l-1 3M17 17l-1 3"/></symbol>
+  <symbol id="i-fog" viewBox="0 0 24 24"><path d="M4 9h13M7 13h13M4 17h11M17.5 5H9"/></symbol>
+  <symbol id="i-snow" viewBox="0 0 24 24"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/></symbol>
+  <symbol id="i-storm" viewBox="0 0 24 24"><path d="M17.5 14H8a5 5 0 1 1 1.2-9.9A6 6 0 0 1 20.5 7a3.5 3.5 0 0 1-3 7Z"/><path d="m12 15-2 4h4l-2 4"/></symbol>
+  <symbol id="i-none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></symbol>
+  <symbol id="i-till" viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="11" rx="2"/><path d="M8 9V5h8v4M8 13h2M12 13h2M16 13h0M8 16h8"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-cross" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h0"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7Z"/><path d="M19 3v3M17.5 4.5h3"/></symbol>
+  <symbol id="i-in" viewBox="0 0 24 24"><path d="M17 7 7 17M7 9v8h8"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+</svg>
+<a class="skip" href="#yes">Skip to what needs you</a>
+
+{% if msg %}
+<div class="toast" role="status"><svg class="ico"><use href="#i-check"/></svg><p>{{ msg }}</p><button type="button" aria-label="Dismiss">×</button></div>
+{% endif %}
+
+<header class="hero" id="today">
+  <canvas class="hero__canvas" aria-hidden="true"></canvas>
+  <div class="hero__grain" aria-hidden="true"></div>
+  <nav class="topbar">
+    <a class="brand" href="/"><span class="brand__mark">C</span>CoFoundr <span class="brand__for">for GAIA Coffee</span></a>
+    {% if inbox.configured and inbox.polling %}
+    <span class="live{% if inbox.last and not inbox.last.ok %} live--warn{% endif %}"><i class="live__dot"></i>
+      Watching your inbox <small>· {{ "checked " ~ (inbox.last.at|ago) if inbox.last else "every minute" }}</small></span>
+    {% elif inbox.configured %}
+    <span class="live live--off"><i class="live__dot"></i>Inbox connected <small>· {{ "checked " ~ (inbox.last.at|ago) if inbox.last else "check on demand" }}</small></span>
+    {% else %}
+    <span class="live live--off"><i class="live__dot"></i>Inbox not connected</span>
+    {% endif %}
+  </nav>
+
+  <div class="hero__body">
+    <div class="hero__copy">
+      <p class="eyebrow rise" style="--i:0">{{ now.strftime("%A") }} {{ now.day }} {{ now.strftime("%B") }} · Broadway Market</p>
+      <h1 class="hero__title rise" style="--i:1"><em>{{ greeting }}.</em> {{ headline }}</h1>
+      <p class="hero__sub rise" style="--i:2">I read your invoices, watch your till and plan the week. Nothing involving money happens until you say yes.</p>
+      <div class="hero__cta rise" style="--i:3">
+        {% if n %}<a class="btn btn--crema" href="#yes">Review {{ "it" if n == 1 else "them" }} <svg class="ico ico--arrow"><use href="#i-arrow"/></svg></a>
+        {% else %}<a class="btn btn--crema" href="#week">See the week <svg class="ico ico--arrow"><use href="#i-arrow"/></svg></a>{% endif %}
+        <a class="btn btn--ghost" href="#bring">Bring me an invoice</a>
+      </div>
+    </div>
+
+    <aside class="glance" aria-label="At a glance">
+      <div class="glance__row">
+        <a class="tile rise" style="--i:3" href="#yes">
+          <span class="tile__label"><svg class="ico"><use href="#i-check"/></svg>Waiting for your yes</span>
+          <span class="tile__value num" data-count="{{ n }}">{{ n }}</span>
+          <span class="tile__foot">{{ "nothing to do" if not n else "nothing sent without you" }}</span>
+        </a>
+        <a class="tile tile--alert rise" style="--i:4" href="#books">
+          <span class="tile__label"><svg class="ico"><use href="#i-in"/></svg>Overdue to come in</span>
+          <span class="tile__value num" data-count="{{ brief.overdue_receivable_total|round(0) }}" data-prefix="£">{{ brief.overdue_receivable_total|money0 }}</span>
+          <span class="tile__foot">You owe {{ brief.overdue_payable_total|money0 }} overdue</span>
+        </a>
+      </div>
+      {% if next_day %}
+      <a class="tile tile--next rise" style="--i:5" href="#week">
+        <span class="wx"><svg class="ico"><use href="#i-{{ next_day.wx_icon }}"/></svg></span>
+        <span>
+          <span class="tile__label">{{ "Today" if next_day.is_today else "Next trading day · " ~ next_day.date.strftime("%A") }}</span>
+          <span class="tile__value num">{{ next_day.revenue|money0 }}</span>
+          <span class="tile__foot">expected{% if next_day.wx %} · {{ next_day.wx.summary }}, {{ next_day.wx.temp_max_c|round|int }}°{% endif %}</span>
+        </span>
+      </a>
+      {% endif %}
+    </aside>
   </div>
 </header>
+
+<nav class="dock" aria-label="Sections">
+  <a href="#yes"><span class="wide">Your </span>yes{% if n %} <span class="count">{{ n }}</span>{% endif %}</a>
+  <a href="#week"><span class="wide">The </span>week</a>
+  <a href="#own"><span class="wide">On my own</span><span class="narrow">Log</span></a>
+  <a href="#bring">Bring</a>
+  <a href="#books">Books</a>
+</nav>
+
 <main>
-  {% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
-
-  <section>
-    <div class="stats">
-      <div class="stat"><b>{{ pending|length }}</b><span>waiting for your approval</span></div>
-      <div class="stat"><b>{{ brief.overdue_receivable_total|money }}</b><span>customers owe you (overdue)</span></div>
-      <div class="stat"><b>{{ brief.overdue_payable_total|money }}</b><span>you owe suppliers (overdue)</span></div>
-      <div class="stat"><b>{{ review|length }}</b><span>invoices need your check</span></div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Waiting for your approval</h2>
-    <p class="why">Nothing involving money happens until you decide. You can also reply on WhatsApp: "approve 1".</p>
-    {% for a in pending %}
-    <div class="approval">
-      <h3>#{{ a.ref }} {{ a.title }}</h3>
-      <p class="why">Why: {{ a.reason }} · drafted by {{ a.drafted_by }}</p>
-      <form method="post" action="/approvals/{{ a._id }}/decide">
-        {% if a.draft_subject %}<p class="meta"><b>To:</b> {{ a.to_email }} · <b>Subject:</b> {{ a.draft_subject }}</p>{% endif %}
-        <textarea name="draft">{{ a.draft }}</textarea>
-        <div class="actions">
-          <button class="approve" name="decision" value="approve">Approve</button>
-          <button class="edit" name="decision" value="edit">Save edit &amp; approve</button>
-          <button class="reject" name="decision" value="reject">Reject</button>
-        </div>
-      </form>
+  <!-- 01 -->
+  <section class="chapter" id="yes" aria-labelledby="h-yes">
+    <header class="chapter__head reveal">
+      <p class="chapter__no">01</p>
+      <h2 id="h-yes">Waiting for your yes</h2>
+      <p class="chapter__lede">I've drafted these for you. Nothing goes out until you decide. On the go? Reply <code>approve 1</code> on WhatsApp.</p>
+    </header>
+    {% if pending %}
+    <div class="asks">
+      {% for a in pending %}
+      {%- set reminder = a.action_type == "invoice_reminder" -%}
+      <article class="ask reveal" style="--i:{{ loop.index0 }}">
+        <div class="ask__ref" aria-hidden="true">{{ a.ref }}</div>
+        <form method="post" action="/approvals/{{ a._id }}/decide">
+          <div class="ask__top">
+            <div>
+              <p class="ask__kind">{{ "Chase a customer" if reminder else "Pay a supplier" }} · #{{ a.ref }}</p>
+              <h3 class="ask__who">{{ a.counterparty or a.title }}</h3>
+            </div>
+            <div class="ask__amount num">{{ a.amount|money }}</div>
+          </div>
+          <div class="chips">
+            {% if a.days_overdue is not none %}<span class="chip chip--rust"><svg class="ico"><use href="#i-clock"/></svg>{{ a.days_overdue }} day{{ "s" if a.days_overdue != 1 }} overdue</span>{% endif %}
+            {% if reminder and a.escalation_level is not none %}
+            <span class="chip chip--amber">{{ tones[a.escalation_level] }}
+              <span class="tone" aria-hidden="true">{% for k in range(3) %}<i class="{{ 'on' if k <= a.escalation_level }}"></i>{% endfor %}</span></span>
+            {% endif %}
+            {% if a.drafted_by == "gemini" %}<span class="chip chip--ai"><svg class="ico"><use href="#i-spark"/></svg>Drafted by Gemini</span>
+            {% else %}<span class="chip">Drafted by {{ a.drafted_by }}</span>{% endif %}
+            {% if a.invoice_number %}<span class="chip">{{ a.invoice_number }}</span>{% endif %}
+          </div>
+          <p class="ask__why">{{ a.reason }}</p>
+          <details class="draft">
+            <summary><svg class="ico"><use href="#i-chev"/></svg>{{ "Read and edit the email" if reminder else "Read and edit the payment note" }}</summary>
+            <div class="draft__meta">
+              {% if a.to_email %}<span><b>To</b> {{ a.to_email }}</span>{% endif %}
+              {% if a.draft_subject %}<span><b>Subject</b> {{ a.draft_subject }}</span>{% endif %}
+            </div>
+            <label class="sr" for="draft-{{ a._id }}">Draft for #{{ a.ref }}</label>
+            <textarea id="draft-{{ a._id }}" name="draft">{{ a.draft }}</textarea>
+          </details>
+          <div class="ask__actions">
+            <button class="btn btn--approve" name="decision" value="approve" data-busy="{{ 'Sending…' if reminder else 'Approving…' }}">
+              <svg class="ico"><use href="#i-check"/></svg>{{ "Approve & send" if reminder else "Approve payment" }}</button>
+            <button class="btn btn--soft js-edited" name="decision" value="edit" data-busy="Saving…">Send my edited version</button>
+            <button class="btn btn--text" name="decision" value="reject" data-busy="Rejecting…">Reject</button>
+            <span class="ask__hint">or reply “approve {{ a.ref }}” on WhatsApp</span>
+          </div>
+        </form>
+      </article>
+      {% endfor %}
     </div>
     {% else %}
-    <p class="empty">Nothing waiting. Upload an invoice or run the overdue check.</p>
-    {% endfor %}
+    <div class="empty reveal"><svg class="ico"><use href="#i-check"/></svg><div><b>All clear.</b>Nothing needs your yes right now. I'll ask the moment something does.</div></div>
+    {% endif %}
   </section>
 
-  <div class="grid2">
-    <section>
-      <h2>Add an invoice</h2>
-      <p class="why">Photo or PDF. Gemini reads it, checks the numbers add up, and flags anything it isn't sure about. Takes ~10–30 s.</p>
-      <form method="post" action="/upload" enctype="multipart/form-data">
-        <input type="file" name="file" accept="image/*,application/pdf" required>
-        <div class="actions"><button class="approve">Upload &amp; read</button></div>
+  <!-- 02 -->
+  <section class="chapter" id="week" aria-labelledby="h-week">
+    <header class="chapter__head reveal">
+      <p class="chapter__no">02</p>
+      <h2 id="h-week">The week ahead</h2>
+      <p class="chapter__lede">What I expect the till to take, from your own history and the weather at your pitch. Point at a day to see what usually sells.</p>
+    </header>
+    {% if wk.days %}
+    <div class="week">
+      <div class="week__sum">
+        <span class="week__total num">{{ wk.total|money0 }}<small>expected across {{ wk.trading_days }} trading day{{ "s" if wk.trading_days != 1 }}</small></span>
+      </div>
+      <div class="week__grid">
+        {% for d in wk.days %}
+        <div class="day{% if not d.trading %} day--closed{% endif %}{% if d.is_today %} day--today{% endif %}" tabindex="0"
+             aria-label="{{ d.date.strftime('%A') }}: {{ (d.revenue|money0 ~ ' expected') if d.trading else 'closed' }}{% if d.wx %}, {{ d.wx.summary }}{% endif %}">
+          {% if d.is_today %}<span class="day__badge">Today</span>{% endif %}
+          <span class="day__name">{{ d.date.strftime("%a") }}</span>
+          <span class="day__date">{{ d.date.day }} {{ d.date.strftime("%b") }}</span>
+          <span class="day__wx" title="{{ d.wx.summary if d.wx else 'No weather data' }}"><svg class="ico"><use href="#i-{{ d.wx_icon }}"/></svg></span>
+          <span class="day__temp">{% if d.wx and d.wx.temp_max_c is not none %}<b>{{ d.wx.temp_max_c|round|int }}°</b> {{ d.wx.temp_min_c|round|int }}°{% else %}&nbsp;{% endif %}</span>
+          <div class="bar" style="--h:{{ d.bar }}%;--lo:{{ d.low_pct }}%;--hi:{{ d.high_pct }}%">
+            {% if d.trading %}<span class="bar__range" aria-hidden="true"></span>{% endif %}
+            <span class="bar__fill"></span>
+          </div>
+          <span class="day__value num">{{ d.revenue|money0 if d.trading else "Closed" }}</span>
+          {% if d.trading %}
+          <div class="day__tip" role="tooltip">
+            <b>{{ d.date.strftime("%A") }} · {{ d.revenue|money0 }}</b>
+            <span class="muted">Range {{ d.low|money0 }}–{{ d.high|money0 }} · ~{{ d.orders|round|int }} orders</span>
+            {% if d.wx %}<br><span class="muted">{{ d.wx.summary }}{% if d.wx.precip_chance_pct is not none %}, {{ d.wx.precip_chance_pct|round|int }}% chance of rain{% endif %}</span>{% endif %}
+            {% if d.products %}<ul>{% for p in d.products %}<li><span>{{ p.name }}</span><span class="num">~{{ p.expected_qty|round|int }}</span></li>{% endfor %}</ul>{% endif %}
+            {% if d.adjustment %}<p class="muted" style="margin:8px 0 0">{{ d.adjustment.reason }}</p>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <p class="week__note"><svg class="ico"><use href="#i-spark"/></svg>
+        <span>Baseline from the same weekday over recent weeks (the striped band is the range). Weather from Open-Meteo. Next: Gemini adjusts each day for the weather and nearby events, and says why.</span></p>
+    </div>
+    {% else %}
+    <div class="empty reveal"><svg class="ico"><use href="#i-chart"/></svg><div><b>No forecast yet.</b>Once the till has a few weeks of sales, I'll plan the week here.</div></div>
+    {% endif %}
+  </section>
+
+  <!-- 03 -->
+  <section class="chapter" id="own" aria-labelledby="h-own">
+    <header class="chapter__head reveal">
+      <p class="chapter__no">03</p>
+      <h2 id="h-own">What I did on my own</h2>
+      <p class="chapter__lede">Every step I take is written down: what I read, what I checked, and every decision you made. Here's the latest, and what your morning brief looks like on WhatsApp.</p>
+    </header>
+    <div class="split">
+      <ol class="timeline">
+        {% for e in timeline %}
+        <li class="event reveal{% if e.actor == 'owner' %} event--owner{% endif %}{% if e.icon == 'alert' %} event--alert{% endif %}" style="--i:{{ loop.index0 }}">
+          <span class="event__ico"><svg class="ico"><use href="#i-{{ e.icon }}"/></svg></span>
+          <div>
+            <div class="event__head"><span class="event__label">{{ "You · " if e.actor == "owner" else "" }}{{ e.label }}</span>
+              <time class="event__ago" datetime="{{ e.at.isoformat() if e.at else '' }}">{{ e.ago }}</time></div>
+            <p class="event__text">{{ e.summary }}</p>
+          </div>
+        </li>
+        {% else %}
+        <li class="empty">Nothing yet. My first steps will show up here.</li>
+        {% endfor %}
+      </ol>
+      <div class="reveal" style="--i:2">
+        <div class="phone" aria-label="The brief Saint sends on WhatsApp">
+          <div class="phone__screen">
+            <div class="phone__bar"><span class="phone__avatar">C</span><div>CoFoundr<small>via Saint · WhatsApp</small></div></div>
+            <div class="phone__chat">
+              <div class="bubble">{{ brief.text }}<time>{{ now.strftime("%H:%M") }}</time></div>
+              {% if n %}<div class="bubble bubble--me">approve {{ pending[0].ref }}</div>{% endif %}
+            </div>
+          </div>
+        </div>
+        <p class="phone__caption">Saint reads this from <code>/brief</code> and sends it to the owner.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 -->
+  <section class="chapter" id="bring" aria-labelledby="h-bring">
+    <header class="chapter__head reveal">
+      <p class="chapter__no">04</p>
+      <h2 id="h-bring">Bring me an invoice</h2>
+      <p class="chapter__lede">Drop a photo or PDF, or just email it. Gemini reads it, checks the numbers add up, and asks you if anything looks off. It never guesses.</p>
+    </header>
+    <div class="bring">
+      <form class="drop reveal" method="post" action="/upload" enctype="multipart/form-data">
+        <input type="file" name="file" accept="image/*,application/pdf" required aria-label="Invoice photo or PDF">
+        <span class="drop__ico"><svg class="ico"><use href="#i-upload"/></svg></span>
+        <h3>Drop an invoice here</h3>
+        <p>or click to choose a photo or PDF · up to 10 MB</p>
+        <span class="drop__file" aria-live="polite"></span>
+        <button class="btn" type="submit" data-busy="Reading with Gemini…">Read it <svg class="ico ico--arrow"><use href="#i-arrow"/></svg></button>
       </form>
-      {% if review %}
-      <h2 style="margin-top:18px">Needs your check</h2>
-      {% for i in review %}
-      <p class="meta"><span class="tag review">review</span> <b>{{ i.invoice_number }}</b> {{ i.counterparty }}, {{ i.amount|money }}<br>
-        <span class="muted">{{ (i.verification_issues or ["needs checking"])[0] }}{% if i.extraction_notes %} · Gemini: {{ i.extraction_notes }}{% endif %}</span></p>
-      {% endfor %}
-      {% endif %}
-    </section>
-    <section>
-      <h2>Today's brief <span class="muted" style="font-weight:400;font-size:13px">(what Saint sends on WhatsApp)</span></h2>
-      <pre>{{ brief.text }}</pre>
-    </section>
-  </div>
-
-  <section>
-    <h2>Invoices</h2>
-    <div class="table-wrap"><table>
-      <tr><th>No.</th><th>Type</th><th>Who</th><th>Amount</th><th>Due</th><th>Status</th><th>Reminders</th><th>Read by AI</th></tr>
-      {% for i in invoices %}
-      <tr>
-        <td>{{ i.invoice_number }}</td>
-        <td>{{ "owed to us" if i.direction == "receivable" else "we owe" }}</td>
-        <td>{{ i.counterparty }}</td>
-        <td>{{ i.amount|money }}</td>
-        <td>{{ i.due_date|day }}</td>
-        <td><span class="tag {{ i.status }}">{{ i.status }}</span>{% if i.needs_review %} <span class="tag review">review</span>{% endif %}</td>
-        <td>{{ i.reminders_sent if i.direction == "receivable" else "–" }}</td>
-        <td class="muted">{{ "seed" if i.source == "manual" and i.extraction_confidence == 1.0 and not i.verification_issues is defined else i.extraction_confidence }}</td>
-      </tr>
-      {% endfor %}
-    </table></div>
+      <div class="mailbox reveal" style="--i:1">
+        <h3>Or just email it</h3>
+        <p>Suppliers can send invoices straight to the demo inbox. I pick up attachments and invoices written in the email itself, then label each email so it's only read once.</p>
+        {% if inbox.address %}
+        <div class="address"><svg class="ico"><use href="#i-mail"/></svg><span>{{ inbox.address }}</span>
+          <button class="btn btn--light" type="button" data-copy="{{ inbox.address }}">Copy</button></div>
+        {% endif %}
+        <p class="mailbox__status"><svg class="ico"><use href="#i-clock"/></svg>
+          {% if not inbox.configured %}Not connected yet.{% elif inbox.polling %}Checked every {{ inbox.polling }} s{% if inbox.last %}, last {{ inbox.last.at|ago }}{% endif %}.{% else %}Checked when you click below{% if inbox.last %}, last {{ inbox.last.at|ago }}{% endif %}.{% endif %}</p>
+        <div class="mailbox__actions">
+          <form method="post" action="/check-inbox"><button class="btn btn--light" data-busy="Checking…">Check inbox now</button></form>
+          <form method="post" action="/run-check"><button class="btn btn--ghost" data-busy="Checking…">Run overdue check</button></form>
+        </div>
+      </div>
+    </div>
   </section>
 
-  <div class="grid2">
-    <section>
-      <h2>Recent decisions</h2>
-      {% for a in decided %}
-      <p class="meta"><span class="tag {{ 'paid' if a.status in ['approved','edited'] else 'overdue' }}">{{ a.status }}</span>
-        #{{ a.ref }} {{ a.title }} <span class="muted">· via {{ a.decided_via }} · {{ a.decided_at|stamp }}</span></p>
-      {% else %}<p class="empty">No decisions yet.</p>{% endfor %}
-    </section>
-    <section>
-      <h2>Agent activity</h2>
-      <ul class="log">
-        {% for e in activity %}<li><span class="muted">{{ e.at|stamp }} · {{ e.actor }}</span><br>{{ e.summary }}</li>
-        {% else %}<li class="empty">No activity yet.</li>{% endfor %}
+  <!-- 05 -->
+  <section class="chapter" id="books" aria-labelledby="h-books">
+    <header class="chapter__head reveal">
+      <p class="chapter__no">05</p>
+      <h2 id="h-books">Your books</h2>
+      <p class="chapter__lede">Every invoice I know about, who owes whom, and where it came from.</p>
+    </header>
+    {%- set overdue_n = invoices|selectattr("status", "equalto", "overdue")|list|length -%}
+    <div class="books reveal">
+      <div class="filters" role="radiogroup" aria-label="Filter invoices">
+        <input type="radio" name="f" id="f-all" checked><label for="f-all">All<span>{{ invoices|length }}</span></label>
+        <input type="radio" name="f" id="f-overdue"><label for="f-overdue">Overdue<span>{{ overdue_n }}</span></label>
+        <input type="radio" name="f" id="f-in"><label for="f-in">Owed to you<span>{{ invoices|selectattr("direction", "equalto", "receivable")|list|length }}</span></label>
+        <input type="radio" name="f" id="f-out"><label for="f-out">You owe<span>{{ invoices|selectattr("direction", "equalto", "payable")|list|length }}</span></label>
+        {% if review %}<input type="radio" name="f" id="f-review"><label for="f-review">Needs a look<span>{{ review|length }}</span></label>{% endif %}
+      </div>
+      <ul class="rows">
+        {% for i in invoices %}
+        {%- set incoming = i.direction == "receivable" -%}
+        {%- set due = due_label(i, now.date()) -%}
+        <li class="row{% if incoming %} row--in{% endif %}" data-dir="{{ i.direction }}"{% if i.status == "overdue" %} data-overdue{% endif %}{% if i.needs_review and i.status != "paid" %} data-review{% endif %}>
+          <span class="avatar" aria-hidden="true">{{ (i.counterparty or "?")[:1] }}</span>
+          <div style="min-width:0">
+            <div class="row__who">{{ i.counterparty }}</div>
+            <div class="row__sub"><span>{{ i.invoice_number }}</span>
+              {% if i.source == "email" %}<span class="src src--email"><svg class="ico"><use href="#i-mail"/></svg>Email</span>
+              {% elif i.source == "whatsapp_photo" %}<span class="src"><svg class="ico"><use href="#i-chat"/></svg>WhatsApp</span>
+              {% elif i.source in ("pdf", "manual") and i.extraction_confidence is defined and i.verification_issues is defined %}<span class="src"><svg class="ico"><use href="#i-upload"/></svg>Upload</span>
+              {% else %}<span class="src">Demo data</span>{% endif %}
+            </div>
+          </div>
+          <span class="row__due{% if i.status == 'overdue' %} row__due--late{% endif %}">{{ due }}</span>
+          <span class="row__amount num">{{ i.amount|money }}<small>{{ "owed to you" if incoming else "you owe" }}</small></span>
+          <span class="row__status">
+            {% if i.status == "overdue" %}<span class="chip chip--rust">Overdue</span>
+            {% elif i.status == "paid" %}<span class="chip chip--sage">Paid</span>
+            {% else %}<span class="chip chip--sky">Open</span>{% endif %}
+          </span>
+          {% if i.needs_review and i.status != "paid" %}
+          <p class="row__issue"><svg class="ico"><use href="#i-alert"/></svg>{{ (i.verification_issues or ["Needs checking"])[0] }}</p>
+          {% endif %}
+        </li>
+        {% else %}
+        <li class="row"><span></span><span class="muted">No invoices yet.</span></li>
+        {% endfor %}
       </ul>
-    </section>
-  </div>
+    </div>
+  </section>
 </main>
+
+<footer>
+  <span>CoFoundr for GAIA Coffee · all data is synthetic demo data</span>
+  <span>Encode London 2026 · MongoDB Atlas · Gemini · Saint</span>
+</footer>
+<script src="/static/cofoundr.js?v=4" defer></script>
 </body>
 </html>

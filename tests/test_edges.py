@@ -88,7 +88,7 @@ def test_token_guard_handles_odd_tokens(db):
 def test_dashboard_renders_with_real_data(db, gemini_down):
     overdue.run()
     r = web.get("/", params={"msg": "<b>hi</b>"})
-    assert r.status_code == 200 and "Waiting for your approval" in r.text
+    assert r.status_code == 200 and "Waiting for your yes" in r.text and "Approve &amp; send" in r.text
     assert "<b>hi</b>" not in r.text and "&lt;b&gt;hi&lt;/b&gt;" in r.text  # flash messages are escaped
 
 
