@@ -157,3 +157,69 @@ def test_updates_peek_and_bad_cursor(db, gemini_down):
     peek = web.get("/updates", params={"token": TOKEN, "peek": "true"}).json()
     assert peek["count"] == 4 and web.get("/updates", params={"token": TOKEN}).json()["count"] == 4  # peek didn't consume
     assert web.get("/updates", params={"token": TOKEN, "since": "nope"}).status_code == 400
+
+
+# ---------------------------------------------------------------- POS connector (synthetic till files, no network)
+from backend.inputs.pos.client import LONDON, PosClient  # noqa: E402
+
+ALL_DATA = PosClient(now="2027-01-01")  # a clock after every file, so everything is visible
+
+
+def test_pos_reads_every_synthetic_order_and_count():
+    orders = list(ALL_DATA.iter_sales())
+    assert len(orders) == 1319 + 1389 + 1261
+    assert len({o["order_id"] for o in orders}) == len(orders)
+    assert [o["placed_at"] for o in orders] == sorted(o["placed_at"] for o in orders)
+    assert len(ALL_DATA.list_stock_counts()) == 6
+    assert ALL_DATA.list_stock()["count_id"] == "GAIA-COUNT-CLOSING-20261130"
+
+
+def test_pos_never_returns_the_future():
+    till = PosClient(now=datetime(2026, 10, 24, 12, 0, tzinfo=LONDON))
+    orders = list(till.iter_sales())
+    assert orders and max(o["placed_at"] for o in orders) < "2026-10-24T12:00"
+    assert list(till.iter_sales(since="2026-11-01")) == []
+    assert till.list_stock()["count_id"] == "GAIA-COUNT-OPENING-20261002"  # not the 31 Oct or November counts
+    assert PosClient(now="2026-09-01").list_stock() is None
+
+
+def test_pos_date_filter_uses_london_days_and_until_is_exclusive():
+    day = list(ALL_DATA.iter_sales(since="2026-10-03", until="2026-10-04"))
+    assert day and all(o["placed_at"].startswith("2026-10-03") for o in day)
+    assert list(ALL_DATA.iter_sales(since="2026-10-04", until="2026-10-05")) == []  # Sunday: not a trading day
+
+
+def test_pos_cursor_pages_cover_everything_once():
+    seen, cursor = [], None
+    while True:
+        page = ALL_DATA.list_sales(since="2026-09-01", until="2026-10-01", limit=50, cursor=cursor)
+        assert len(page["orders"]) <= 50
+        seen += [o["order_id"] for o in page["orders"]]
+        cursor = page["cursor"]
+        if cursor is None:
+            break
+    assert len(seen) == len(set(seen)) == 1319
+
+
+@pytest.mark.parametrize("kwargs", [{"limit": 0}, {"limit": 201}, {"cursor": "abc"}, {"cursor": "-5"}])
+def test_pos_rejects_bad_paging(kwargs):
+    with pytest.raises(ValueError):
+        ALL_DATA.list_sales(**kwargs)
+
+
+def test_pos_results_are_copies():
+    first = ALL_DATA.list_sales(limit=1)["orders"][0]
+    first["total_gbp"] = 9999
+    assert ALL_DATA.list_sales(limit=1)["orders"][0]["total_gbp"] != 9999
+
+
+def test_pos_refuses_files_not_labelled_synthetic(tmp_path):
+    (tmp_path / "real.json").write_text('{"orders": []}')
+    with pytest.raises(ValueError, match="synthetic"):
+        PosClient(tmp_path).list_sales()
+
+
+def test_pos_empty_folder_is_an_empty_till(tmp_path):
+    till = PosClient(tmp_path)
+    assert till.list_sales() == {"orders": [], "cursor": None}
+    assert till.list_stock() is None
