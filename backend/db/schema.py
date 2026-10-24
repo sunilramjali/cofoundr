@@ -50,7 +50,7 @@ class AgentLogEntry(TypedDict):
     business_id: str
     kind: str  # e.g. "invoice_extracted", "overdue_check", "approval_decided", "brief_served"
     summary: str  # one human-readable line
-    actor: Literal["agent", "owner", "saint"]
+    actor: Literal["agent", "owner"]
     detail: dict
     at: datetime
 

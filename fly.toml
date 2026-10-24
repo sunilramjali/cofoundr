@@ -1,4 +1,4 @@
-# CoFoundr web app: dashboard + Saint endpoints. Deploy from the repo root: fly deploy
+# CoFoundr web app: dashboard + WhatsApp webhook. Deploy from the repo root: fly deploy
 app = "cofoundr"
 primary_region = "lhr"
 
@@ -14,7 +14,7 @@ primary_region = "lhr"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 1  # stay warm so Saint and the live demo never hit a cold start
+  min_machines_running = 1  # stay warm so WhatsApp and the live demo never hit a cold start
 
   [[http_service.checks]]
     grace_period = "15s"

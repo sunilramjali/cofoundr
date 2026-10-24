@@ -1,4 +1,4 @@
-/* CoFoundr · app shell with depth: floating glass sidebar, a feed of 3D-tilting cards, a live 3D orb, a Saint chat bar.
+/* CoFoundr · app shell with depth: floating glass sidebar, a feed of 3D-tilting cards, a live 3D orb, an Ask chat bar.
    A slow WebGL gradient flows behind everything. Cards morph into their pages (cross-document View Transitions). */
 @view-transition { navigation: auto; }
 
@@ -181,7 +181,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .empty .ico { width: 26px; height: 26px; color: var(--sage); }
 .empty b { display: block; color: var(--ink); font: 400 22px var(--serif); }
 
-/* ---------- Saint chat bar ---------- */
+/* ---------- Ask chat bar ---------- */
 .chatbar { position: sticky; bottom: 22px; z-index: 20; margin-top: 26px; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 10px; border-radius: 99px;
   background: rgba(255, 255, 255, .72); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); box-shadow: var(--edge), var(--lift-2);
   animation: rise .8s var(--ease) .5s backwards; transition: box-shadow .3s, transform .4s var(--spring); }
@@ -359,7 +359,7 @@ html.js .ask.is-edited .js-edited { display: inline-flex; animation: pop .35s va
 .event__ago { font-size: 12.5px; color: var(--muted); }
 .event__text { margin: 2px 0 0; color: var(--ink-2); overflow-wrap: anywhere; }
 
-/* saint */
+/* ask (phone mock-up) */
 .phone-layout { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: clamp(20px, 4vw, 52px); align-items: start; }
 .phone { width: min(100%, 360px); padding: 12px; border-radius: 46px; background: linear-gradient(160deg, #2a241f, #0f0c0a);
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, .15), 0 2px 4px rgba(0, 0, 0, .2), 0 40px 70px -30px rgba(21, 18, 15, .6); transform: perspective(1400px) rotateY(-8deg) rotateX(3deg); }

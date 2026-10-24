@@ -1,4 +1,4 @@
-"""Edges (owner: Jade): web app routes, Saint endpoints, owner-facing messages. Fast, no MongoDB/Gemini needed."""
+"""Edges (owner: Jade): web app routes, WhatsApp (Twilio), owner-facing messages. Fast, no MongoDB/Gemini needed."""
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
@@ -10,7 +10,6 @@ def test_health_and_token_guard():
     client = TestClient(app)
     assert client.get("/health").json() == {"ok": True}
     assert client.get("/brief").status_code == 403
-    assert client.post("/approve", json={"text": "approve 1"}).status_code == 403
     assert client.get("/updates").status_code == 403
 
 
@@ -58,24 +57,6 @@ def test_reply_parser_accepts_clear_commands(text, expected):
 ])
 def test_reply_parser_refuses_negated_or_ambiguous_messages(text):
     assert parse_reply(text) is None
-
-
-# --- /approve (Saint relays the owner's WhatsApp reply)
-def test_whatsapp_approve_flow_and_errors(db, gemini_down, sent):
-    overdue.run()
-    post = lambda body, **kw: web.post("/approve", params={"token": TOKEN}, json=body, **kw)  # noqa: E731
-    assert post({"text": "don't approve 1"}).status_code == 400
-    assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "pending"  # the negation moved nothing
-    assert post({"text": "approve 1 and 2"}).status_code == 400
-    assert post({"ref": "abc", "decision": "approve"}).status_code == 400
-    assert post({"ref": True, "decision": "approve"}).status_code == 400
-    assert post({"ref": 1, "decision": "edit"}).status_code == 400
-    assert post({"ref": 999, "decision": "approve"}).status_code == 404
-    r = post({"text": "Approve #1"})
-    assert r.status_code == 200 and r.json()["status"] == "approved" and r.json()["reply"].startswith("✅ #1")
-    assert post({"text": "approve 1"}).status_code == 409  # already decided
-    r = post({"ref": "2", "decision": "reject"})
-    assert r.status_code == 200 and r.json()["reply"].startswith("❌ #2")
 
 
 def test_token_guard_handles_odd_tokens(db):
@@ -152,8 +133,8 @@ def test_brief_reply_hint_uses_a_real_ref(db, gemini_down):
     assert 'Reply "approve 5"' in text and 'approve 1"' not in text
 
 
-# --- /updates (Saint's outbox feed)
-def test_updates_feed_delivers_each_message_once(db, fake_extraction, sent):
+# --- /updates (the WhatsApp outbox feed)
+def test_updates_feed_delivers_each_message_once(db, fake_extraction, sent, twilio):
     fake_extraction(make_invoice(issuer_name="GAIA Coffee", recipient_name="Test Cafe", invoice_number="GAIA-4000",
                                  due_date="2026-10-01"))
     web.post("/upload", files={"file": ("inv.png", b"img", "image/png")})
@@ -166,7 +147,7 @@ def test_updates_feed_delivers_each_message_once(db, fake_extraction, sent):
     assert web.get("/updates", params={"token": TOKEN, "format": "text"}).text == ""  # nothing to send
 
     ref = next(u["ref"] for u in first["updates"] if u["kind"] == "approval_needed")
-    web.post("/approve", params={"token": TOKEN}, json={"text": f"approve {ref}"})  # WhatsApp: owner already got a reply
+    _whatsapp(f"approve {ref}")  # WhatsApp: the owner already got a reply
     assert get()["count"] == 0
     a = db[schema.APPROVALS].find_one({"status": "pending"})
     web.post(f"/approvals/{a['_id']}/decide", data={"decision": "reject"})  # dashboard: tell them on WhatsApp
@@ -700,89 +681,13 @@ def test_gmail_poller_checks_now_and_stops(monkeypatch):
     stop.set()
 
 
-# ---------------------------------------------------------------- Saint (Thea) emails the demo inbox: decisions + photos
-SAINT = "thea@saint.work"
-VERIFIED = "mx.google.com; dkim=pass header.i=@saint.work header.s=s1 header.b=abc; spf=pass smtp.mailfrom=thea@saint.work; dmarc=pass (p=NONE) header.from=saint.work"
-
-
-def _from_thea(body="", auth=VERIFIED, attach=(), sender=f"Thea <{SAINT}>", subject="CoFoundr"):
-    """Raw email bytes with Gmail's Authentication-Results on top, as they arrive in the inbox."""
-    raw = bytes(_mail(subject, body, sender=sender, attach=attach))
-    return (f"Authentication-Results: {auth}\r\n".encode() if auth else b"") + raw
-
-
-@pytest.fixture
-def saint_env(inbox_env, monkeypatch):
-    monkeypatch.setenv("SAINT_EMAIL", "Thea@Saint.work ")  # case and stray spaces from .env don't matter
-
-
-def test_saint_email_approves_like_a_whatsapp_reply(db, saint_env, gemini_down, sent):
+# ---------------------------------------------------------------- email can't decide anything
+def test_approve_email_is_just_an_email(db, inbox_env, gemini_down, sent):
+    """Decisions come from the dashboard or the owner's own WhatsApp number, never from an inbox anyone can write to."""
     overdue.run()
-    box = FakeInbox(_from_thea("approve 4\n\nThea\nOn Sat, 24 Oct 2026 at 10:00, CoFoundr wrote:\n> reject 1"))
-    r = gmail.check_inbox(connect=lambda: box)
-    assert r.message == "Inbox checked: 1 new email(s), 0 invoice(s) added, 1 decision(s) from Saint."
-    assert r.emails[0].decision.startswith("#4 approved: reminder sent") and box.labelled() == [b"1"]
-    a4, a1 = db[schema.APPROVALS].find_one({"ref": 4}), db[schema.APPROVALS].find_one({"ref": 1})
-    assert a4["decided_via"] == "whatsapp" and len(sent) == 1
-    assert a1["status"] == "pending"  # the quoted older message is not a decision
-    assert db[schema.AGENT_LOG].find_one({"kind": "approval_decided"})["actor"] == "saint"
-
-
-@pytest.mark.parametrize("auth", [
-    None,  # no Gmail verdict at all
-    "mx.google.com; dkim=fail header.i=@saint.work; spf=softfail smtp.mailfrom=x@evil.example; dmarc=fail header.from=saint.work",
-    "mx.google.com; dkim=pass header.i=@saint.work.evil.example; dmarc=pass header.from=saint.work.evil.example",  # lookalike
-    "evil.example; dkim=pass header.i=@saint.work; dmarc=pass header.from=saint.work",  # not written by Gmail
-])
-def test_forged_saint_email_never_decides(db, saint_env, gemini_down, sent, auth):
-    overdue.run()
-    r = gmail.check_inbox(connect=lambda: FakeInbox(_from_thea("approve 4", auth=auth)))
-    assert r.emails[0].decision is None and "not an invoice" in r.message
+    r = gmail.check_inbox(connect=lambda: FakeInbox(_mail("CoFoundr", "approve 4", sender="owner@example.com")))
+    assert "not an invoice" in r.message
     assert db[schema.APPROVALS].find_one({"ref": 4})["status"] == "pending" and not sent
-    assert db[schema.AGENT_LOG].find_one({"kind": "saint_email_rejected"})
-
-
-def test_forged_verdict_below_gmails_own_is_ignored(db, saint_env, gemini_down, sent):
-    overdue.run()
-    forged = b"Authentication-Results: " + VERIFIED.encode() + b"\r\n" + bytes(_mail("CoFoundr", "approve 4", sender=SAINT))
-    raw = b"Authentication-Results: mx.google.com; dkim=none; spf=fail smtp.mailfrom=x@evil.example\r\n" + forged
-    gmail.check_inbox(connect=lambda: FakeInbox(raw))
-    assert db[schema.APPROVALS].find_one({"ref": 4})["status"] == "pending" and not sent
-
-
-@pytest.mark.parametrize("body, expected", [
-    ("approve 4\nreject 3", "one \"approve N\" or \"reject N\" per email"),  # ambiguous → nothing moves
-    ("approve 99", "there's no #99"),
-    ("please don't approve 4", None),  # not exactly a decision
-])
-def test_saint_email_that_is_not_one_clear_decision_changes_nothing(db, saint_env, gemini_down, sent, body, expected):
-    overdue.run()
-    r = gmail.check_inbox(connect=lambda: FakeInbox(_from_thea(body)))
-    assert (expected in r.emails[0].decision) if expected else r.emails[0].decision is None
-    assert db[schema.APPROVALS].count_documents({"status": "pending"}) == 4 and not sent
-
-
-def test_saint_email_for_an_already_decided_approval_says_so(db, saint_env, gemini_down, sent):
-    overdue.run()
-    gmail.check_inbox(connect=lambda: FakeInbox(_from_thea("approve 4")))
-    again = gmail.check_inbox(connect=lambda: FakeInbox(_from_thea("reject 4")))
-    assert "already approved" in again.emails[0].decision and db[schema.APPROVALS].find_one({"ref": 4})["status"] == "approved"
-
-
-def test_saint_email_photo_is_a_whatsapp_invoice(db, saint_env, gemini_reads):
-    gemini_reads(make_invoice(invoice_number="WA-0001"))
-    photo = (BIG_IMAGE, "image", "png", "IMG_2041.png", "attachment")
-    r = gmail.check_inbox(connect=lambda: FakeInbox(_from_thea("Invoice photo from the owner", attach=[photo])))
-    assert r.emails[0].decision is None and "1 invoice(s) added" in r.message
-    assert db[schema.INVOICES].find_one({"invoice_number": "WA-0001"})["source"] == "whatsapp_photo"
-
-
-def test_approve_email_from_anyone_else_is_just_an_email(db, inbox_env, gemini_down, sent, monkeypatch):
-    overdue.run()
-    monkeypatch.delenv("SAINT_EMAIL", raising=False)  # no Saint configured: nobody can decide by email
-    gmail.check_inbox(connect=lambda: FakeInbox(_from_thea("approve 4")))
-    assert db[schema.APPROVALS].find_one({"ref": 4})["status"] == "pending" and not sent
-    assert not db[schema.AGENT_LOG].find_one({"kind": "saint_email_rejected"})
 
 
 # ---------------------------------------------------------------- dashboard view helpers
@@ -842,8 +747,8 @@ def test_ago(secs, expected):
     assert view.ago(None) == "never"
 
 
-# ---------------------------------------------------------------- home feed: Saint chat bar, stock, opportunities, chart
-def test_saint_chat_bar_decides_like_whatsapp_and_never_guesses(db, gemini_down, sent):
+# ---------------------------------------------------------------- home feed: Ask chat bar, stock, opportunities, chart
+def test_chat_bar_decides_like_whatsapp_and_never_guesses(db, gemini_down, sent):
     overdue.run()
     r = web.post("/ask", data={"text": "approve 4", "back": "/"}, follow_redirects=False)
     assert r.headers["location"].startswith("/?msg=") and "#4 approved" in _flash(r)
@@ -905,14 +810,14 @@ def test_cross_site_posts_are_blocked(db, path, data, headers):
     assert r.status_code == 403 and "Blocked" in r.text
 
 
-def test_same_site_and_server_to_server_posts_still_work(db, gemini_down, sent):
+def test_same_site_and_server_to_server_posts_still_work(db, gemini_down, sent, twilio):
     overdue.run()
     same = web.post("/ask", data={"text": "approve 4"}, headers={"Origin": "http://testserver"}, follow_redirects=False)
     assert same.status_code == 303 and "#4 approved" in _flash(same)
     referer = web.post("/run-check", headers={"Referer": "http://testserver/approvals"}, follow_redirects=False)
     assert referer.status_code == 303
-    saint = web.post("/approve", params={"token": TOKEN}, json={"text": "reject 1"})  # Saint's server: no Origin
-    assert saint.status_code == 200 and saint.json()["status"] == "rejected"
+    assert _whatsapp("reject 1").status_code == 200  # Twilio's server: no Origin, signed instead
+    assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "rejected"
 
 
 # ---------------------------------------------------------------- local sandbox: never writes to the real database
@@ -1153,6 +1058,19 @@ def test_whatsapp_approve_from_the_owner_decides_and_replies(db, gemini_down, se
     assert a["status"] == "approved" and a["decided_via"] == "whatsapp" and len(sent) == 1
     assert twilio[-1]["To"] == "whatsapp:+447700900123" and twilio[-1]["Body"].startswith("✅ #4 approved")
     assert db[schema.AGENT_LOG].find_one({"kind": "whatsapp_received", "actor": "owner"})
+
+
+def test_whatsapp_decision_edge_cases_change_nothing_wrongly(db, ask, gemini_down, sent, twilio):
+    """What the old /approve endpoint guarded, now on the WhatsApp path."""
+    overdue.run()
+    _whatsapp("approve 999")
+    assert twilio[-1]["Body"] == "There's no #999 waiting for you."
+    _whatsapp("don't approve 1")  # a negation is a question for the assistant, never a decision
+    assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "pending"
+    _whatsapp("reject 2")
+    _whatsapp("approve 2")  # already decided
+    assert "already" in twilio[-1]["Body"] and db[schema.APPROVALS].find_one({"ref": 2})["status"] == "rejected"
+    assert db[schema.AGENT_LOG].find_one({"kind": "approval_decided"})["actor"] == "owner" and not sent
 
 
 @pytest.mark.parametrize("headers", [{}, {"X-Twilio-Signature": "bm90LXJlYWw="}])
