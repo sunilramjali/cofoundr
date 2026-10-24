@@ -973,7 +973,7 @@ def test_the_forecast_reads_weather_and_live_events_per_day(db):
     got = conditions.conditions_for(["2026-10-25", "2026-10-26", "2026-10-27"])
     assert got["2026-10-25"]["weather"]["summary"] == "Overcast"
     assert [e["name"] for e in got["2026-10-25"]["events"]] == ["Closer", "Broadway Market Craft Fair"]
-    assert got["2026-10-26"]["events"] == [] and got["2026-10-27"] == {"weather": None, "events": []}
+    assert got["2026-10-26"]["events"] == [] and got["2026-10-27"] == {"weather": None, "events": [], "transport": []}
 
 
 def test_timestamps_without_an_offset_are_london_time(db):

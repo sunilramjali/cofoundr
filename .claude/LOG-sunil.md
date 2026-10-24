@@ -12,6 +12,22 @@ Newest entry at the top. Format:
 
 ---
 
+## Sat 24 Oct, ~20:45 — Transport: TfL disruptions near the pitch (MVP2)
+- **Decision (Sunil): Sunil builds transport end to end**, including the fetcher in Jade's `inputs/` (flagged in the PR)
+- **Inputs:**
+  - `backend/inputs/transport.py`: TfL Unified API (free, optional `TFL_APP_KEY`): `stations(pitch)` within 1.2 km, `statuses(lines, start, end)` (live + planned works), `sequences(line)`, `snapshot(days)`
+  - `fetch.get_json(..., expect=list)` (backward compatible); `app_key` added to the masked secrets
+- **Middle:** `backend/transport.py` `assess(snapshot)` decides which disruptions hit *our* stations:
+  - station named in the text; or on the path between "A and B", walked on the line map built from TfL's pieces (handles junctions and names like "Elephant and Castle"); or line-wide (suspended/delays)
+  - only during trading hours 07:00–18:00 London (night works ignored; DST-safe, clocks change Sun 25 Oct)
+  - "uncertain" when TfL's text can't be placed: shown as uncertain, never guessed
+- **Storage:** `conditions.record_transport()` (idempotent; disruptions no longer listed become `resolved`, never deleted); `conditions_for()` now returns `transport` per day; `--sync` does weather + TfL
+- **Live:** stations London Fields 616 m, Cambridge Heath 517 m, Bethnal Green 1 km, Haggerston/Hoxton 1.1 km. Stored: Central line severe delays at Bethnal Green today. Correctly ignored: 2 Windrush closures (Sydenham/Crystal Palace, far south) + a Greater Anglia "special service"
+- **Contract changes (`schema.py`):** `TRANSPORT`, `TransportDisruption`
+- **Tests:** `tests/test_transport.py` (new file, avoids clashes), 16 tests → 243 pass
+- **Next:** Gemini forecast adjustment with weather + transport
+- **Blockers / notes for partner:** Jade, I added `backend/inputs/transport.py` and touched `fetch.py` (an `expect=list` param, `app_key` masked); please look over them. Run `conditions.sync_transport()` with the weather every ~3 h on Fly
+
 ## Sat 24 Oct, ~19:45 — Weather + events storage (MVP2, issue #22)
 - **Did:** `backend/conditions.py` (same pattern as `sales.py`):
   - `record_weather(days)`: one doc per pitch per London day; a changed forecast replaces the old one

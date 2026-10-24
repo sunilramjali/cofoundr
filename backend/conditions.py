@@ -12,7 +12,7 @@ Safe to run any number of times: unchanged days/events are left alone, changed o
 the day nears; events get rescheduled). Never raises on bad data: bad records are reported in `errors`, the rest
 are still recorded. The forecast reads it all back with conditions_for().
 
-    python -m backend.conditions --sync [--days 7]   # fetch the weather from Open-Meteo and record it
+    python -m backend.conditions --sync [--days 7]   # fetch weather (Open-Meteo) + TfL disruptions and record them
                                                      # (events: no source wired up yet; Ticketmaster parked)
     python -m backend.conditions                     # show what's stored for the coming week
 """
@@ -28,6 +28,8 @@ from backend.db.client import get_db
 BUSINESS_ID = "gaia-coffee"
 LONDON = ZoneInfo("Europe/London")
 WEATHER_NUMBERS = ("temp_max_c", "temp_min_c", "precip_mm", "precip_chance_pct", "wind_max_kmh")
+TRANSPORT_FIELDS = ("status", "impact", "category", "reason", "dates", "stations", "nearest_m", "starts_at", "ends_at",
+                    "state", "line_name")
 EVENT_FIELDS = ("name", "category", "genre", "date", "starts_at", "status", "venue", "lat", "lon", "distance_km",
                 "pitch_id", "url")
 REMOVED = "removed"
@@ -35,19 +37,19 @@ REMOVED = "removed"
 
 @dataclass
 class ConditionsResult:
-    kind: str  # "weather" | "events"
+    kind: str  # "weather" | "events" | "transport"
     new: int = 0
     updated: int = 0  # stored before, something changed (better forecast, rescheduled event)
     unchanged: int = 0
-    removed: int = 0  # events no longer listed by the source for a window we re-fetched (cancelled or moved)
+    removed: int = 0  # events / disruptions the source stopped listing for a window we re-fetched
     errors: List[str] = field(default_factory=list)  # "<record>: what's wrong"; those records were NOT stored
 
     @property
     def message(self) -> str:
-        unit = "day(s)" if self.kind == "weather" else "event(s)"
+        unit = {"weather": "day(s)", "events": "event(s)", "transport": "disruption(s)"}[self.kind]
         parts = [f"{self.new} new", f"{self.updated} updated", f"{self.unchanged} unchanged"]
         if self.removed:
-            parts.append(f"{self.removed} no longer listed")
+            parts.append(f"{self.removed} {'resolved' if self.kind == 'transport' else 'no longer listed'}")
         if self.errors:
             parts.append(f"{len(self.errors)} rejected")
         return f"{self.kind.capitalize()} sync ({unit}): " + ", ".join(parts) + "."
@@ -111,14 +113,45 @@ def record_events(events: Iterable[dict], covered: Optional[List[Tuple[str, str,
     return result
 
 
+def record_transport(disruptions: Iterable[dict], covered: Optional[List[Tuple[str, str, str]]] = None,
+                     now: Optional[datetime] = None) -> ConditionsResult:
+    """Store the disruptions backend.transport.assess() found. Idempotent. Active ones in a re-fetched `covered`
+    window that weren't found again become state "resolved" (never deleted)."""
+    db, now = get_db(), now or datetime.now(timezone.utc)
+    result, batch = ConditionsResult("transport"), {}
+    for raw in disruptions:
+        try:
+            doc = _transport_doc(raw, now)
+        except ValueError as e:
+            result.errors.append(f"{_label(raw, 'line_id', 'status')}: {e}")
+            continue
+        batch[doc["_id"]] = doc
+    coll = db[schema.TRANSPORT]
+    for doc in batch.values():
+        first_seen = (coll.find_one({"_id": doc["_id"]}, {"first_seen_at": 1}) or {}).get("first_seen_at", now)
+        _upsert(coll, {**doc, "first_seen_at": first_seen}, TRANSPORT_FIELDS, result, now)
+    for pitch_id, first, last in covered or []:
+        gone = coll.update_many({"business_id": BUSINESS_ID, "pitch_id": pitch_id, "state": "active",
+                                 "dates": {"$elemMatch": {"$gte": first, "$lte": last}}, "_id": {"$nin": list(batch)}},
+                                {"$set": {"state": "resolved", "updated_at": now}})
+        result.removed += gone.modified_count
+    if result.new or result.updated or result.removed or result.errors:
+        first_new = next((d for d in batch.values()), None)
+        extra = f" e.g. {first_new['line_name']}: {first_new['status']} at {', '.join(first_new['stations'])}." if first_new else ""
+        activity.log("transport_synced", result.message + extra, new=result.new, updated=result.updated,
+                     resolved=result.removed, errors=result.errors[:5])
+    return result
+
+
 def conditions_for(dates: List[str], pitch_id: Optional[str] = None) -> Dict[str, dict]:
-    """{date: {"weather": WeatherDay or None, "events": [Event, nearest first]}} for the forecast. Removed events
-    are left out. pitch_id=None → the first pitch's weather and events near any pitch."""
+    """{date: {"weather": WeatherDay or None, "events": [Event, nearest first], "transport": [TransportDisruption]}}
+    for the forecast. Removed events and resolved disruptions are left out. pitch_id=None → the first pitch's weather
+    and events/disruptions near any pitch."""
     from backend.inputs.pitches import PITCHES
 
     db = get_db()
     pitch = pitch_id or PITCHES[0]["id"]
-    out = {d: {"weather": None, "events": []} for d in dates}
+    out = {d: {"weather": None, "events": [], "transport": []} for d in dates}
     for w in db[schema.WEATHER].find({"business_id": BUSINESS_ID, "pitch_id": pitch, "date": {"$in": dates}}):
         out[w["date"]]["weather"] = w
     query = {"business_id": BUSINESS_ID, "date": {"$in": dates}, "status": {"$ne": REMOVED}}
@@ -126,6 +159,11 @@ def conditions_for(dates: List[str], pitch_id: Optional[str] = None) -> Dict[str
         query["pitch_id"] = pitch_id
     for e in db[schema.EVENTS].find(query).sort("distance_km", 1):
         out[e["date"]]["events"].append(e)
+    tq = {"business_id": BUSINESS_ID, "state": "active", "dates": {"$in": dates}, **({"pitch_id": pitch_id} if pitch_id else {})}
+    for t in db[schema.TRANSPORT].find(tq).sort("nearest_m", 1):
+        for d in t["dates"]:
+            if d in out:
+                out[d]["transport"].append(t)
     return out
 
 
@@ -192,6 +230,37 @@ def _event_doc(raw: dict, now: datetime) -> dict:
     }
 
 
+def _transport_doc(raw: dict, now: datetime) -> dict:
+    if not isinstance(raw, dict):
+        raise ValueError("not a disruption")
+    source, source_id = _text(raw.get("source") or "tfl", "source"), _text(raw.get("source_id"), "source_id")
+    impact = raw.get("impact")
+    if impact not in ("closed", "delays", "uncertain"):
+        raise ValueError(f"unknown impact {impact!r}")
+    dates = sorted({_day(d) for d in raw.get("dates") or []})
+    if not dates:
+        raise ValueError("no dates")
+    stations = [s for s in raw.get("stations") or [] if isinstance(s, str) and s]
+    if not stations:
+        raise ValueError("no stations")
+
+    def when(value):
+        try:
+            return _timestamp(value + "Z" if isinstance(value, str) and value[-1:].isdigit() else value, None) if value else None
+        except ValueError:
+            return None  # TfL times are UTC without an offset; a garbled one isn't worth losing the disruption
+
+    return {
+        "_id": f"{BUSINESS_ID}:{source}:{source_id}", "business_id": BUSINESS_ID, "source": source, "source_id": source_id,
+        "pitch_id": _text(raw.get("pitch_id"), "pitch_id"), "line_id": _text(raw.get("line_id"), "line_id"),
+        "line_name": raw.get("line_name") or raw["line_id"], "status": raw.get("status") or "Unknown", "impact": impact,
+        "category": "planned" if raw.get("category") == "planned" else "live", "reason": raw.get("reason") or "",
+        "dates": dates, "stations": stations, "nearest_m": int(_number(raw.get("nearest_m"), "nearest_m") or 0),
+        "starts_at": when(raw.get("starts_at")), "ends_at": when(raw.get("ends_at")), "state": "active",
+        "fetched_at": _timestamp(raw.get("fetched_at"), now), "last_seen_at": now, "synthetic": False,
+    }
+
+
 def _text(value, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"missing {name}")
@@ -234,9 +303,25 @@ def _weather_line(w: dict) -> str:
     return f"{day:%a %d %b} {w['summary']}{temps}{rain}"
 
 
+def sync_transport(days: int = 7) -> str:
+    """Fetch TfL around every pitch, keep what hits our stations in trading hours, record it. Never raises."""
+    from backend import transport
+    from backend.inputs import transport as tfl
+    from backend.inputs.fetch import FetchError
+
+    try:
+        snap = tfl.snapshot(days)
+    except FetchError as e:  # stored disruptions are kept as they are
+        activity.log("transport_sync_failed", f"TfL sync failed: {e}")
+        return f"transport: {e}"
+    found, ignored = transport.assess(snap)
+    result = record_transport(found, covered=[(p, *s["window"]) for p, s in snap.items()])
+    return result.message + (f" ({len(ignored)} line problem(s) elsewhere ignored)" if ignored else "")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Record weather + events around the pitches.")
-    parser.add_argument("--sync", action="store_true", help="fetch the weather from Open-Meteo and record it")
+    parser.add_argument("--sync", action="store_true", help="fetch weather (Open-Meteo) + TfL disruptions and record them")
     parser.add_argument("--days", type=int, default=7)
     args = parser.parse_args()
     if args.sync:
@@ -248,11 +333,13 @@ def main() -> None:
         except FetchError as e:  # stored forecasts are kept as they are
             activity.log("weather_sync_failed", f"Weather sync failed: {e}")
             print(f"weather: {e}")
+        print(sync_transport(args.days))
     today = datetime.now(LONDON).date()
     dates = [(today + timedelta(days=i)).isoformat() for i in range(args.days)]
     for d, c in conditions_for(dates).items():
         w = _weather_line(c["weather"]) if c["weather"] else f"{d} no weather stored"
-        print(f"{w}" + "".join(f"\n    · {e['name']} at {e['venue']} ({e['distance_km']} km)" for e in c["events"]))
+        print(f"{w}" + "".join(f"\n    · {e['name']} at {e['venue']} ({e['distance_km']} km)" for e in c["events"])
+              + "".join(f"\n    🚆 {t['line_name']} {t['status']} ({t['impact']}) at {', '.join(t['stations'])}" for t in c["transport"]))
 
 
 if __name__ == "__main__":

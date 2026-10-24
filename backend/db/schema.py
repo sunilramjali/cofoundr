@@ -16,6 +16,7 @@ SALES = "sales"
 INVOICES = "invoices"
 EVENTS = "events"  # things happening near the truck's pitches (Ticketmaster), one doc per event
 WEATHER = "weather"  # daily weather forecast per pitch (Open-Meteo), one doc per pitch per London day
+TRANSPORT = "transport"  # TfL disruptions that hit a station near a pitch during trading hours, one doc per disruption
 FORECASTS = "forecasts"
 TASKS = "tasks"
 APPROVALS = "approvals"
@@ -302,6 +303,33 @@ class Event(TypedDict):
     pitch_id: str  # nearest pitch (an event found near two pitches is stored once)
     url: Optional[str]
     search_text: str  # "name | category, genre | venue": for Automated Embedding (event ↔ business matching)
+    fetched_at: datetime
+    first_seen_at: datetime
+    last_seen_at: datetime
+    synthetic: bool
+
+
+class TransportDisruption(TypedDict):
+    """A TfL disruption that hits at least one station near a pitch during trading hours (backend/transport.py decides;
+    line-level problems elsewhere on the line are not stored). Never deleted: one that TfL stops listing for a window
+    we re-fetched gets state "resolved"."""
+    _id: str  # "<business_id>:tfl:<source_id>"
+    business_id: str
+    source: str  # "tfl"
+    source_id: str  # hash of line + status + TfL's text
+    pitch_id: str
+    line_id: str  # "weaver", "central", ...
+    line_name: str
+    status: str  # TfL's words: "Part Closure", "Severe Delays", ...
+    impact: Literal["closed", "delays", "uncertain"]  # uncertain = TfL's text couldn't be placed on the line's map
+    category: Literal["planned", "live"]  # planned works (known days ahead) or live (today)
+    reason: str  # TfL's text, shown as-is
+    dates: List[str]  # London days it touches during trading hours (07:00-18:00)
+    stations: List[str]  # nearby stations it hits, e.g. ["London Fields", "Cambridge Heath"]
+    nearest_m: int  # walking distance from the pitch to the nearest affected station
+    starts_at: Optional[datetime]
+    ends_at: Optional[datetime]
+    state: Literal["active", "resolved"]
     fetched_at: datetime
     first_seen_at: datetime
     last_seen_at: datetime
