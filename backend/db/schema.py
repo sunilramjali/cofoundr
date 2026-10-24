@@ -276,7 +276,8 @@ class Forecast(TypedDict):
     expected_orders: float
     low_revenue: float  # range from the same weekdays' history (min..max of the lookback)
     high_revenue: float
-    basis: str  # human-readable, e.g. "average of the last 6 Saturdays"
+    basis: str  # human-readable, e.g. "average of the last 6 Saturdays, leaving out 10 Oct (far below a usual Saturday)"
+    left_out: List[str]  # unusual past days not averaged (closed early, rained off, card machine down), "YYYY-MM-DD"
     products: List[ProductForecast]  # top sellers expected that day
     adjustment: Optional[ForecastAdjustment]  # None until Gemini adjusts it
     final_revenue: float  # baseline × (1 + pct/100), or the baseline when not adjusted

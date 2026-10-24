@@ -6,6 +6,8 @@ Baseline, per day ahead:
 - Expected revenue / orders = the average of the last LOOKBACK_WEEKS same weekdays it traded,
   with the range (lowest..highest of those days) so nobody mistakes a guess for a promise.
 - Per product: average units sold on those same days → what to stock for that day.
+- Unusual days are left out: a day that took under UNUSUAL of that weekday's median (needs 3+ such days to judge)
+  was almost certainly closed early, rained off or had the card machine down. Each forecast says which it left out.
 
 Gemini adjustment, per trading day, with a verification loop:
 1. Gemini gets the baseline, GAIA's daily takings so far, and that day's stored conditions (weather at the pitch,
@@ -27,8 +29,8 @@ import json
 import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
-from statistics import mean
-from typing import Dict, List, Literal, Optional
+from statistics import mean, median
+from typing import Dict, List, Literal, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from google.genai import types
@@ -41,6 +43,7 @@ BUSINESS_ID = "gaia-coffee"
 LONDON = ZoneInfo("Europe/London")
 LOOKBACK_WEEKS = 6
 TOP_PRODUCTS = 8
+UNUSUAL = 0.25  # takings under a quarter of the usual for that weekday: not a normal trading day
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 MAX_PCT = 35  # biggest move for a whole day; more than that is a judgement call for the owner, not a model
 MAX_FACTOR_PCT = 30
@@ -127,6 +130,18 @@ def trading_weekdays(history: Dict[date, dict], today: date) -> set:
     return {wd for wd, n in seen.items() if n >= weeks / 2}
 
 
+def usual_days(history: Dict[date, dict], same: List[date]) -> Tuple[List[date], List[date]]:
+    """Same-weekday days (newest first) → (the last LOOKBACK_WEEKS normal ones, the unusual ones left out of that window).
+    Judged against the median of the recent window, and only with 3+ days: with fewer, nothing is "usual" yet."""
+    window = same[:LOOKBACK_WEEKS]
+    if len(window) < 3:
+        return window, []
+    floor = UNUSUAL * median(history[d]["revenue"] for d in window)
+    normal = [d for d in same if history[d]["revenue"] >= floor][:LOOKBACK_WEEKS]
+    oldest = normal[-1] if normal else window[-1]
+    return normal, [d for d in same if d >= oldest and history[d]["revenue"] < floor]
+
+
 def baseline(history: Dict[date, dict], product_days: Dict[date, Dict[str, float]], names: Dict[str, str],
              today: date, days: int = 7) -> List[dict]:
     """Pure function: the baseline forecast for `days` days starting at `today` (London dates)."""
@@ -135,9 +150,11 @@ def baseline(history: Dict[date, dict], product_days: Dict[date, Dict[str, float
     for i in range(days):
         target = today + timedelta(days=i)
         wd = target.weekday()
-        past = sorted((d for d in history if d.weekday() == wd and d < today), reverse=True)[:LOOKBACK_WEEKS]
+        same = sorted((d for d in history if d.weekday() == wd and d < today), reverse=True)
+        past, left_out = usual_days(history, same)
         doc = {"_id": f"{BUSINESS_ID}:{target.isoformat()}", "business_id": BUSINESS_ID, "date": target.isoformat(),
-               "weekday": DAYS[wd], "trading": wd in open_days and bool(past), "adjustment": None, "synthetic": True}
+               "weekday": DAYS[wd], "trading": wd in open_days and bool(past), "adjustment": None, "synthetic": True,
+               "left_out": [d.isoformat() for d in left_out]}
         if not doc["trading"]:
             doc.update(expected_revenue=0.0, expected_orders=0.0, low_revenue=0.0, high_revenue=0.0, products=[],
                        basis=f"closed: GAIA doesn't usually trade on {DAYS[wd]}s" if past or wd not in open_days
@@ -153,7 +170,9 @@ def baseline(history: Dict[date, dict], product_days: Dict[date, Dict[str, float
             doc.update(expected_revenue=round(mean(revenue), 2),
                        expected_orders=round(mean(history[d]["orders"] for d in past), 1),
                        low_revenue=round(min(revenue), 2), high_revenue=round(max(revenue), 2),
-                       basis=f"average of the last {len(past)} {DAYS[wd]}{'s' if len(past) != 1 else ''}",
+                       basis=f"average of the last {len(past)} {DAYS[wd]}{'s' if len(past) != 1 else ''}"
+                             + (f", leaving out {', '.join(d.strftime('%-d %b') for d in left_out)} (far below a usual {DAYS[wd]})"
+                                if left_out else ""),
                        products=[{"sku": sku, "name": names.get(sku, sku), "expected_qty": round(q, 1)} for sku, q in top])
         doc["final_revenue"] = doc["expected_revenue"]
         out.append(doc)

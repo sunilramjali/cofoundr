@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, ~00:15 — Forecast leaves out closed days; weather vs real takings
+- **Did:** `forecast.usual_days()`: a past day under 25% of that weekday's median (3+ days needed to judge) is left out of the average and named in `basis` ("leaving out 10 Oct (far below a usual Saturday)"); new `Forecast.left_out` in `schema.py`. 3 tests → 309 pass
+- **Checked real takings against Open-Meteo archive weather (locally, no figures here):** the closed day was dry (not weather); quiet weekdays had almost no rain *during trading hours*; morning rain didn't hurt. 5 weeks show no clear weather effect yet, so Gemini's rain cuts are general knowledge: keep the caps + confidence
+- **Flaw found:** daily weather summaries mislead (a "heavy drizzle" day had all its rain overnight). Better: rain during trading hours (07:00-18:00) from hourly data → change to `inputs/weather.py` (Jade), after the hackathon
+- **Next:** merge #39, release, run the forecast Sunday morning
+
 ## Sat 24 Oct, ~23:30 — Post-mortem: forecast adjustment + card payments
 - **Found and reproduced 13 bugs, all fixed with a regression test (293 pass):**
   1. **Changing `PAYMENT_ID_SALT` silently double-counted** every re-import → salt fingerprint in `counters`, a different salt is refused
