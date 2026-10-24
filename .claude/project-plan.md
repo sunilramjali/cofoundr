@@ -34,6 +34,47 @@ Owner ⇄ WhatsApp ⇄ Saint ⇄ FastAPI (/brief, /approve) ⇄ MongoDB Atlas �
 - Approvals can happen in the dashboard or by WhatsApp reply. Both update the same MongoDB record.
 - If Saint has no API/webhook: Saint reads a public read-only `/brief` page (secret token in URL, demo data only). Fallback: a Google Sheet bridge.
 
+### 3a. Bridge strategy (Saint ⇄ MongoDB)
+
+**What it is:** a small FastAPI web server in `bridge/`, deployed on **Fly.io** at a public URL (e.g. `https://cofoundr.fly.dev`). It's the **only** way Saint reads or changes data. Saint never connects to MongoDB directly.
+
+**Why:**
+1. Saint can't read Streamlit (JS-rendered) → the bridge serves plain text/HTML/JSON.
+2. Security → Saint holds only a demo token (`BRIEF_TOKEN`), never the MongoDB password.
+3. Rules in one place → approval checks live in the bridge, so Saint can't bypass them (trust story + "human control" judging criteria).
+4. Saint gets finished answers (ranked, explained, WhatsApp-ready), not raw documents.
+
+```
+            ┌─► Streamlit dashboard (owner views)
+MongoDB ◄───┤
+            └─► Bridge (FastAPI on Fly.io) ◄──► Saint ◄──► WhatsApp ◄──► Owner
+                        └─► Gemini
+```
+
+**Endpoints:**
+
+| Endpoint | Called when | Does |
+|---|---|---|
+| `GET /brief?token=…&format=html\|json` | Owner asks Saint for the brief | Reads tasks, invoices, forecasts, approvals → returns a WhatsApp-ready message |
+| `POST /approve` `{id, decision}` | Owner replies "approve 1" / "reject 1" | Checks the action exists and is `pending` → updates `approvals` (decision, `decided_via: "whatsapp"`, timestamp) → dashboard reflects it |
+| `POST /invoice` (later) | Owner sends an invoice photo | Sends the photo to Gemini for extraction → saves to `invoices` |
+| `GET /health` | Fly.io health check | Returns `ok` |
+
+**Rules:**
+- Approvals are `POST` only, never a clickable GET link (link previews/crawlers could trigger them).
+- Every bridge call is logged to an agent activity record in MongoDB (Agents That Ship: "clear record").
+- Bridge and dashboard both import collection names/shapes from `backend/db/schema.py`.
+- The token in the URL is OK only because all data is synthetic demo data.
+
+**Fly.io deployment:**
+- `bridge/` holds `main.py`, `requirements.txt`, `Dockerfile` and `fly.toml` (app `cofoundr`, region `lhr`, internal port 8080, health check on `/health`).
+- Secrets are set with `fly secrets set MONGODB_URI=… BRIEF_TOKEN=… GEMINI_API_KEY=…` and are never committed.
+- Deploy: `cd bridge && fly deploy`.
+- MongoDB Atlas network access must allow Fly.io's outbound IPs (or `0.0.0.0/0` for the hackathon, demo data only).
+- **Deploy a stub first** (hard-coded `/brief` text) and test that Saint can read it **before** building real logic.
+
+**Depends on the Saint team's answers:** can Saint read a web page, call an API/webhook, or receive WhatsApp photos? Web page only → `/brief` HTML + approvals via the dashboard. API/webhook → full `/brief` JSON + `/approve`. Neither → Google Sheet fallback.
+
 ## 4. Modules (priority order)
 
 **Must ship**
