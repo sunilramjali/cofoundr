@@ -18,8 +18,8 @@ This is the smallest slice that proves the core story: *an agent that does a rea
 ### Must have (done criteria)
 - [x] **Data:** MongoDB Atlas cluster live; `businesses`, `invoices`, `approvals` collections seeded with synthetic GAIA Coffee data (incl. 2–3 overdue invoices), labelled synthetic
 - [ ] **Contract:** `backend/db/schema.py` shapes for `Business`, `Invoice`, `Approval` agreed and used by all code
-- [ ] **Extraction:** upload an invoice photo/PDF → `gemini-4-argon` returns supplier, amount, due date, line items as JSON
-- [ ] **Verification loop:** line items sum to total and due date is valid; otherwise `extraction_confidence` is low and the invoice is flagged for owner review (not guessed)
+- [x] **Extraction:** upload an invoice photo/PDF → `gemini-4-argon` returns supplier, amount, due date, line items as JSON
+- [x] **Verification loop:** line items sum to total and due date is valid; otherwise `extraction_confidence` is low and the invoice is flagged for owner review (not guessed)
 - [ ] **Overdue + draft:** overdue invoices get a drafted reminder saved as a `pending` approval
 - [ ] **Approval:** dashboard shows the queue with Approve / Edit / Reject; decision updates MongoDB (`status`, `decided_via`, `decided_at`)
 - [ ] **Web app on Fly.io:** one FastAPI app serving the dashboard pages (upload + approval queue) and `GET /health`, `GET /brief?token=…` (plain text from MongoDB: overdue invoices + pending approvals)

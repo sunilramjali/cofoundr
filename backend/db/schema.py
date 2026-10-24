@@ -53,6 +53,8 @@ class Invoice(TypedDict):
     source: Literal["whatsapp_photo", "pdf", "email", "manual"]
     extraction_confidence: float  # 0-1, from Gemini verification loop
     needs_review: bool  # True when verification fails: owner checks, agent doesn't guess
+    verification_issues: List[str]  # what failed; empty when clean (seeded docs omit it)
+    extraction_notes: Optional[str]  # Gemini notes on unclear values
     reminders_sent: int  # escalation level for receivables
     synthetic: bool
     created_at: datetime
