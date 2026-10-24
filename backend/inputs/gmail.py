@@ -3,8 +3,8 @@
 - PDF / image attachments are always read. An email without one is read as text only when its subject mentions
   an invoice, so pitches, newsletters and Google alerts never reach Gemini.
 - Each email is handled once: afterwards it gets the Gmail label "CoFoundr/processed" (the inbox is the record;
-  nothing here writes MongoDB). An email that failed only because Gemini was busy stays unlabelled, so the next
-  check retries it. Messages are fetched with BODY.PEEK, so nothing is marked as read.
+  nothing here writes MongoDB). An email that failed only because Gemini was busy stays unlabelled and is retried
+  15 minutes later (not every minute, so an outage doesn't burn quota or flood the activity log). Messages are fetched with BODY.PEEK, so nothing is marked as read.
 - Never raises: every outcome comes back as an InboxResult. A check that found new email is one line in the
   agent log (each invoice also gets the pipeline's own line); a connection or login failure is logged once, not
   every minute.
@@ -18,6 +18,7 @@ import imaplib
 import os
 import re
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from email import policy
@@ -35,11 +36,13 @@ LOOKBACK_DAYS = 14  # the first check doesn't trawl years of mail
 MAX_PER_CHECK = 20  # oldest first; the rest wait for the next check
 MIN_IMAGE_BYTES = 10_000  # smaller inline images are logos and signatures, not invoice photos
 INVOICE_SUBJECT = re.compile(r"\binvoice", re.IGNORECASE)
-RETRY = {"gemini_unavailable"}  # leave unlabelled so the next check tries again
+RETRY = {"gemini_unavailable"}  # leave unlabelled so a later check tries again...
+RETRY_WAIT = 15 * 60  # ...but not every minute: one Gemini call + log line per email per 15 min during an outage
 FILE_TYPES = ALLOWED_TYPES - {"text/plain"}
 
 _lock = threading.Lock()  # the poller and the "Check inbox now" button never check at the same time
 _last_failure: Optional[str] = None  # so a broken login is logged once, not every minute
+_retry_after: dict = {}  # UID → time.monotonic() before which a busy-Gemini email isn't retried
 last_check: Optional[dict] = None  # {"at", "ok", "message"} of the latest finished check, for the dashboard
 
 
@@ -190,14 +193,18 @@ def _check_inbox(limit: int, connect: Optional[Callable[[], imaplib.IMAP4]]) -> 
                 return _failed("login_failed", "Gmail refused the login: check GMAIL_APP_PASSWORD (a 16-letter app password).")
             imap.create(f'"{LABEL}"')  # answers NO when it already exists: fine
             imap.select("INBOX")
-            for uid in _unprocessed(imap)[:limit]:
+            now = time.monotonic()
+            for uid in [u for u in _unprocessed(imap) if _retry_after.get(u, 0) <= now][:limit]:
                 typ, data = imap.uid("FETCH", uid, "(BODY.PEEK[])")
                 raw = next((part[1] for part in data or [] if isinstance(part, tuple)), None) if typ == "OK" else None
                 if raw is None:
                     continue
                 outcome, retry = handle(email.message_from_bytes(raw, policy=policy.default))
                 outcomes.append(outcome)
-                if not retry:
+                if retry:
+                    _retry_after[uid] = now + RETRY_WAIT
+                else:
+                    _retry_after.pop(uid, None)
                     imap.uid("STORE", uid, "+X-GM-LABELS", f'"{LABEL}"')
         except (OSError, imaplib.IMAP4.error) as e:
             return _failed("unreachable", f"Lost the connection to Gmail ({type(e).__name__}) after {len(outcomes)} "
