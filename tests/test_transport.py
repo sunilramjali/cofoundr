@@ -209,3 +209,14 @@ def test_a_one_day_window_asks_tfl_for_a_valid_range(monkeypatch):
     monkeypatch.setattr(fetch, "get_json", get_json)
     tfl.statuses(["weaver"], date(2026, 10, 24), date(2026, 10, 24))  # TfL answers 400 when EndDate == StartDate
     assert urls[0].endswith("/Status/2026-10-24/to/2026-10-25")
+
+
+def test_the_extra_day_asked_of_tfl_never_leaks_into_a_one_day_window():
+    sunday_only = _status(reason="WINDRUSH LINE: no service between Dalston Junction and Shoreditch High Street.",
+                          periods=[{"from": "2026-10-25T06:00:00Z", "to": "2026-10-25T20:00:00Z"}])
+    one_day = {"broadway-market": {"stations": STATIONS, "statuses": [sunday_only], "window": ("2026-10-24", "2026-10-24"),
+                                   "sequences": {"windrush": WINDRUSH}}}
+    found, ignored = transport.assess(one_day)
+    assert found == [] and "outside this week" in ignored[0]["why"]
+    two_days = {"broadway-market": {**one_day["broadway-market"], "window": ("2026-10-24", "2026-10-25")}}
+    assert transport.assess(two_days)[0][0]["dates"] == ["2026-10-25"]  # the same disruption, inside the window

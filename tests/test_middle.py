@@ -497,6 +497,23 @@ def test_too_few_days_to_judge_means_nothing_is_left_out():
     assert sat["left_out"] == [] and "leaving out" not in sat["basis"]
 
 
+def _sats(revenues):
+    """{Saturday: day} for the Saturdays before 24 Oct, newest first."""
+    return {_date(2026, 10, 24) - timedelta(weeks=i + 1): {"revenue": r, "orders": 10} for i, r in enumerate(revenues)}
+
+
+@pytest.mark.parametrize("revenues, expected, left_out", [
+    ([7, 500, 500, 500], 500, ["2026-10-17"]),  # the most recent day was the odd one
+    ([500, 7, 500, 500, 500, 500, 500], 500, ["2026-10-10"]),  # a 7th week fills the gap: still 6 days averaged
+    ([500, -10, 500], 500, ["2026-10-10"]),  # refunds outweighed sales
+    ([500, 7, 5], 170.67, []),  # most days tiny: can't tell what's usual, so nothing is guessed away
+    ([500, 450, 400, 150, 100], 320, []),  # a business ramping up: early quiet days are real
+])
+def test_which_unusual_days_are_left_out(revenues, expected, left_out):
+    sat = forecast.baseline(_sats(revenues), {}, {}, _date(2026, 10, 24), days=1)[0]
+    assert sat["expected_revenue"] == expected and sat["left_out"] == left_out
+
+
 def test_a_quiet_but_real_day_is_kept():
     h = _hist({5: 500}, weeks=4)
     h[sorted(h)[1]] = {"revenue": 200.0, "orders": 30}  # a wet Saturday: 40% of usual, still a trading day

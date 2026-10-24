@@ -333,3 +333,12 @@ def test_forecast_never_mixes_real_and_synthetic_history(db, salt):
     assert all(f["synthetic"] is False for f in out)
     assert [f["weekday"] for f in out if f["trading"]] == ["Saturday", "Sunday", "Thursday", "Friday"]  # real Thu-Sun, not the till's days
     assert "real data" in db[schema.AGENT_LOG].find_one({"kind": "forecast_updated"}, sort=[("at", -1)])["summary"]
+
+
+def test_old_real_data_never_lets_synthetic_data_back_in(db, salt):
+    """Once a business has real data, the forecast uses only real data, even if it's too old to forecast from."""
+    sales.record_orders(PosClient(now="2026-12-01").iter_sales(until="2026-10-24"), origin="test", now=NOW)  # synthetic, recent
+    old = [{**p, "paid_at": "2026-06-06"} for p in evo.parse(_evo_csv()).payments]  # real, months ago
+    payments.record_payments(old, origin="test", synthetic=False, now=NOW)
+    out = forecast.run(now=NOW, use_gemini=False)
+    assert all(not f["trading"] and f["synthetic"] is False for f in out)
