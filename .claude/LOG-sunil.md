@@ -16,6 +16,7 @@ Newest entry at the top. Format:
 - **Did:** `forecast.usual_days()`: a past day under 25% of that weekday's median (3+ days needed to judge) is left out of the average and named in `basis` ("leaving out 10 Oct (far below a usual Saturday)"); new `Forecast.left_out` in `schema.py`. 3 tests → 309 pass
 - **Checked real takings against Open-Meteo archive weather (locally, no figures here):** the closed day was dry (not weather); quiet weekdays had almost no rain *during trading hours*; morning rain didn't hurt. 5 weeks show no clear weather effect yet, so Gemini's rain cuts are general knowledge: keep the caps + confidence
 - **Flaw found:** daily weather summaries mislead (a "heavy drizzle" day had all its rain overnight). Better: rain during trading hours (07:00-18:00) from hourly data → change to `inputs/weather.py` (Jade), after the hackathon
+- **Past TfL disruptions:** TfL's API keeps no history (past 4 weeks, 19 lines: 2 statuses vs 18 for next week). Our `transport` collection keeps everything it sees (resolved, never deleted), so history builds up from now on. Older history only via National Rail HSP (Overground train delays, needs a Rail Data Marketplace account). Fixed: a one-day TfL window got HTTP 400 (`statuses` now widens end by a day), test in `test_transport.py`
 - **Next:** merge #39, release, run the forecast Sunday morning
 
 ## Sat 24 Oct, ~23:30 — Post-mortem: forecast adjustment + card payments

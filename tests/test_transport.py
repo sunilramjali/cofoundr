@@ -198,3 +198,14 @@ def test_a_list_where_an_object_was_expected_is_a_clear_error(monkeypatch):
     with pytest.raises(fetch.FetchError, match="isn't an object"):
         fetch.get_json("https://x", {}, "TfL")
     assert fetch.get_json("https://x", {}, "TfL", expect=list) == [1, 2]
+
+
+def test_a_one_day_window_asks_tfl_for_a_valid_range(monkeypatch):
+    urls = []
+
+    def get_json(url, *_a, **_k):
+        urls.append(url)
+        return []
+    monkeypatch.setattr(fetch, "get_json", get_json)
+    tfl.statuses(["weaver"], date(2026, 10, 24), date(2026, 10, 24))  # TfL answers 400 when EndDate == StartDate
+    assert urls[0].endswith("/Status/2026-10-24/to/2026-10-25")
