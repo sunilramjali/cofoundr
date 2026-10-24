@@ -700,6 +700,91 @@ def test_gmail_poller_checks_now_and_stops(monkeypatch):
     stop.set()
 
 
+# ---------------------------------------------------------------- Saint (Thea) emails the demo inbox: decisions + photos
+SAINT = "thea@saint.work"
+VERIFIED = "mx.google.com; dkim=pass header.i=@saint.work header.s=s1 header.b=abc; spf=pass smtp.mailfrom=thea@saint.work; dmarc=pass (p=NONE) header.from=saint.work"
+
+
+def _from_thea(body="", auth=VERIFIED, attach=(), sender=f"Thea <{SAINT}>", subject="CoFoundr"):
+    """Raw email bytes with Gmail's Authentication-Results on top, as they arrive in the inbox."""
+    raw = bytes(_mail(subject, body, sender=sender, attach=attach))
+    return (f"Authentication-Results: {auth}\r\n".encode() if auth else b"") + raw
+
+
+@pytest.fixture
+def saint_env(inbox_env, monkeypatch):
+    monkeypatch.setenv("SAINT_EMAIL", "Thea@Saint.work ")  # case and stray spaces from .env don't matter
+
+
+def test_saint_email_approves_like_a_whatsapp_reply(db, saint_env, gemini_down, sent):
+    overdue.run()
+    box = FakeInbox(_from_thea("approve 4\n\nThea\nOn Sat, 24 Oct 2026 at 10:00, CoFoundr wrote:\n> reject 1"))
+    r = gmail.check_inbox(connect=lambda: box)
+    assert r.message == "Inbox checked: 1 new email(s), 0 invoice(s) added, 1 decision(s) from Saint."
+    assert r.emails[0].decision.startswith("#4 approved: reminder sent") and box.labelled() == [b"1"]
+    a4, a1 = db[schema.APPROVALS].find_one({"ref": 4}), db[schema.APPROVALS].find_one({"ref": 1})
+    assert a4["decided_via"] == "whatsapp" and len(sent) == 1
+    assert a1["status"] == "pending"  # the quoted older message is not a decision
+    assert db[schema.AGENT_LOG].find_one({"kind": "approval_decided"})["actor"] == "saint"
+
+
+@pytest.mark.parametrize("auth", [
+    None,  # no Gmail verdict at all
+    "mx.google.com; dkim=fail header.i=@saint.work; spf=softfail smtp.mailfrom=x@evil.example; dmarc=fail header.from=saint.work",
+    "mx.google.com; dkim=pass header.i=@saint.work.evil.example; dmarc=pass header.from=saint.work.evil.example",  # lookalike
+    "evil.example; dkim=pass header.i=@saint.work; dmarc=pass header.from=saint.work",  # not written by Gmail
+])
+def test_forged_saint_email_never_decides(db, saint_env, gemini_down, sent, auth):
+    overdue.run()
+    r = gmail.check_inbox(connect=lambda: FakeInbox(_from_thea("approve 4", auth=auth)))
+    assert r.emails[0].decision is None and "not an invoice" in r.message
+    assert db[schema.APPROVALS].find_one({"ref": 4})["status"] == "pending" and not sent
+    assert db[schema.AGENT_LOG].find_one({"kind": "saint_email_rejected"})
+
+
+def test_forged_verdict_below_gmails_own_is_ignored(db, saint_env, gemini_down, sent):
+    overdue.run()
+    forged = b"Authentication-Results: " + VERIFIED.encode() + b"\r\n" + bytes(_mail("CoFoundr", "approve 4", sender=SAINT))
+    raw = b"Authentication-Results: mx.google.com; dkim=none; spf=fail smtp.mailfrom=x@evil.example\r\n" + forged
+    gmail.check_inbox(connect=lambda: FakeInbox(raw))
+    assert db[schema.APPROVALS].find_one({"ref": 4})["status"] == "pending" and not sent
+
+
+@pytest.mark.parametrize("body, expected", [
+    ("approve 4\nreject 3", "one \"approve N\" or \"reject N\" per email"),  # ambiguous → nothing moves
+    ("approve 99", "there's no #99"),
+    ("please don't approve 4", None),  # not exactly a decision
+])
+def test_saint_email_that_is_not_one_clear_decision_changes_nothing(db, saint_env, gemini_down, sent, body, expected):
+    overdue.run()
+    r = gmail.check_inbox(connect=lambda: FakeInbox(_from_thea(body)))
+    assert (expected in r.emails[0].decision) if expected else r.emails[0].decision is None
+    assert db[schema.APPROVALS].count_documents({"status": "pending"}) == 4 and not sent
+
+
+def test_saint_email_for_an_already_decided_approval_says_so(db, saint_env, gemini_down, sent):
+    overdue.run()
+    gmail.check_inbox(connect=lambda: FakeInbox(_from_thea("approve 4")))
+    again = gmail.check_inbox(connect=lambda: FakeInbox(_from_thea("reject 4")))
+    assert "already approved" in again.emails[0].decision and db[schema.APPROVALS].find_one({"ref": 4})["status"] == "approved"
+
+
+def test_saint_email_photo_is_a_whatsapp_invoice(db, saint_env, gemini_reads):
+    gemini_reads(make_invoice(invoice_number="WA-0001"))
+    photo = (BIG_IMAGE, "image", "png", "IMG_2041.png", "attachment")
+    r = gmail.check_inbox(connect=lambda: FakeInbox(_from_thea("Invoice photo from the owner", attach=[photo])))
+    assert r.emails[0].decision is None and "1 invoice(s) added" in r.message
+    assert db[schema.INVOICES].find_one({"invoice_number": "WA-0001"})["source"] == "whatsapp_photo"
+
+
+def test_approve_email_from_anyone_else_is_just_an_email(db, inbox_env, gemini_down, sent, monkeypatch):
+    overdue.run()
+    monkeypatch.delenv("SAINT_EMAIL", raising=False)  # no Saint configured: nobody can decide by email
+    gmail.check_inbox(connect=lambda: FakeInbox(_from_thea("approve 4")))
+    assert db[schema.APPROVALS].find_one({"ref": 4})["status"] == "pending" and not sent
+    assert not db[schema.AGENT_LOG].find_one({"kind": "saint_email_rejected"})
+
+
 # ---------------------------------------------------------------- dashboard view helpers
 from datetime import date as _date  # noqa: E402
 

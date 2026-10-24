@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 from backend import approvals, payments
 from backend.ai import overdue
 from backend.inputs import evo, gmail
+from backend.inputs.replies import parse_reply  # noqa: F401 (also imported from here by tests)
 from backend.outputs.brief import build_brief
 from backend.outputs.updates import get_updates
 from backend.pipeline import ingest_invoice
@@ -77,18 +78,6 @@ def _check_token(token: Optional[str]) -> None:
     # Compare bytes: compare_digest raises on non-ASCII str, which would be a 500 instead of a 403
     if not expected or not token or not secrets.compare_digest(token.encode(), expected.encode()):
         raise HTTPException(status_code=403, detail="Invalid or missing token.")
-
-
-# The whole reply must be one command: "approve 3", "Yes #3", "reject 2!". Anything else ("don't approve 3",
-# "approve 1 and 2", "approve the £450 one") is refused, so a negated or ambiguous message never moves money.
-REPLY = re.compile(r"^\s*(approve|approved|yes|ok|reject|rejected|no)\s*#?\s*(\d{1,6})\s*[.!]*\s*$", re.IGNORECASE)
-
-
-def parse_reply(text: str) -> Optional[tuple]:
-    m = REPLY.match(text or "")
-    if not m:
-        return None
-    return ("reject" if m.group(1).lower() in ("reject", "rejected", "no") else "approve"), int(m.group(2))
 
 
 def _public_url(request: Request) -> str:
