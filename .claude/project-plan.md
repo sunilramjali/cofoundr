@@ -135,6 +135,7 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 ## 9. Open questions
 - [ ] Ask Saint team: can Saint pass a WhatsApp photo to our backend, or only Drive/email?
 - [x] Saint access: Saint interacts with our Fly.io web app (bridge)
+- [ ] Ask Saint team: can Saint send WhatsApp messages unprompted (business-initiated), run on a schedule, or receive a webhook? (needed for automatic updates)
 - [ ] Confirm GAIA owner is OK with the name being used
 - [x] Front end: server-rendered dashboard in the FastAPI app on Fly.io (Streamlit dropped)
 - [ ] Gemini 4 Argon API key (Sunil adding)

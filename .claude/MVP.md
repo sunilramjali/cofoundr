@@ -25,15 +25,17 @@ This is the smallest slice that proves the core story: *an agent that does a rea
 - [x] **Approval:** dashboard shows the queue with Approve / Edit / Reject; decision updates MongoDB (`status`, `decided_via`, `decided_at`)
 - [x] **Web app on Fly.io:** (live: https://cofoundr.fly.dev) one FastAPI app serving the dashboard pages (upload + approval queue) and `GET /health`, `GET /brief?token=…` (plain text from MongoDB: overdue invoices + pending approvals)
 - [ ] **Saint test:** Saint reads `/brief` from the Fly.io app and relays it on WhatsApp
+- [ ] **WhatsApp automatic updates:** the owner is messaged on WhatsApp **without asking** when something needs them, e.g. "New invoice from Eastside Dairy (£176.70) read and checked" or "Reminder drafted for Hackney Hub, reply approve 4". CoFoundr publishes a `GET /updates?since=…` feed (token-protected; new invoices, new drafts, decisions); **Saint** polls it or receives a webhook and sends the message. Fallback if Saint can't send business-initiated messages: Twilio WhatsApp sandbox. Depends on the Saint team's answers.
 
 ### Out of scope for MVP1
-Forecasting, prioritisation, events/weather, WhatsApp photo input, `/approve` via WhatsApp, Atlas Search/Vector Search, Treg, heatmap, waste, partnerships, voice orders.
+Forecasting, prioritisation, events/weather, WhatsApp photo input, Atlas Search/Vector Search, Treg, heatmap, waste, partnerships, voice orders. (`/approve` via WhatsApp is already built.)
 
 ### MVP1 demo (≤ 60 s)
 1. Email an invoice to the CoFoundr inbox → within a minute it appears in the dashboard, read and checked, with nobody touching it (agent activity shows each step). Fallback: upload it in the dashboard.
 2. It's overdue → a drafted reminder appears in the approval queue.
 3. Click Approve → status changes in MongoDB and the dashboard.
-4. Show Saint reading `/brief` with the overdue invoice listed.
+4. The owner's phone buzzes: Saint sends the WhatsApp update unprompted. Owner replies "approve 4" → dashboard shows it approved via WhatsApp.
+5. Owner asks Saint for the brief → it lists what's left.
 
 ### Owners
 | Task | Owner |
@@ -43,11 +45,14 @@ Forecasting, prioritisation, events/weather, WhatsApp photo input, `/approve` vi
 | Overdue check + reminder draft | Sunil |
 | Dashboard pages on Fly.io: upload + approval queue | Sunil |
 | `/brief` on Fly.io | Sunil |
-| **Gmail autonomous intake** (`backend/`) | **Sunil** (proposed) |
+| **Gmail autonomous intake** (incl. setting up the demo Gmail account) | **Jade** |
 | **Saint test** (WhatsApp → `/brief`, `/approve`) | **Jade** (proposed) |
-| **Upload retest + demo reset + review PR #3** | **Jade** (proposed) |
+| **WhatsApp automatic updates**: `/updates` feed (Sunil) + Saint/Twilio sending | **Sunil** (proposed) |
+| **Upload retest + demo reset** | **Sunil** (proposed) |
+| **Review PR #3, PR #6** | **Jade** |
 
-Items above the bold rows were built by Sunil solo. The bold rows are the proposed split now that Jade has joined; confirm or swap.
+Items above the bold rows were built by Sunil solo. Bold rows: Jade owns Gmail intake (confirmed); the rest is proposed, confirm or swap.
+**Open question for the Saint team:** can Saint message the owner unprompted, run on a schedule, or receive a webhook?
 
 ---
 
