@@ -217,6 +217,7 @@
 
   /* Forms: busy label on the clicked button, no double submits */
   $$("form").forEach((form) => form.addEventListener("submit", (e) => {
+    if (form.matches('[action="/ask"]') && window.fetch) return;  // the chat sends in the background (below)
     if (form.dataset.sent) { e.preventDefault(); return; }
     form.dataset.sent = "1";
     const btn = e.submitter || $("button", form);
@@ -224,6 +225,54 @@
     // disable the others only after the browser has captured the clicked button's name/value
     setTimeout(() => $$("button", form).forEach((b) => { if (b !== btn) b.disabled = true; }), 0);
   }));
+
+  /* Chat without reloading: every chat box (Home bar, Chat page, the panel) posts in the background; the panel opens,
+     shows the question, a "Thinking…" bubble with moving dots, then swaps in the answer. No JS → normal page loads. */
+  (function chat() {
+    const panel = $("#chat"); if (!panel || !window.fetch) return;
+    const log = $(".chat__log", panel);
+    const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const bold = (s) => esc(s).replace(/\*([^*\n]+)\*/g, "<strong>$1</strong>");  // WhatsApp *bold*, same as the server
+    const bubble = (cls, html) => {
+      const p = document.createElement("p"); p.className = cls; p.innerHTML = html; log.append(p);
+      log.scrollTo({ top: log.scrollHeight, behavior: calm ? "auto" : "smooth" }); return p;
+    };
+    const open = () => {
+      if (!panel.hidden) return;
+      panel.hidden = false; panel.classList.add("is-opening");
+      document.body.classList.add("chat-is-open");  // the long bar tucks away: the panel has its own box
+      log.scrollTop = log.scrollHeight;
+      setTimeout(() => panel.classList.remove("is-opening"), 400);
+    };
+    $(".chat__close", panel).addEventListener("click", (e) => {
+      e.preventDefault(); panel.hidden = true; document.body.classList.remove("chat-is-open");
+    });
+    $$('form[action="/ask"]').forEach((form) => form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = $('input[name="text"]', form), text = input.value.trim();
+      if (!text || form.dataset.busy) return;
+      form.dataset.busy = "1";
+      const body = new FormData(form);  // before the box is cleared below
+      open();
+      bubble("chat__me", esc(text));
+      if (form !== $(".chat__form", panel)) setTimeout(() => $("#chat-msg").focus({ preventScroll: true }), 50);
+      input.value = "";
+      const thinking = bubble("chat__them is-thinking", 'Thinking<span class="dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span>');
+      thinking.setAttribute("aria-label", "Thinking");
+      try {
+        const res = await fetch("/ask", { method: "POST", body, headers: { Accept: "application/json" } });
+        const data = await res.json();
+        thinking.innerHTML = bold(data.answer || data.error || "Sorry, something went wrong.");
+      } catch (err) {
+        thinking.textContent = "Sorry, I couldn't reach CoFoundr just now. Nothing was changed: please try again.";
+      }
+      thinking.classList.remove("is-thinking"); thinking.removeAttribute("aria-label"); thinking.classList.add("is-new");
+      const asked = thinking.previousElementSibling;  // read from the top of the answer, with the question just above it
+      log.scrollTo({ top: Math.max(0, (asked || thinking).offsetTop - log.offsetTop - 8), behavior: calm ? "auto" : "smooth" });
+      delete form.dataset.busy;
+      $("#chat-msg").focus({ preventScroll: true });
+    }));
+  })();
 
   /* "Send my edited version" appears only once the draft changes */
   $$(".ask").forEach((card) => {
