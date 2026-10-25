@@ -121,7 +121,8 @@ def cancel_stale(db, now: datetime) -> int:
     return cancelled
 
 
-def run(dry_run: bool = False) -> List[dict]:
+def run(dry_run: bool = False, only=None) -> List[dict]:
+    """`only` = one invoice's _id: the check (overdue flag + draft) touches that invoice and nothing else."""
     from backend.db.client import get_db
 
     db = get_db()
@@ -129,18 +130,20 @@ def run(dry_run: bool = False) -> List[dict]:
     now = datetime.now(timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
+    scope = {"business_id": BUSINESS_ID, **({"_id": only} if only is not None else {})}
+
     if not dry_run:
         flipped = invoices.update_many(
-            {"business_id": BUSINESS_ID, "status": "open", "due_date": {"$lt": today}},
+            {**scope, "status": "open", "due_date": {"$lt": today}},
             {"$set": {"status": "overdue"}},
         ).modified_count
         if flipped:
             print(f"Marked {flipped} invoice(s) overdue.")
-        cancelled = cancel_stale(db, now)
+        cancelled = 0 if only is not None else cancel_stale(db, now)
         if cancelled:
             print(f"Withdrew {cancelled} pending action(s) whose invoice is paid or gone.")
 
-    overdue = list(invoices.find({"business_id": BUSINESS_ID, "status": "overdue", "needs_review": {"$ne": True}}).sort("due_date", 1))
+    overdue = list(invoices.find({**scope, "status": "overdue", "needs_review": {"$ne": True}}).sort("due_date", 1))
     pending_targets = {a["target_id"] for a in approvals.find({"business_id": BUSINESS_ID, "status": "pending"}, {"target_id": 1})}
     todo = [inv for inv in overdue if str(inv["_id"]) not in pending_targets and due_for_action(inv, today)]
     skipped = len(overdue) - len(todo)
