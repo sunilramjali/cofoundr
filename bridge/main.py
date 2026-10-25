@@ -110,8 +110,8 @@ def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
 # ---------- Owner dashboard: a home of modules, each opening into its own page ----------
 
 NAV = [  # sidebar, in the order of the owner's day (and the demo): (label, path, icon)
-    ("Home", "/", "home"), ("Approvals", "/approvals", "yes"), ("Inbox", "/inbox", "in"), ("Finances", "/invoices", "pound"),
-    ("Insights", "/sales", "chart"), ("Board", "/board", "bulb"), ("Activity", "/activity", "clock"),
+    ("Home", "/", "home"), ("Board", "/board", "bulb"), ("Approvals", "/approvals", "yes"), ("Inbox", "/inbox", "in"),
+    ("Finances", "/invoices", "pound"), ("Insights", "/sales", "chart"), ("Activity", "/activity", "clock"),
 ]
 NAV_MORE = [  # a quieter second group: useful, not daily
     ("Inventory", "/inventory", "box"), ("News", "/news", "spark"), ("Chat", "/whatsapp", "chat"),

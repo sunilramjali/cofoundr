@@ -12,7 +12,7 @@
     <div><b>Invoice inbox</b><span>{% if inbox.configured %}{{ inbox.address }} · {{ "checked every " ~ inbox.polling ~ " s" if inbox.polling else "checked on demand" }}{% if inbox.last %} · last {{ inbox.last.at|ago }}{% endif %}{% else %}Not connected: set GMAIL_ADDRESS and GMAIL_APP_PASSWORD{% endif %}</span></div>
     <span class="chip {{ 'chip--sage' if inbox.configured else 'chip--amber' }}">{{ "Connected" if inbox.configured else "Off" }}</span></div>
   <div class="setting"><span class="gem gem--sage"><svg class="ico"><use href="#i-chat"/></svg></span>
-    <div><b>Ask CoFoundr (Gemini)</b><span>Answers questions from your data with read-only tools; decisions stay with "approve 1" / "reject 1"</span></div>
+    <div><b>Ask CoFoundr</b><span>Answers questions from your data with read-only tools; decisions stay with "approve 1" / "reject 1"</span></div>
     <a class="btn btn--soft" href="/whatsapp">Open</a></div>
   <div class="setting"><span class="gem gem--rose"><svg class="ico"><use href="#i-till"/></svg></span>
     <div><b>Till (POS)</b><span>{% if sales.last %}Last sale day {{ sales.last.date|day }} · {{ sales.trading_days }} trading days in the last four weeks{% else %}No sales synced yet{% endif %}</span></div></div>

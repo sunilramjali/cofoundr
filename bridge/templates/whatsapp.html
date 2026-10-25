@@ -3,7 +3,7 @@
 {% block vt %}m-whatsapp{% endblock %}
 {% block eyebrow %}<svg class="ico"><use href="#i-chat"/></svg>Ask CoFoundr{% endblock %}
 {% block heading %}Ask anything about the business{% endblock %}
-{% block lede %}Gemini answers from your own data: invoices, sales, the forecast and your priorities. It can look things up but never approve, pay or send: that stays with your “approve 1”.{% endblock %}
+{% block lede %}I answer from your own data: invoices, sales, the forecast and your priorities. It can look things up but never approve, pay or send: that stays with your “approve 1”.{% endblock %}
 {% block body %}
 <form class="chatbar" method="post" action="/ask" style="position:static;margin:0 0 24px">
   <span class="chatbar__who" aria-hidden="true">C</span><input type="hidden" name="back" value="/whatsapp">
@@ -14,7 +14,7 @@
 <div class="phone-layout">
   <div class="phone" aria-label="Your brief">
     <div class="phone__screen">
-      <div class="phone__bar"><span class="chatbar__who">C</span><div>CoFoundr<small>your brief · powered by Gemini</small></div></div>
+      <div class="phone__bar"><span class="chatbar__who">C</span><div>CoFoundr<small>your brief</small></div></div>
       <div class="phone__chat">
         <div class="bubble" style="--i:0">{{ brief.text }}<time>{{ now.strftime("%H:%M") }}</time></div>
         {% if n %}<div class="bubble bubble--me" style="--i:1">approve {{ pending[0].ref }}</div>{% endif %}
@@ -22,7 +22,7 @@
     </div>
   </div>
   <div class="cmds">
-    <div class="cmd"><code>who owes me money?</code><p>Gemini looks it up in your invoices and answers with the exact amounts. Every £ figure is checked against your records.</p></div>
+    <div class="cmd"><code>who owes me money?</code><p>I look it up in your invoices and answers with the exact amounts. Every £ figure is checked against your records.</p></div>
     <div class="cmd"><code>how did we do this week?</code><p>Takings from the till, day by day. Also: “what's the forecast for Saturday?”, “find the dairy invoices”.</p></div>
     <div class="cmd"><code>approve 1</code><p>Approves #1 and sends it. "yes 1" and "ok 1" work too.</p></div>
     <div class="cmd"><code>reject 1</code><p>Rejects #1. Nothing is sent.</p></div>

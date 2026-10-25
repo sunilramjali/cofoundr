@@ -13,7 +13,7 @@
 </form>
 {% if found is not none %}
 <section class="block search__results">
-  <h2>{{ found.hits|length }} step{{ "s" if found.hits|length != 1 }} matching “{{ q }}” <small>{{ "MongoDB Atlas Search over my activity log" if found.mode == "atlas" else "plain word match (Atlas Search unavailable here)" }}</small></h2>
+  <h2>{{ found.hits|length }} step{{ "s" if found.hits|length != 1 }} matching “{{ q }}”</h2>
   <ol class="timeline">
     {% for e in found.hits %}
     <li class="event">
