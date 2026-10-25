@@ -1476,3 +1476,12 @@ def test_every_chat_box_says_ask_me_anything(db):
     for path in ("/", "/whatsapp"):
         page = web.get(path).text
         assert page.count('placeholder="Ask me anything…"') == 2, path  # the page's bar + the panel's reply box
+
+
+@pytest.mark.parametrize("path", ["/", "/approvals", "/inbox", "/invoices", "/sales", "/board", "/activity", "/inventory",
+                                  "/news", "/settings", "/mongodb"])
+def test_chat_is_on_every_page_and_tucks_the_bar_away_when_open(db, gemini_down, path):
+    page = web.get(path).text
+    assert page.count('class="chatbar"') == 1 and f'name="back" value="{path}"' in page, path  # answers come back to this page
+    assert 'id="chat"' in page and 'class="chat-is-open"' not in page
+    assert '<body class="chat-is-open">' in web.get(path, params={"chat": "1"}).text

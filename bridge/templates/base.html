@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <link rel="preload" href="/static/gaia-van.webp?v=2" as="image" type="image/webp">
-<link rel="stylesheet" href="/static/cofoundr.css?v=32">
+<link rel="stylesheet" href="/static/cofoundr.css?v=33">
 <script>
   document.documentElement.classList.add("js");
   /* Loading screen: once per browser session (or ?splash=1), never for reduced motion. Decided before first paint. */
@@ -35,7 +35,7 @@
   });
 </script>
 </head>
-<body>
+<body{% if chat_open %} class="chat-is-open"{% endif %}>
 <div class="splash" aria-hidden="true">
   <div class="splash__photo"></div>
   <div class="splash__inner">
@@ -130,8 +130,17 @@
   </aside>
   <main class="main">
     {% block content %}{% endblock %}
+    {% if path != "/whatsapp" %}{# the Chat page has its own box at the top #}
+    <form class="chatbar" method="post" action="/ask">
+      <span class="chatbar__who" aria-hidden="true">C</span>
+      <input type="hidden" name="back" value="{{ path or '/' }}">
+      <label class="sr" for="ask-msg">Ask CoFoundr</label>
+      <input id="ask-msg" name="text" autocomplete="off" placeholder="Ask me anything…">
+      <button class="btn send" aria-label="Ask CoFoundr" data-busy="…"><svg class="ico"><use href="#i-up"/></svg></button>
+    </form>
+    {% endif %}
   </main>
 </div>
-<script src="/static/cofoundr.js?v=22" defer></script>
+<script src="/static/cofoundr.js?v=23" defer></script>
 </body>
 </html>
