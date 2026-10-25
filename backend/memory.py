@@ -72,8 +72,8 @@ def remember(db: Database, approval: dict, decided: dict, now: Optional[datetime
     "owner_note", "draft"). Also writes the outcome of earlier reminders for the same invoice: still unpaid, chased again."""
     now = now or datetime.now(timezone.utc)
     decision = decided.get("status")
-    if decision not in DECIDED:
-        return None
+    if decision not in DECIDED or db[schema.MEMORIES].find_one({"approval_id": str(approval["_id"])}, {"_id": 1}):
+        return None  # not a decision, or already remembered: no side effects (a re-run must not rewrite outcomes)
     try:
         invoice = db[schema.INVOICES].find_one({"_id": ObjectId(approval["target_id"])}, {"line_items": 1, "counterparty_key": 1})
     except (InvalidId, TypeError, KeyError):
@@ -101,7 +101,8 @@ def remember(db: Database, approval: dict, decided: dict, now: Optional[datetime
     }
     doc["search_text"] = schema.memory_search_text(doc)
     if doc["action_type"] == "invoice_reminder" and decision in ("approved", "edited"):
-        for earlier in db[schema.MEMORIES].find({"target_id": doc["target_id"], "outcome": None,
+        for earlier in db[schema.MEMORIES].find({"target_id": doc["target_id"], "outcome": None, "at": {"$lt": now},
+                                                 "approval_id": {"$ne": doc["approval_id"]},
                                                  "decision": {"$in": ["approved", "edited"]}}, {"at": 1}):
             db[schema.MEMORIES].update_one({"_id": earlier["_id"], "outcome": None}, {"$set": {"outcome": {
                 "result": "chased_again", "days": max(0, (now - _aware(earlier["at"])).days), "at": now}}})
@@ -157,13 +158,18 @@ def recall(db: Database, new_case: dict, limit: int = RECALL, details: Optional[
 
 
 def _recalled(m: dict, same: bool) -> dict:
-    return {"line": line(m), "decision": m.get("decision"), "note": m.get("note"), "same_counterparty": same,
+    return {"line": line(m), "anonymous_line": line(m, anonymous=not same), "decision": m.get("decision"),
+            "note": m.get("note"), "same_counterparty": same,
             "score": None if same else round(m.get("score") or 0.0, 3), "at": m.get("at")}
 
 
-def line(m: dict) -> str:
-    """"24 Oct: you said no to a firm reminder to Hackney Hub (£450.00, 12 days overdue): “they're a friend”. Paid 3 days later.\""""
-    who = m.get("counterparty") or "them"
+def line(m: dict, anonymous: bool = False) -> str:
+    """"24 Oct: you said no to a firm reminder to Hackney Hub (£450.00, 12 days overdue): “they're a friend”. Paid 3 days later."
+    anonymous=True: "another customer" instead of the name, also inside the owner's note (for a prompt about someone else)."""
+    name = m.get("counterparty") or ""
+    who = ("another customer" if m.get("action_type") == "invoice_reminder" else "another supplier") if anonymous else (name or "them")
+    if anonymous and name and m.get("note"):
+        m = {**m, "note": re.sub(re.escape(name), "them", m["note"], flags=re.IGNORECASE)}
     if m.get("action_type") == "invoice_reminder":
         level = m.get("escalation_level")
         what = f"a {TONES[level]} to {who}" if level in (0, 1, 2) else f"chasing {who}"
@@ -185,8 +191,10 @@ def line(m: dict) -> str:
 
 
 def prompt_lines(memories: List[dict]) -> List[str]:
-    """For Gemini's drafting prompt: what the owner decided before (their words in quotes)."""
-    return [("same customer" if m["same_counterparty"] else "a similar case") + ": " + m["line"] for m in memories]
+    """For Gemini's drafting prompt: what the owner decided before (their words in quotes). A similar case about someone
+    else is named "another customer": this email must never be able to leak another customer's name."""
+    return [("same customer: " + m["line"]) if m["same_counterparty"] else
+            ("a similar case: " + (m.get("anonymous_line") or "another customer's case")) for m in memories]
 
 
 def backfill(db: Database) -> int:

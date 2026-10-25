@@ -276,3 +276,46 @@ def test_showcase_caches_for_a_minute(db, monkeypatch):
     monkeypatch.setattr(showcase, "_cache", {"at": 0.0, "sections": None})
     first = showcase.run(db)
     assert showcase.run(db) is first and showcase.run(db, fresh=True) is not first
+
+
+# ---------------------------------------------------------------- post-mortem edge cases (Sun 25 Oct)
+
+def test_remembering_again_never_rewrites_its_own_outcome(db, gemini_down, sent):
+    """Bug found in review: a second remember() for the same approval marked its own memory "chased again"."""
+    overdue.run()
+    a = _approval_for(db, "GAIA-1041")
+    approvals.decide(a, "approve", via="dashboard")
+    decided = db[schema.APPROVALS].find_one({"_id": a["_id"]})
+    assert memory.remember(db, decided, decided) is None and memory.backfill(db) == 0
+    assert _memories(db)[0]["outcome"] is None
+
+
+def test_another_customers_name_never_reaches_this_customers_prompt():
+    other = {"line": "21 Oct: you said no to chasing Dalston Desk Co: “Dalston Desk Co are friends”.",
+             "anonymous_line": None, "same_counterparty": False}
+    m = {"counterparty": "Dalston Desk Co", "action_type": "invoice_reminder", "decision": "rejected", "amount": 80.0,
+         "note": "dalston desk co are friends", "at": datetime(2026, 10, 21, tzinfo=timezone.utc), "score": 0.8}
+    recalled = memory._recalled(m, same=False)
+    [text] = memory.prompt_lines([recalled])
+    assert "Dalston" not in text and "another customer" in text and "“them are friends”" in text
+    assert "Dalston Desk Co" in recalled["line"]  # the owner still sees who it was
+    assert memory.prompt_lines([other]) == ["a similar case: another customer's case"]  # older approvals: no name either
+
+
+def test_same_customer_lines_keep_the_name_in_the_prompt(db):
+    m = {"counterparty": "Hackney Hub Coworking", "action_type": "invoice_reminder", "decision": "rejected", "amount": 1.0,
+         "at": datetime(2026, 10, 21, tzinfo=timezone.utc)}
+    assert "Hackney Hub Coworking" in memory.prompt_lines([memory._recalled(m, same=True)])[0]
+
+
+def test_dry_run_writes_no_memory_outcomes(db, gemini_down, sent, monkeypatch):
+    calls = []
+    monkeypatch.setattr(memory, "settle", lambda *_a, **_k: calls.append(1))
+    overdue.run(dry_run=True)
+    assert calls == [] and db[schema.APPROVALS].count_documents({}) == 0 and _memories(db) == []
+
+
+def test_naive_dates_from_the_driver_still_format():
+    m = {"counterparty": "X", "action_type": "supplier_payment", "decision": "approved", "amount": 2.5,
+         "at": datetime(2026, 10, 21, 9), "outcome": None}
+    assert memory.line(m) == "21 Oct: you approved paying X (£2.50)."
