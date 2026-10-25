@@ -409,4 +409,4 @@ def test_most_useful_indexes_come_first():
 def test_setup_creates_a_missing_collection_before_indexing_it():
     admin = IndexAdmin(collections={schema.INVOICES, schema.PRODUCTS, schema.AGENT_LOG, schema.BOARD_MEMOS, schema.EVENTS})
     out = search.ensure_search_indexes(admin)
-    assert admin.created == [schema.NEWS] and out[search.NEWS_INDEX] == "BUILDING"
+    assert admin.created == [schema.NEWS, schema.MEMORIES] and out[search.NEWS_INDEX] == "BUILDING"

@@ -13,6 +13,8 @@ Atlas features used (each doing the job it's best at):
 - Automated Embedding + Vector Search ("invoices_semantic"): Atlas embeds `search_text` itself with a Voyage AI model on
   every insert/update (no embedding code here) so we can search by meaning: "milk supplier" finds Meadowfield Dairy.
 - Hybrid Search ($rankFusion): one search box that merges both rankings.
+- Vector Search as the agent's memory ("memories_semantic", Automated Embedding): before drafting, the owner's past
+  decisions on the most similar cases are recalled by meaning ("rejected chasing a friend's café" for a new café).
 
 Without Atlas Search (tests on mongomock, an index missing or still building) every function falls back to a plain
 word match and says so (`mode = "basic"`, logged in agent_log at most once an hour), so the dashboard and WhatsApp never
@@ -55,6 +57,7 @@ UNITS = {"litre": "l", "litres": "l", "liter": "l", "liters": "l"}
 
 PRODUCTS_INDEX, ACTIVITY_INDEX, MEMOS_INDEX, EVENTS_INDEX = "products_text", "agent_log_text", "board_memos_text", "events_text"
 NEWS_INDEX, NEWS_SEMANTIC = "news_text", "news_semantic"
+MEMORIES_SEMANTIC = "memories_semantic"
 AUTOCOMPLETE = {"type": "autocomplete", "tokenization": "edgeGram", "minGrams": 2, "maxGrams": 15, "foldDiacritics": True}
 
 # name → (collection, kind, definition). Each is created on its own, in this order: a cluster that allows fewer search
@@ -104,6 +107,11 @@ INDEXES = {
         {"type": "filter", "path": "business_id"},
         {"type": "filter", "path": "kind"},
         {"type": "filter", "path": "expires_at"},
+    ]}),
+    MEMORIES_SEMANTIC: (schema.MEMORIES, "vectorSearch", {"fields": [
+        {"type": "autoEmbed", "modality": "text", "path": "search_text", "model": EMBEDDING_MODEL},
+        {"type": "filter", "path": "business_id"},
+        {"type": "filter", "path": "action_type"},
     ]}),
     EVENTS_INDEX: (schema.EVENTS, "search", {"mappings": {"dynamic": False, "fields": {
         "business_id": {"type": "token"},
@@ -236,6 +244,39 @@ def similar_invoices(db: Database, invoice: dict, limit: int = 5) -> SearchResul
     for d in docs:
         d["matched_by"] = ["meaning"]
     return SearchResult(docs, "hybrid")
+
+
+MEMORY_FIELDS = {"approval_id": 1, "ref": 1, "action_type": 1, "target_id": 1, "invoice_number": 1, "counterparty": 1,
+                 "counterparty_key": 1, "amount": 1, "about": 1, "days_overdue": 1, "escalation_level": 1, "decision": 1, "via": 1,
+                 "note": 1, "edit": 1, "outcome": 1, "search_text": 1, "at": 1}
+MIN_MEMORY_SCORE = 0.70  # same scale as invoices: a weaker "similar case" is noise, not a memory
+
+
+def similar_memories(db: Database, text: str, action_type: str, business_id: str = BUSINESS_ID, limit: int = 5,
+                     exclude_key: Optional[str] = None) -> SearchResult:
+    """The owner's past decisions closest in meaning to a new case (Vector Search over Voyage embeddings Atlas made
+    itself), leaving out one customer/supplier (`exclude_key`, whose own history is read directly).
+    Without vector search: the decisions sharing the most words."""
+    try:
+        docs = list(db[schema.MEMORIES].aggregate([
+            {"$vectorSearch": {"index": MEMORIES_SEMANTIC, "path": "search_text", "query": {"text": text},
+                               "filter": {"business_id": business_id, "action_type": action_type},
+                               "numCandidates": 50, "limit": limit + 5}},
+            {"$project": {**MEMORY_FIELDS, "score": {"$meta": "vectorSearchScore"}}},
+        ]))
+        hits = [d for d in docs if d.get("counterparty_key") != exclude_key and (d.get("score") or 0) >= MIN_MEMORY_SCORE]
+        if not docs and db[schema.MEMORIES].count_documents({"business_id": business_id, "action_type": action_type}, limit=1):
+            raise OperationFailure("Vector Search returned no memories (index missing or building?)")
+        return SearchResult(hits[:limit], "hybrid")
+    except (OperationFailure, NotImplementedError) as e:
+        others = []
+        for d in db[schema.MEMORIES].find({"business_id": business_id, "action_type": action_type}, MEMORY_FIELDS):
+            if d.get("counterparty_key") == exclude_key:
+                continue
+            score = _overlap(text, d.get("search_text"))
+            if score >= 0.3:
+                others.append({**d, "score": round(score, 3)})
+        return _fallback(db, sorted(others, key=lambda d: -d["score"])[:limit], str(e)[:200])
 
 
 def price_check(db: Database, invoice: dict) -> PriceCheck:

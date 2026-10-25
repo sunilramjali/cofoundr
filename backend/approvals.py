@@ -4,6 +4,7 @@ Used by the dashboard, the chat bar and WhatsApp (Twilio), so the rules are iden
 an action must be `pending`, and only an owner decision moves it on.
 Sending is simulated for the demo: an approved reminder increments `reminders_sent`,
 an approved supplier payment marks the invoice paid.
+Every decision (and the owner's reason, if they give one) is remembered for next time (backend/memory.py).
 """
 from datetime import datetime, timezone
 from typing import Optional
@@ -11,6 +12,7 @@ from typing import Optional
 from bson import ObjectId
 from bson.errors import InvalidId
 
+from backend import memory
 from backend.db import activity, schema
 from backend.db.client import get_db
 from backend.outputs import email
@@ -47,7 +49,8 @@ def find(ref: Optional[int] = None, approval_id: Optional[str] = None) -> Option
     return get_db()[schema.APPROVALS].find_one(query)
 
 
-def decide(approval: dict, decision: str, via: str, edited_draft: Optional[str] = None) -> dict:
+def decide(approval: dict, decision: str, via: str, edited_draft: Optional[str] = None, note: Optional[str] = None) -> dict:
+    """`note` = the owner's reason, in their words (optional): kept on the approval and remembered."""
     if decision not in DECISIONS:
         raise DecisionError(f"Unknown decision '{decision}'. Use approve, edit or reject.")
     if approval["status"] != "pending":
@@ -72,6 +75,8 @@ def decide(approval: dict, decision: str, via: str, edited_draft: Optional[str] 
             raise DecisionError(f"#{approval['ref']} withdrawn: {why}, so nothing was sent.")
 
     update = {"status": DECISIONS[decision], "decided_via": via, "decided_at": now}
+    if memory.clean_note(note):
+        update["owner_note"] = memory.clean_note(note)
     if decision == "edit":
         update["original_draft"] = approval["draft"]
         update["draft"] = edited_draft.strip()
@@ -89,7 +94,7 @@ def decide(approval: dict, decision: str, via: str, edited_draft: Optional[str] 
                 # Put it back in the queue rather than pretend it was sent
                 approvals.update_one({"_id": approval["_id"], "status": update["status"]},
                                      {"$set": {"status": "pending", "decided_via": None, "decided_at": None,
-                                               "draft": approval["draft"]}, "$unset": {"original_draft": ""}})
+                                               "draft": approval["draft"]}, "$unset": {"original_draft": "", "owner_note": ""}})
                 activity.log("send_failed", f"#{approval['ref']} couldn't be sent ({type(e).__name__}); back in the queue",
                              approval_id=str(approval["_id"]))
                 raise DecisionError(f"#{approval['ref']} couldn't be sent ({type(e).__name__}). It's back in the queue.") from e
@@ -99,5 +104,10 @@ def decide(approval: dict, decision: str, via: str, edited_draft: Optional[str] 
             effect = "invoice marked paid (simulated payment)"
 
     activity.log("approval_decided", f"#{approval['ref']} {DECISIONS[decision]} via {via}: {approval['title']} → {effect}",
-                 actor="owner", approval_id=str(approval["_id"]), decision=decision, via=via)
+                 actor="owner", approval_id=str(approval["_id"]), decision=decision, via=via, note=update.get("owner_note"))
+    try:  # the decision is already applied: a memory that fails to save must not undo or hide it
+        memory.remember(db, approval, {**approval, **update}, now)
+    except Exception as e:  # noqa: BLE001 (logged, never silent)
+        activity.log("memory_failed", f"Couldn't remember the decision on #{approval['ref']} ({type(e).__name__})",
+                     approval_id=str(approval["_id"]), error=type(e).__name__)
     return {**approval, **update, "effect": effect}
