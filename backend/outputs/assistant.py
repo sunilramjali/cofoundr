@@ -199,11 +199,14 @@ def tools(record: Callable[[str, dict], dict]) -> list:
         f = db[schema.FORECASTS].find_one({"business_id": BUSINESS_ID, "date": day.isoformat()}) or {}
         if f and not f.get("trading"):
             return record("stock_needed", {"date": day.isoformat(), "trading": False, "basis": f.get("basis")})
+        if not f:
+            return record("stock_needed", {"date": day.isoformat(), "error": "no forecast for that day yet, so I can't say "
+                                           "whether GAIA trades or how busy it will be"})
         usual = [x.get("final_revenue", x.get("expected_revenue")) or 0 for x in db[schema.FORECASTS].find(
             {"business_id": BUSINESS_ID, "trading": True, "date": {"$gte": today.isoformat()}})]
         usual = sum(usual) / len(usual) if usual else 0
         expected = f.get("final_revenue", f.get("expected_revenue"))
-        scale = round(expected / usual, 2) if expected and usual else 1.0
+        scale = round(expected / usual, 2) if expected and usual else 1.0  # no usual to compare with: a usual day
         days_until = (day - today).days
         rows = []
         for r in est["rows"]:
@@ -365,7 +368,10 @@ def answer(question: str) -> Answer:
     if not text:
         text = fallback(question)
     elif CLAIMS_ACTION.search(text):  # its only writing tool drafts, so a claim to have approved/paid/sent is false
-        text = "I can't approve, pay or send anything myself: nothing was changed. " + fallback("what's waiting")
+        drafted = [r["ref"] for n, r in zip(called, results) if n == "propose_reminder" and r.get("status") == "drafted"]
+        text = ("I can't approve, pay or send anything myself: "
+                + (f"I only drafted it, nothing was sent. Reply “approve {drafted[-1]}” to send it." if drafted
+                   else "nothing was changed. " + fallback("what's waiting")))
     reply = Answer(text, "gemini", called, verified=not missing)
     if missing:
         reply.text += f" (⚠️ I couldn't match {', '.join(f'£{m:,.2f}' for m in missing)} to your records: check before relying on it.)"

@@ -92,6 +92,10 @@ def test_stock_needed_refuses_what_it_cannot_know(db, fns):
     assert fns["stock_needed"]("2026-10-01")["error"] == "only the next 14 days"
 
 
+def test_stock_needed_without_a_forecast_never_assumes_a_trading_day(db, till, fns):
+    assert "no forecast for that day" in fns["stock_needed"]("2026-11-01")["error"]  # a Sunday: GAIA may be closed
+
+
 def test_stock_needed_on_a_closed_day(db, till, fns):
     _forecast(db, "2026-10-26", 0, trading=False)
     assert fns["stock_needed"]("2026-10-26") == {"date": "2026-10-26", "trading": False, "basis": "test"}
@@ -193,4 +197,6 @@ def test_chase_by_chat_drafts_but_never_claims_it_sent(db, ask):
     approvals.decide(_approval(db, "GAIA-1041"), "reject", via="dashboard")
     ask(lambda tools: (tools["propose_reminder"]("GAIA-1041"), "I've sent the reminder to Hackney Hub.")[1])
     lie = assistant.answer("chase Hackney Hub again")
-    assert lie.text.startswith("I can't approve, pay or send anything myself")  # a draft is never "sent"
+    again = _approval(db, "GAIA-1041")["ref"]
+    assert lie.text == ("I can't approve, pay or send anything myself: I only drafted it, nothing was sent. "
+                        f"Reply “approve {again}” to send it.")  # a draft is never "sent", and never "nothing changed"
