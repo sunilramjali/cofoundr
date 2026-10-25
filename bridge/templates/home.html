@@ -64,7 +64,7 @@
     {% if trend.actual %}
     <div class="chart" aria-label="Recent takings and forecast">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-        <defs><linearGradient id="g-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#c07a45" stop-opacity=".22"/><stop offset="1" stop-color="#c07a45" stop-opacity="0"/></linearGradient></defs>
+        <defs><linearGradient id="g-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".22"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
         <path class="area" d="{{ trend.area }}"/>
         <path class="line" d="{{ trend.actual }}"/>
         {% if trend.forecast %}<path class="fc" d="{{ trend.forecast }}"/>{% endif %}

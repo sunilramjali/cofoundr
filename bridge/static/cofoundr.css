@@ -574,3 +574,39 @@ mark { background: var(--amber-bg); color: inherit; border-radius: 3px; padding:
   .nav__ico { width: 30px; height: 30px; border-radius: 10px; }
   .nav__group { margin-top: 10px; }
 }
+
+/* ---------- Photo palette: colours taken from the van photo, glass kept ----------
+   butter cream (the van) · sunlit warm white (the brick) · leaf green (the trees) · ochre (the sun on the paint) · charcoal
+   (road, pipes, railings). Overrides the older copper/rose/sky/lilac accents. */
+:root {
+  --leaf: #4f6a3a; --leaf-2: #6f8a52; --ochre: #a77f34; --butter: #e9dcb8; --charcoal: #2e2f31;
+  --accent: var(--leaf); --accent-2: var(--butter); --accent-bg: #ebe7d4;
+  --sage: var(--leaf); --sage-bg: #e4e8d5;
+  --sky: #45494e; --sky-bg: #e9e6df;            /* slate-charcoal instead of blue */
+  --rust: #a24a2f; --rust-bg: #f3e1d5;          /* brick red for "overdue": still warm, still urgent */
+  --amber: var(--ochre); --amber-bg: #f4ead2;
+  --ink: #1c1d1b; --ink-2: #474842;
+}
+/* warm sunlight in the glass instead of pure white */
+.glass { background: linear-gradient(155deg, rgba(253, 249, 239, .78), rgba(250, 245, 233, .64) 42%, rgba(247, 241, 227, .56)); }
+.hello { background: rgba(252, 248, 238, .66); }
+.section-label { background: rgba(252, 248, 238, .7); }
+.chat { background: rgba(252, 248, 238, .66); }
+.chat__them { background: rgba(255, 252, 245, .82); }
+.chat__me { background: var(--charcoal); }
+.hello h1 em { background-image: linear-gradient(100deg, var(--ochre) 0%, #c9a35a 32%, var(--leaf-2) 66%, var(--ochre) 100%); }
+.hero h2 b { color: var(--ochre); }
+.nav a.is-on .nav__ico { background: linear-gradient(150deg, var(--butter), var(--leaf)); }
+.nav .count { background: var(--charcoal); }
+.chart { color: var(--leaf); }                 /* the takings area fill follows the line colour */
+.chart .fc { stroke: var(--ochre); }
+.btn--accent { --bg: var(--leaf); }
+.gem--sky { --c1: #e6e3dc; --c2: rgba(55, 58, 62, .82); --c3: var(--sky); }
+.gem--lilac { --c1: #efe3c2; --c2: rgba(167, 127, 52, .85); --c3: var(--ochre); }
+.gem--rose { --c1: #f1dccf; --c2: rgba(162, 74, 47, .82); --c3: var(--rust); }
+.gem--sage { --c1: #dfe6cf; --c2: rgba(79, 106, 58, .85); --c3: var(--leaf); }
+.row--low .meter i { background: linear-gradient(90deg, #d9a07f, var(--rust)); }
+::selection { background: var(--butter); }
+.gem:not([class*="gem--"]) { --c1: var(--butter); --c2: rgba(167, 127, 52, .7); --c3: var(--ochre); }
+.chart__legend i.fc { background: repeating-linear-gradient(90deg, var(--ochre) 0 4px, transparent 4px 7px); }
+.chip--ai { background: linear-gradient(120deg, #f4ead2, #e7ecd9); color: var(--leaf); }  /* "Drafted by Gemini": sun to leaf */
