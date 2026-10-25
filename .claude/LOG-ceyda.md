@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 11:50 — README + docs brought up to date (Sunil out of credits, Jade in charge)
+- **Did:** README: WhatsApp rows "Live"; morning brief at 08:00 + button; real reminder emails; owner's to-dos ("todo: …", "done T3"); 17 assistant tools; 657 tests; user guide for the new sidebar order (Home, Board, Approvals…), to-do list on every page, chat panel across pages, highlights, Chat + Under the hood; local sandbox command; next steps: voice in the chat (with its safety rule) and free-form emails. Ticked with live evidence: MVP Gmail intake + real reminder emails; winning-criteria WhatsApp questions + agent_log. Left unticked (no live evidence yet): WhatsApp photos, morning brief at 08:00
+- **Status:** done, PR into `stage` + release PR
+- **Next:** video + submission before 12:00
+- **Blockers / notes for partner:** none
+
 ## Sun 25 Oct, 11:30 — Owner-facing only: technical metrics removed from the pages
 - **Did:** Board page: intro sentence + stats (tokens read, till lines + invoices, insights checked, wrong numbers caught) and the model name removed (all still stored in `board_memos`). Home "While you were away": no token count; "Ranked by Gemini…" line removed. Chat panel/Chat page/Settings/Inbox/Insights: no "powered by Gemini"/"read by Gemini" (now "I read it…"); search results, facets, news and the memory note: no "MongoDB Atlas …" labels; "Drafted by Gemini" → "Drafted for you". Kept: the demo-data labels (project rule), the Board "Checked ✓" chips and corrections, the Under the hood page (Sunil's, for the MongoDB video). Merged `stage` (Sunil's to-dos; CSS conflict kept both). 657 tests pass
 - **Status:** done, on PR #107 (into `stage`)

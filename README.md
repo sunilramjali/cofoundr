@@ -32,7 +32,9 @@ A big company would hire an ops manager, a bookkeeper and an analyst. A one-truc
 | **Approval flow** | Every finance action waits in an Approve / Edit / Reject queue, in the dashboard or by replying on WhatsApp |
 | **Local news (read-only)** | Recent local news (last 7 days) and upcoming events near the pitch, picked by Gemini (checked: it can't add or rewrite a story), ranked by Atlas Search by how soon and how close. For the owner to know about: nothing contacts anyone (`/news`, `python -m backend.news --refresh`) |
 | **Auto-prioritise & schedule** | Ranks open tasks by impact, with a one-line reason each, and builds a weekly plan |
-| **Morning brief** | Owner asks on WhatsApp, "what's my day?", and gets the top priorities, forecast and pending approvals |
+| **Morning brief** | Sent on WhatsApp **unprompted at 08:00**: today's forecast and weather (with a 💨 wind warning), the top priorities and what's waiting for a yes. "Send me today's brief" on the dashboard sends it on demand |
+| **Reminders really sent** | An approved reminder is emailed for real from the demo inbox (to a demo inbox only, never the synthetic customers) |
+| **Owner's to-do list** | "todo: buy extra cups before Saturday" on WhatsApp or in the chat adds it, "done T3" ticks it off; it sits in the to-do list on every page next to the approvals and priorities |
 
 **Stack:** MongoDB Atlas (single source of truth + search) · Gemini 4 Argon (multimodal extraction + reasoning) · Twilio (WhatsApp) · FastAPI web app on Fly.io (dashboard + WhatsApp webhook)
 
@@ -63,9 +65,9 @@ Invoices and requests come in from **Gmail, the dashboard, WhatsApp (via Twilio)
 |---|---|---|
 | **Gmail** | Invoices arrive by email and are picked up automatically | ✓ Live |
 | **Dashboard upload** | Manual fallback for adding an invoice | ✓ Built |
-| **WhatsApp via Twilio (in)** | Owner replies "approve 1" or asks a question (Gemini answers from the data and can draft, never approve or send); signed webhook `/whatsapp/twilio` | ✓ Built, going live |
-| **WhatsApp via Twilio (out)** | Owner is messaged automatically when something needs them (`/updates` pushed) | ✓ Built, going live |
-| **WhatsApp photos** | Owner sends invoice photos on WhatsApp → read and checked | ✓ Built, going live |
+| **WhatsApp via Twilio (in)** | Owner replies "approve 1" or asks a question (Gemini answers from the data and can draft, never approve or send); signed webhook `/whatsapp/twilio` | ✓ Live |
+| **WhatsApp via Twilio (out)** | Owner is messaged automatically when something needs them (`/updates` pushed) | ✓ Live |
+| **WhatsApp photos** | Owner sends invoice photos on WhatsApp → read and checked | ✓ Live |
 | **Card payments** | EVO CSV upload on `/sales`; Square + SumUp read-only. Card data stripped, ids salted-hashed | ✓ Built |
 | **APIs** | Weather (Open-Meteo) and TfL disruptions feed the forecast; events + Treg tools next | Weather + TfL ✓ Built |
 | **Gemini 4 Argon** | Reads and double-checks invoices and fee summaries, adjusts and grades the forecast, ranks priorities, holds the board meeting, drafts reminders | ✓ Built |
@@ -93,10 +95,10 @@ CoFoundr isn't a chatbot or a bookkeeping tool. It's an agent that does the work
 
 ### Agents That Ship
 - **Does the job:** an invoice goes from inbox to approved reminder with no human step until the yes. Gmail is polled every minute (`backend/inputs/gmail.py`), or a WhatsApp photo arrives (`POST /whatsapp/twilio`). Then `pipeline.ingest_invoice` reads it with Gemini, checks the reading, saves it and runs the overdue check, which drafts an escalating reminder as a pending approval. The owner is messaged unprompted (`/updates` pusher) and replies "approve N" (`approvals.decide`).
-- **Reliability:** it stops and asks instead of guessing. If the line items don't add up to the total, or a due date doesn't make sense, the invoice is flagged for review and not chased (`backend/ai/extract.py`). Gemini 429s are retried with backoff. If Gemini is down, the reply is a template or a plain-data answer, and that's logged, never silent. Anything that can run twice uses atomic counters and unique indexes. 411 offline scenario tests run in CI (`tests/`), and the bug review that led to them is in `docs/postmortem-2026-10-24.md`.
+- **Reliability:** it stops and asks instead of guessing. If the line items don't add up to the total, or a due date doesn't make sense, the invoice is flagged for review and not chased (`backend/ai/extract.py`). Gemini 429s are retried with backoff. If Gemini is down, the reply is a template or a plain-data answer, and that's logged, never silent. Anything that can run twice uses atomic counters and unique indexes. 657 offline scenario tests run in CI (`tests/`), and the bug review that led to them is in `docs/postmortem-2026-10-24.md`.
 - **Usefulness:** the jobs a one-person business never has time for: chasing unpaid invoices, catching supplier price rises (`search.price_check` in `backend/db/search.py`), auditing card fees (`backend/ai/fees.py`), forecasting tomorrow's takings with reasons, and "what if I put flat whites up 20p?" answered from the till.
 - **Technical depth:**
-  - **Tools:** Gemini function calling over MongoDB, with 11 tools in `backend/outputs/assistant.py`. Code does every sum.
+  - **Tools:** Gemini function calling over MongoDB, with 17 tools in `backend/outputs/assistant.py` (invoices, hybrid search, forecast, sales, priorities, activity, notes, local news, price what-ifs, stock, day conditions, the owner's to-dos, and the draft-only `propose_reminder`). Code does every sum, and every £ in an answer is checked against the tool results.
   - **Memory:** MongoDB holds the full history, plus the forecaster's own lessons in `lessons`.
   - **Planning:** ranked priorities with a reason each (`backend/ai/prioritise.py`).
   - **Evaluation:** every Gemini output is checked by code before it's trusted: extraction totals, forecast factors, board-memo numbers recomputed from MongoDB, and the fee summary checked against its own worked example. Forecasts are graded against actual takings, and the grades decide how far Gemini may move the next forecast (`backend/ai/review.py`).
@@ -145,29 +147,36 @@ CoFoundr isn't a chatbot or a bookkeeping tool. It's an agent that does the work
 2. **Add an invoice:** send a photo or PDF. CoFoundr replies with what it read ("Added … checked ✓"), or asks you to check it if it doesn't add up.
 3. **Get told, unprompted:** new invoices, drafted reminders and bills to pay arrive as messages, each with its number.
 4. **Decide:** reply `approve 4` or `reject 4`. Nothing involving money happens without that reply.
-5. **Ask anything:** "what needs doing?", "who owes me?", "what if I put flat whites up 20p?", "is Saturday worth trading?", "chase Shoreditch" (drafts a reminder for your approval). Answers come from your data, and every £ figure is checked against it.
+5. **Ask anything:** "what needs doing?", "who owes me?", "what if I put flat whites up 20p?", "is Saturday worth trading?", "chase Shoreditch" (drafts a reminder for your approval). Answers come from your data, and every £ figure is checked against it. Questions that need judgement ("should I…") get Gemini's deeper thinking: you'll get "give me a moment ☕" first.
+6. **To-dos:** "todo: buy extra cups before Saturday" adds one, "done T3" ticks it off.
+7. **Every morning at 08:00** the brief arrives on its own (WhatsApp delivers it if you've messaged the number in the last 24 hours).
 
 ### For the business owner (dashboard: https://cofoundr.fly.dev)
-1. **Home:** what CoFoundr did while you were away, what to do first (ranked, with a reason each), and the chat bar (the same assistant as WhatsApp; also on **Ask**).
-2. **Inbox:** upload an invoice by hand, or "Check inbox now" for the Gmail inbox.
-3. **Tasks:** the approval queue: Approve / Edit / Reject each drafted action.
-4. **Finances:** every invoice; search by supplier, product or meaning (Atlas hybrid search).
-5. **Insights:** the forecast with Gemini's reasons, how past forecasts did, card payments (upload the EVO CSV) and the card fee audit (upload the fee summary).
-6. **Inventory:** what's probably on the truck, from the last stock count (an estimate: deliveries aren't recorded yet).
-7. **Board:** the board memo, with every number checked against your records.
-8. **Activity:** everything the agent did, step by step.
+On every page: the **To do** list (top right; tap to open or minimise) gathers what needs a yes, invoices to check, the top priorities, your own to-dos and stock running out, each linking to where it's done. The **Ask me anything…** chat bar is at the bottom; answers open in a chat panel that stays open across pages until you press ×, and key figures in long text are highlighted.
+
+1. **Home:** what needs your yes first, today's forecast, what CoFoundr did while you were away, what to do first (ranked, with a reason each). "Send me today's brief" sends the morning brief to WhatsApp now.
+2. **Board:** our latest board meeting, with every number checked against your records.
+3. **Approvals:** the approval queue: Approve / Edit / Reject each drafted action.
+4. **Inbox:** upload an invoice by hand, or "Check inbox now" for the Gmail inbox.
+5. **Finances:** every invoice; search by supplier, product or meaning (Atlas hybrid search).
+6. **Insights:** the forecast with Gemini's reasons, how past forecasts did, card payments (upload the EVO CSV) and the card fee audit (upload the fee summary).
+7. **Activity:** everything the agent did, step by step.
+8. **Inventory:** what's probably on the truck, from the last stock count (an estimate: deliveries aren't recorded yet).
 9. **News:** what's happening near the truck (recent news, upcoming events, Tube disruptions), soonest and closest first; search by words or meaning; **More like this** on any item; **Add something you found**: a web or event page, a TikTok video (TikTok's official oEmbed) or an Instagram post with your note. Read-only: CoFoundr never contacts anyone. Sources are only read where allowed (RSS, official APIs, robots.txt); social media is never scraped.
+10. **Chat:** the same assistant as WhatsApp, with example questions.
+11. **Under the hood:** every MongoDB Atlas feature running live with its query (for the curious, and for judges).
 
 ### Running it locally (for judges)
 **Live demo:** https://cofoundr.fly.dev
 
 ```bash
 git clone https://github.com/sunilramjali/cofoundr.git && cd cofoundr
-cp .env.example .env                  # fill in MONGODB_URI, GEMINI_API_KEY, BRIEF_TOKEN
+cp .env.example .env                  # fill in MONGODB_URI, GEMINI_API_KEY (optional: GMAIL_*, TWILIO_*, OWNER_WHATSAPP)
 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m data.seed         # load synthetic GAIA Coffee data into MongoDB Atlas
 .venv/bin/python -m backend.ai.overdue  # find overdue invoices, draft actions for approval
 .venv/bin/uvicorn bridge.main:app --reload   # dashboard at http://localhost:8000
+COFOUNDR_SANDBOX=1 .venv/bin/uvicorn bridge.main:app --port 8765   # or: an in-memory copy, nothing you click reaches Atlas
 ```
 
 Deploy: `fly deploy` (from the repo root).
@@ -179,6 +188,8 @@ Deploy: `fly deploy` (from the repo root).
 - **Staff scheduling:** baristas at £16/hour, rostered from the forecast (e.g. two on days over ~£600), with the day's wage cost next to its takings. Shift offers are drafted as approvals and sent on WhatsApp only after "approve N", because wages are money.
 - **Stock that stays right:** weekly counts, plus deliveries read from supplier invoices ("Oat milk, 1L × 36"), so stock = last count + deliveries − usage.
 - **Real data, kept apart:** a business's real card and till exports go into its own database (never the demo one), and the forecast's error is measured on its real days.
+- **Voice in the chat:** Gemini already reads audio, so a 🎤 button could record a short note, have Gemini write it out and answer it like typed text. Safety rule: voice never approves or pays. A misheard "approve 14" for "approve 4" would move the wrong money, so a spoken decision gets "I heard approve 4: tap to confirm".
+- **Free-form emails** ("email Meadowfield about the price"): drafted by Gemini, sent only after the owner's "approve N", like reminders today.
 - **Atlas Stream Processing:** react to new invoices and orders as they land instead of polling. **Gemini background mode** for the board meeting's long read.
 
 ## Team
