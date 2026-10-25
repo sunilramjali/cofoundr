@@ -118,7 +118,7 @@ CoFoundr isn't a chatbot or a bookkeeping tool. It's an agent that does the work
 ### MongoDB Atlas
 | Atlas feature | Used? | Where |
 |---|---|---|
-| Atlas Search | ✓ | `backend/db/search.py`, index `invoices_text` (typo-tolerant), used by the invoice price check |
+| Atlas Search | ✓ | `backend/db/search.py`, 5 indexes. `invoices_text`: typo-tolerant keyword search, **highlighting** of the matched words, **facets** (`$searchMeta`: invoices per supplier on Finances), **autocomplete** in the search box (`GET /search/suggest`), and the **duplicate-invoice check** on intake ("EDC 7781" = "EDC-7781", held for review). `products_text`: typo-tolerant product names for the assistant's price what-ifs ("capuccino" → Cappuccino). `agent_log_text`: search the agent's own record (Activity page + the assistant's `search_activity` tool). `board_memos_text` + `events_text`: the assistant's `search_notes` tool. Live self-test: `python -m backend.db.search --check` |
 | Atlas Vector Search | ✓ | `similar_invoices()`, index `invoices_semantic`: similar past invoices for the cross-supplier price check |
 | Hybrid Search | ✓ | `search_invoices()`: keyword + meaning merged with `$rankFusion` |
 | Automated Embedding | ✓ | `autoEmbed` on invoices' `search_text`: Atlas embeds on insert, no embedding code of ours |

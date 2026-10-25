@@ -1,6 +1,7 @@
 """Ask CoFoundr: the owner's questions answered by Gemini, from the business's own data.
 
-- Gemini gets tools over MongoDB (approvals, invoices, search, forecast, sales, priorities, activity, price what-ifs,
+- Gemini gets tools over MongoDB (approvals, invoices, search, forecast, sales, priorities, activity, Atlas Search over
+  its own record and past board memos/events, price what-ifs (typo-tolerant product names),
   stock for a day, weather/events/TfL for a day) and picks which to call (function calling). Code does every sum;
   Gemini explains. One tool writes: `propose_reminder` drafts a reminder as a *pending* approval, under the overdue
   check's own rules, and nothing more. Approving, rejecting, paying and sending stay with the owner's exact
@@ -66,6 +67,7 @@ you something in the dashboard chat. All data is synthetic demo data.
   call pending_approvals and priorities, list the approvals first (they need a yes), then up to 3 other priorities.
   "What's up today?" or "how's today looking?": today's forecast, weather (call day_conditions for today) and, if any,
   what's waiting for a yes.
+- For "what did you do about…" call search_activity; for what the board meeting said, search_notes.
 - For "what if I change a price", "what do I need for Saturday" or "is Sunday worth it", call what_if_price,
   stock_needed or day_conditions and use their numbers. Never do your own sums: if a tool didn't return a figure,
   don't give it. A price what-if assumes customers keep buying the same amount: always say so, with the break-even.
@@ -179,6 +181,13 @@ def tools(record: Callable[[str, dict], dict]) -> list:
         wanted = (product or "").strip().lower()
         exact = [p for p in menu if p.get("name", "").lower() == wanted]
         matches = exact or [p for p in menu if wanted and (wanted in p.get("name", "").lower() or p.get("name", "").lower() in wanted)]
+        read_as = None
+        if len(matches) != 1:  # a typo or an ambiguous word: Atlas Search's typo-tolerant match decides, or we ask
+            pick, ask = search.pick_product(product, search.find_products(db, product))
+            if pick:
+                matches, read_as = [p for p in menu if p["_id"] == pick["_id"]] or [pick], pick.get("name")
+            else:
+                matches = [p for p in menu if p.get("name") in (ask or [])] or matches
         if len(matches) != 1:
             return record("what_if_price", {"found": False, "product": product,
                                             ("did_you_mean" if matches else "menu"): sorted(p["name"] for p in (matches or menu))[:MAX_ROWS]})
@@ -193,7 +202,8 @@ def tools(record: Callable[[str, dict], dict]) -> list:
                                            {"qty": 1, "line_total": 1}))
         sold = sum(s.get("qty") or 0 for s in lines)
         new_price = round(price + change / 100, 2)
-        out = {"found": True, "product": p["name"], "price": price, "new_price": new_price, "weeks": WHAT_IF_DAYS // 7,
+        out = {"found": True, "product": p["name"], **({"read_as": f"took “{product}” as {read_as}"} if read_as and read_as.lower() != wanted else {}),
+               "price": price, "new_price": new_price, "weeks": WHAT_IF_DAYS // 7,
                "sold_last_4_weeks": sold, "sold_per_week": round(sold / (WHAT_IF_DAYS / 7), 1),
                "takings_last_4_weeks": round(sum(s.get("line_total") or 0 for s in lines), 2),
                "extra_per_week": round(sold / (WHAT_IF_DAYS / 7) * change / 100, 2),
@@ -315,8 +325,22 @@ def tools(record: Callable[[str, dict], dict]) -> list:
         return result("drafted", "a draft is waiting in the approval queue; nothing was sent", ref=a["ref"],
                       reply=f"approve {a['ref']}", tone=["friendly nudge", "firm reminder", "final notice"][a["escalation_level"]])
 
+
+    def search_activity(query: str) -> dict:
+        """Search what CoFoundr itself did (its activity log), e.g. "Hackney Hub", "oat milk price", "WhatsApp": the
+        invoices it read, reminders it drafted, checks it ran and the owner's decisions, best match first."""
+        result = search.search_activity(db, query, limit=MAX_ROWS)
+        return record("search_activity", {"query": query, "events": [
+            {"when": _iso(e.get("at")), "what": e.get("summary"), "by": e.get("actor") or "agent"} for e in result.hits]})
+
+    def search_notes(query: str) -> dict:
+        """Search past board memo insights and events near the truck, e.g. "oat milk", "pastries", "market"."""
+        found = search.search_notes(db, query)
+        return record("search_notes", {"query": query, "board_insights": found["insights"], "events": [
+            {**e, "date": _iso(e.get("date"))} for e in found["events"]]})
+
     return [pending_approvals, list_invoices, search_invoices, revenue_forecast, sales_summary, priorities, recent_activity,
-            what_if_price, stock_needed, day_conditions, propose_reminder]
+            search_activity, search_notes, what_if_price, stock_needed, day_conditions, propose_reminder]
 
 
 def amounts(text: str) -> List[float]:

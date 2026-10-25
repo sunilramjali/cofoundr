@@ -49,7 +49,8 @@ Record a full live run with the **video kit** (QuickTime screen recording, phone
 
 - **Atlas UI → Collections:** `sales` is a time-series collection; `agent_log` is the agent's record of every action
 - **Atlas UI → Search & Vector Search indexes:** `invoices_text` (Atlas Search) and `invoices_semantic` (Vector Search with **Automated Embedding**, `voyage-4`: Atlas embeds each invoice on insert, no embedding code of ours)
-- **Finances page search box:** type "milk supplier" → results tagged "by keyword" / "by meaning" (hybrid search, live in the UI)
+- **Finances page search box:** type "eas" → autocomplete suggests Eastside Dairy Co (Atlas autocomplete); search "oat milk" → matched words highlighted (Atlas highlighting); search "milk supplier" → results tagged "by keyword" / "by meaning" (hybrid search). The "Most invoices" chips above are Atlas facets (`$searchMeta`)
+- **Activity page search:** "approved" → every decision, words highlighted (Atlas Search over the agent's own log; "approved" also finds "approval"). The demo log has no supplier names yet, so don't search "Hackney" there
 - **Terminal:** `python -m backend.db.search "milk supplier"` → **Hybrid Search** (`$rankFusion`): finds both dairies, including Meadowfield, which never says "supplier" (keyword + meaning)
 - `python -m backend.db.search --similar EDC-7781` → Vector Search powering the cross-supplier price check
 - Say the names out loud: Atlas Search, Vector Search, Hybrid Search, Automated Embedding, Voyage AI

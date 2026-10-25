@@ -216,3 +216,25 @@
 
   window.__cofoundr = true;
 })();
+
+/* Search box autocomplete (Atlas Search autocomplete via /search/suggest): fills the <datalist>, names only. */
+(() => {
+  const input = document.querySelector("input[data-suggest]");
+  const list = input && document.getElementById(input.getAttribute("list"));
+  if (!input || !list) return;
+  let timer, last = "";
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2 || q === last) return;
+    timer = setTimeout(async () => {
+      last = q;
+      try {
+        const r = await fetch(`${input.dataset.suggest}?q=${encodeURIComponent(q)}`);
+        if (!r.ok) return;
+        const { suggestions = [] } = await r.json();
+        list.replaceChildren(...suggestions.map(name => Object.assign(document.createElement("option"), { value: name })));
+      } catch (_) { /* suggestions are a nicety: the search still works without them */ }
+    }, 150);
+  });
+})();

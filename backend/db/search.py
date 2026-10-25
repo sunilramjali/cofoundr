@@ -2,6 +2,10 @@
 
 Atlas features used (each doing the job it's best at):
 - Atlas Search ("invoices_text"): typo-tolerant keyword search; "diary" still finds Eastside Dairy, "EDC-7781" finds that invoice.
+  The same index gives highlighting (which words matched), facets ($searchMeta: invoices per supplier), autocomplete
+  ("eas" → Eastside Dairy Co) and the duplicate-invoice check on intake ("EDC 7781" vs "EDC-7781").
+- More Atlas Search indexes: "products_text" (typo-tolerant product names for price what-ifs), "agent_log_text" (search
+  what the agent did), "board_memos_text" and "events_text" (search past board memos and nearby events).
 - Automated Embedding + Vector Search ("invoices_semantic"): Atlas embeds `search_text` itself with a Voyage AI model on
   every insert/update (no embedding code here) so we can search by meaning: "milk supplier" finds Meadowfield Dairy.
 - Hybrid Search ($rankFusion): one search box that merges both rankings.
@@ -15,6 +19,7 @@ Usage (from the repo root):
     python -m backend.db.search "milk we owe"        # hybrid search
     python -m backend.db.search --similar MF-2087    # similar invoices + price check
     python -m backend.db.search --check              # live self-test against Atlas (run before the demo)
+    python -m backend.db.search --activity "Hackney"  # search the agent's own record
 """
 import argparse
 import re
@@ -44,18 +49,44 @@ STOPWORDS = {"a", "an", "and", "of", "the", "for", "per", "x"}
 SIZE = re.compile(r"(\d+(?:\.\d+)?)\s*(ml|cl|litres?|liters?|l|kg|g|oz|lb)?\b", re.I)
 UNITS = {"litre": "l", "litres": "l", "liter": "l", "liters": "l"}
 
+PRODUCTS_INDEX, ACTIVITY_INDEX, MEMOS_INDEX, EVENTS_INDEX = "products_text", "agent_log_text", "board_memos_text", "events_text"
+AUTOCOMPLETE = {"type": "autocomplete", "tokenization": "edgeGram", "minGrams": 2, "maxGrams": 15, "foldDiacritics": True}
+
+# name → (collection, kind, definition). Each is created on its own, in this order: a cluster that allows fewer search
+# indexes (Atlas free tier: 3) keeps the most useful ones, and every search falls back to a plain match without its index.
 INDEXES = {
-    TEXT_INDEX: ("search", {"mappings": {"dynamic": False, "fields": {
+    TEXT_INDEX: (schema.INVOICES, "search", {"mappings": {"dynamic": False, "fields": {
         "business_id": {"type": "token"},
         "invoice_number": {"type": "string"},
-        "counterparty": {"type": "string", "analyzer": "lucene.english"},
+        "counterparty": [{"type": "string", "analyzer": "lucene.english"}, AUTOCOMPLETE, {"type": "token"}],
+        "status": {"type": "token"},
+        "direction": {"type": "token"},
         "line_items": {"type": "document", "fields": {"description": {"type": "string", "analyzer": "lucene.english"}}},
     }}}),
-    SEMANTIC_INDEX: ("vectorSearch", {"fields": [
+    SEMANTIC_INDEX: (schema.INVOICES, "vectorSearch", {"fields": [
         {"type": "autoEmbed", "modality": "text", "path": "search_text", "model": EMBEDDING_MODEL},
         {"type": "filter", "path": "business_id"},
         {"type": "filter", "path": "direction"},
     ]}),
+    PRODUCTS_INDEX: (schema.PRODUCTS, "search", {"mappings": {"dynamic": False, "fields": {
+        "business_id": {"type": "token"},
+        "name": [{"type": "string"}, AUTOCOMPLETE],
+    }}}),
+    ACTIVITY_INDEX: (schema.AGENT_LOG, "search", {"mappings": {"dynamic": False, "fields": {
+        "business_id": {"type": "token"},
+        "summary": {"type": "string", "analyzer": "lucene.english"},
+    }}}),
+    MEMOS_INDEX: (schema.BOARD_MEMOS, "search", {"mappings": {"dynamic": False, "fields": {
+        "business_id": {"type": "token"},
+        "headline": {"type": "string", "analyzer": "lucene.english"},
+        "insights": {"type": "document", "fields": {k: {"type": "string", "analyzer": "lucene.english"}
+                                                    for k in ("title", "finding", "action")}},
+    }}}),
+    EVENTS_INDEX: (schema.EVENTS, "search", {"mappings": {"dynamic": False, "fields": {
+        "business_id": {"type": "token"},
+        "status": {"type": "token"},
+        **{k: {"type": "string", "analyzer": "lucene.english"} for k in ("name", "venue", "category", "genre")},
+    }}}),
 }
 
 FIELDS = {"invoice_number": 1, "counterparty": 1, "direction": 1, "amount": 1, "currency": 1, "issue_date": 1,
@@ -107,21 +138,27 @@ class PriceCheck:
 
 
 def ensure_search_indexes(db: Database) -> Dict[str, str]:
-    """Backfill `search_text` and create (or update) the Atlas Search indexes. Safe to re-run.
-    Returns {index name: status}; {} when the server has no Atlas Search (e.g. mongomock)."""
+    """Backfill `search_text` and create (or update) the Atlas Search indexes, each on its own. Safe to re-run.
+    Returns {index name: status, or "refused: why"}; {} when the server has no Atlas Search (e.g. mongomock)."""
     invoices = db[schema.INVOICES]
     for doc in invoices.find({"search_text": {"$exists": False}}):
         invoices.update_one({"_id": doc["_id"]}, {"$set": {"search_text": schema.invoice_search_text(doc)}})
     try:
-        existing = {i["name"]: i for i in invoices.list_search_indexes()}
+        invoices.list_search_indexes().try_next()
     except (OperationFailure, NotImplementedError, AttributeError, TypeError):  # TypeError: mongomock has no such method
         return {}
-    for name, (kind, definition) in INDEXES.items():
-        if name not in existing:
-            invoices.create_search_index(SearchIndexModel(definition, name=name, type=kind))
-        elif existing[name].get("latestDefinition") != definition:
-            invoices.update_search_index(name, definition)
-    return {i["name"]: i.get("status", "?") for i in invoices.list_search_indexes() if i["name"] in INDEXES}
+    out = {}
+    for name, (coll, kind, definition) in INDEXES.items():
+        try:
+            existing = {i["name"]: i for i in db[coll].list_search_indexes()}
+            if name not in existing:
+                db[coll].create_search_index(SearchIndexModel(definition, name=name, type=kind))
+            elif existing[name].get("latestDefinition") != definition:
+                db[coll].update_search_index(name, definition)
+            out[name] = next((i.get("status", "?") for i in db[coll].list_search_indexes() if i["name"] == name), "?")
+        except OperationFailure as e:  # e.g. the cluster's search index limit: keep going, the search falls back
+            out[name] = f"refused: {str(e)[:160]}"
+    return out
 
 
 def search_invoices(db: Database, query: str, business_id: str = BUSINESS_ID, limit: int = 8) -> SearchResult:
@@ -144,12 +181,15 @@ def search_invoices(db: Database, query: str, business_id: str = BUSINESS_ID, li
             {"$project": {**FIELDS, "score": {"$meta": "score"}, "details": {"$meta": "scoreDetails"}}},
         ]))
     except (OperationFailure, NotImplementedError) as e:
-        return _fallback(db, _basic_search(db, query, business_id, limit), str(e)[:200])
+        basic = _basic_search(db, query, business_id, limit)
+        highlight_invoices(db, query, basic, business_id)
+        return _fallback(db, basic, str(e)[:200])
     hits = _relevant(docs)[:limit]
     if not hits:  # Atlas answers a missing or still-building index with no results, not an error: double-check
         basic = _basic_search(db, query, business_id, limit)
         if basic:
             return _fallback(db, basic, "Atlas Search returned nothing but a plain match did (index missing or building?)")
+    highlight_invoices(db, query, hits, business_id)
     return SearchResult(hits, "hybrid")
 
 
@@ -232,6 +272,288 @@ def set_preferred(db: Database, counterparty: str, preferred: bool = True, busin
     op = "$addToSet" if preferred else "$pull"
     db[schema.BUSINESSES].update_one({"_id": business_id}, {op: {"preferred_suppliers": schema.counterparty_key(counterparty)}})
     return (db[schema.BUSINESSES].find_one({"_id": business_id}) or {}).get("preferred_suppliers", [])
+
+
+# ---------------------------------------------------------------- more Atlas Search: highlights, facets,
+# autocomplete, duplicates, products, the agent's record, board memos and events
+
+MAX_SUGGEST = 6
+PRODUCT_LEAD = 1.5  # the top product must score this many times the next to be picked without asking
+ACTIVITY_LIMIT = 10
+
+
+def _clauses(query: str, fields: List[str]) -> List[dict]:
+    """Exact words (boosted) + typo tolerance for words of 5+ letters, over any fields."""
+    clauses = [{"text": {"query": query, "path": fields, "score": {"boost": {"value": 2}}}}]
+    long_words = [w for w in re.findall(r"[A-Za-z]+", query) if len(w) >= FUZZY_MIN_LEN]
+    if long_words:
+        clauses.append({"text": {"query": " ".join(long_words), "path": fields, "fuzzy": {"maxEdits": 1}}})
+    return clauses
+
+
+def _snippets(highlights: Optional[List[dict]], limit: int = 2) -> List[List[dict]]:
+    """Atlas `searchHighlights` → [[{"value": "Oat ", "hit": False}, {"value": "milk", "hit": True}, …], …], best first.
+    Plain values: the template escapes them and wraps hits in <mark> (never raw HTML from an email)."""
+    best = sorted(highlights or [], key=lambda h: -(h.get("score") or 0))[:limit]
+    return [[{"value": t.get("value", ""), "hit": t.get("type") == "hit"} for t in h.get("texts") or []] for h in best]
+
+
+def _basic_snippets(texts: List[str], query: str, limit: int = 2) -> List[List[dict]]:
+    """The same shape as _snippets, by plain word match (no Atlas)."""
+    words = _words(query)
+    out = []
+    for text in texts:
+        parts = re.split(r"([A-Za-z0-9]+)", text or "")
+        if any(p.lower() in words for p in parts):
+            out.append([{"value": p, "hit": p.lower() in words} for p in parts if p])
+        if len(out) == limit:
+            break
+    return out
+
+
+def highlight_invoices(db: Database, query: str, hits: List[dict], business_id: str = BUSINESS_ID) -> None:
+    """Add `highlights` (which words matched, in the supplier name or a line item) to keyword hits, in place.
+    Cosmetic: a failure leaves the hits without highlights."""
+    keyword = [h for h in hits if "keyword" in (h.get("matched_by") or [])]
+    if not keyword:
+        return
+    try:
+        found = {d.get("_id"): d.get("highlights") for d in db[schema.INVOICES].aggregate([
+            {"$search": {"index": TEXT_INDEX, "compound": {
+                "filter": [{"equals": {"path": "business_id", "value": business_id}}],
+                "should": _keyword_clauses(query), "minimumShouldMatch": 1},
+                "highlight": {"path": ["counterparty", "line_items.description"]}}},
+            {"$match": {"_id": {"$in": [h.get("_id") for h in keyword]}}},
+            {"$project": {"highlights": {"$meta": "searchHighlights"}}}])}
+        for h in keyword:
+            h["highlights"] = _snippets(found.get(h.get("_id")))
+    except (OperationFailure, NotImplementedError, TypeError, AttributeError):  # cosmetic: never fail a search over it
+        for h in keyword:
+            h["highlights"] = _basic_snippets([h.get("counterparty") or ""] +
+                                              [li.get("description") or "" for li in h.get("line_items") or []], query)
+
+
+def invoice_facets(db: Database, business_id: str = BUSINESS_ID, buckets: int = 6) -> dict:
+    """Counts across all invoices from one $searchMeta call: by status, by direction, and the busiest counterparties.
+    {"total": 16, "status": [("paid", 8), …], "direction": […], "counterparty": [("Eastside Dairy Co", 5), …], "mode"}"""
+    names = {"status": "status", "direction": "direction", "counterparty": "counterparty"}
+    try:
+        meta = next(db[schema.INVOICES].aggregate([{"$searchMeta": {"index": TEXT_INDEX, "facet": {
+            "operator": {"equals": {"path": "business_id", "value": business_id}},
+            "facets": {k: {"type": "string", "path": path, "numBuckets": buckets} for k, path in names.items()}}}}]), None)
+        if not meta:
+            raise OperationFailure("no $searchMeta result")
+        out = {k: [(b["_id"], b["count"]) for b in meta["facet"][k]["buckets"]] for k in names}
+        return {"total": meta["count"]["lowerBound"], **out, "mode": "atlas"}
+    except (OperationFailure, NotImplementedError, KeyError, TypeError):
+        from collections import Counter
+        docs = list(db[schema.INVOICES].find({"business_id": business_id}, {k: 1 for k in names}))
+        out = {k: Counter(d.get(k) for d in docs if d.get(k)).most_common(buckets) for k in names}
+        return {"total": len(docs), **out, "mode": "basic"}
+
+
+def suggest(db: Database, prefix: str, business_id: str = BUSINESS_ID, limit: int = MAX_SUGGEST) -> SearchResult:
+    """Autocomplete for the search box: supplier/customer names starting with what's typed ("eas" → Eastside Dairy Co),
+    then product names. Names only, never amounts."""
+    prefix = re.sub(r"\s+", " ", (prefix or "")).strip()[:40]
+    if len(prefix) < 2 or not re.search(r"\w", prefix):
+        return SearchResult([], "atlas")
+    fuzzy = {"fuzzy": {"maxEdits": 1, "prefixLength": 2}} if len(prefix) >= 4 else {}
+    try:
+        names = []
+        for coll, index, path in ((schema.INVOICES, TEXT_INDEX, "counterparty"), (schema.PRODUCTS, PRODUCTS_INDEX, "name")):
+            for d in db[coll].aggregate([
+                    {"$search": {"index": index, "compound": {
+                        "filter": [{"equals": {"path": "business_id", "value": business_id}}],
+                        "must": [{"autocomplete": {"query": prefix, "path": path, **fuzzy}}]}}},
+                    {"$limit": limit * 3}, {"$project": {path: 1}}]):
+                names.append((d.get(path), "product" if coll == schema.PRODUCTS else "counterparty"))
+        return SearchResult(_unique_names(names, limit), "atlas")
+    except (OperationFailure, NotImplementedError) as e:
+        low = prefix.lower()
+        names = [(n, "counterparty") for n in db[schema.INVOICES].distinct("counterparty", {"business_id": business_id})] + \
+                [(n, "product") for n in db[schema.PRODUCTS].distinct("name", {"business_id": business_id})]
+        starts = [x for x in names if x[0] and (x[0].lower().startswith(low) or any(w.startswith(low) for w in x[0].lower().split()))]
+        return _fallback(db, _unique_names(sorted(starts, key=lambda x: x[0]), limit), str(e)[:200])
+
+
+def _unique_names(names: List[tuple], limit: int) -> List[dict]:
+    seen, out = set(), []
+    for name, kind in names:
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            out.append({"name": name, "kind": kind})
+    return out[:limit]
+
+
+def number_key(number: Optional[str]) -> str:
+    """"EDC 7781", "edc-7781", "EDC/7781" → "edc7781": one invoice number however it's written."""
+    return re.sub(r"[^a-z0-9]", "", (number or "").lower())
+
+
+def _same_supplier(a: dict, b: dict) -> bool:
+    """"Eastside Dairy" and "Eastside Dairy Co" are one supplier; "Eastside Dairy" and "Westside Dairy" are not."""
+    ka, kb = _key(a), _key(b)
+    if not ka or not kb:
+        return False
+    return ka == kb or ka.startswith(kb) or kb.startswith(ka) or \
+        _overlap(a.get("counterparty"), b.get("counterparty")) >= 0.6
+
+
+def is_duplicate(doc: dict, other: dict) -> bool:
+    """Same invoice written differently: the same number (ignoring spaces/dashes/case), the same amount, the same
+    direction and the same supplier or a close spelling of it. A monthly bill with the same amount but a new number is
+    NOT a duplicate. An exact match (same supplier key + number) is left to the unique index."""
+    if number_key(doc.get("invoice_number")) != number_key(other.get("invoice_number")) \
+            or number_key(doc.get("invoice_number")).startswith("unknown") or not number_key(doc.get("invoice_number")):
+        return False
+    if doc.get("direction") != other.get("direction") or (doc.get("currency") or "GBP") != (other.get("currency") or "GBP"):
+        return False
+    if not (_positive(doc.get("amount")) and _positive(other.get("amount"))) or abs(doc["amount"] - other["amount"]) > 0.005:
+        return False
+    exact = _key(doc) == _key(other) and doc.get("invoice_number") == other.get("invoice_number")
+    return not exact and _same_supplier(doc, other)
+
+
+def possible_duplicate(db: Database, doc: dict) -> Optional[dict]:
+    """An invoice already stored that is probably this one written differently (see is_duplicate), or None.
+    Atlas Search finds the candidates by invoice number ("EDC 7781" matches "EDC-7781"); code makes the call."""
+    business_id = doc.get("business_id", BUSINESS_ID)
+    number = (doc.get("invoice_number") or "").strip()
+    if not number_key(number) or number_key(number).startswith("unknown"):
+        return None
+    spaced = " ".join(re.findall(r"[A-Za-z]+|\d+", number))  # "EDC7781" → "EDC 7781": the tokens Atlas indexed
+    try:
+        candidates = list(db[schema.INVOICES].aggregate([
+            {"$search": {"index": TEXT_INDEX, "compound": {
+                "filter": [{"equals": {"path": "business_id", "value": business_id}},
+                           {"equals": {"path": "direction", "value": doc.get("direction") or ""}}],
+                "should": [{"text": {"query": q, "path": "invoice_number"}} for q in {number, spaced}],
+                "minimumShouldMatch": 1}}},
+            {"$limit": 20}, {"$project": FIELDS}]))
+        # Atlas returns nothing (not an error) while an index is missing or building: double-check by hand then
+        if not candidates:
+            raise OperationFailure("no candidates from Atlas Search")
+    except (OperationFailure, NotImplementedError):
+        key = number_key(number)
+        candidates = [d for d in db[schema.INVOICES].find({"business_id": business_id, "direction": doc.get("direction")}, FIELDS)
+                      if number_key(d.get("invoice_number")) == key]
+    return next((c for c in candidates if c.get("_id") != doc.get("_id") and is_duplicate(doc, c)), None)
+
+
+def find_products(db: Database, query: str, business_id: str = BUSINESS_ID, limit: int = 5) -> SearchResult:
+    """Menu items by name, typo-tolerant: "flat whte" → Flat White, "capuccino" → Cappuccino, "flat wh" (as typed)."""
+    query = (query or "").strip()[:60]
+    if not re.search(r"\w", query):
+        return SearchResult([], "atlas")
+    words = re.findall(r"[A-Za-z]+", query)
+    should = [{"text": {"query": query, "path": "name", "score": {"boost": {"value": 3}}}},
+              {"autocomplete": {"query": query, "path": "name"}}]
+    if any(len(w) >= 4 for w in words):
+        should.append({"text": {"query": " ".join(w for w in words if len(w) >= 4), "path": "name", "fuzzy": {"maxEdits": 2 if any(len(w) >= 7 for w in words) else 1}}})
+    try:
+        docs = list(db[schema.PRODUCTS].aggregate([
+            {"$search": {"index": PRODUCTS_INDEX, "compound": {
+                "filter": [{"equals": {"path": "business_id", "value": business_id}}], "should": should, "minimumShouldMatch": 1}}},
+            {"$limit": limit}, {"$project": {"name": 1, "price": 1, "score": {"$meta": "searchScore"}}}]))
+    except (OperationFailure, NotImplementedError) as e:
+        return _fallback(db, _basic_products(db, query, business_id, limit), str(e)[:200])
+    if not docs:  # a missing or building index answers with nothing: only a failure if a plain match does find it
+        basic = _basic_products(db, query, business_id, limit)
+        if basic:
+            return _fallback(db, basic, "Atlas Search returned no products but a plain match did (index missing or building?)")
+    return SearchResult(docs, "atlas")
+
+
+def _basic_products(db: Database, query: str, business_id: str, limit: int) -> List[dict]:
+    wanted = query.lower()
+    return [{**p, "score": 1.0} for p in db[schema.PRODUCTS].find({"business_id": business_id}, {"name": 1, "price": 1})
+            if wanted in (p.get("name") or "").lower() or (p.get("name") or "").lower() in wanted][:limit]
+
+
+def pick_product(query: str, result: SearchResult) -> tuple:
+    """(the product, None) when the match is clear, else (None, [names to ask about]). An exact name always wins;
+    otherwise the top hit must clearly lead ("matcha" → Hot or Iced? ask)."""
+    hits = result.hits
+    exact = [h for h in hits if (h.get("name") or "").lower() == (query or "").strip().lower()]
+    if exact:
+        return exact[0], None
+    if len(hits) == 1:
+        return hits[0], None
+    if len(hits) >= 2 and result.mode == "atlas" and hits[0]["score"] >= PRODUCT_LEAD * hits[1]["score"]:
+        return hits[0], None
+    return None, [h["name"] for h in hits]
+
+
+def search_activity(db: Database, query: str, business_id: str = BUSINESS_ID, limit: int = ACTIVITY_LIMIT) -> SearchResult:
+    """The agent's own record, searched: "what did you do about Hackney Hub?" → the reminders drafted, the decisions.
+    Hits: {"summary", "kind", "at", "actor", "score", "highlights"}, best match first."""
+    query = (query or "").strip()[:MAX_QUERY_LEN]
+    if not re.search(r"\w", query):
+        return SearchResult([], "atlas")
+    try:
+        docs = list(db[schema.AGENT_LOG].aggregate([
+            {"$search": {"index": ACTIVITY_INDEX, "compound": {
+                "filter": [{"equals": {"path": "business_id", "value": business_id}}],
+                "should": _clauses(query, ["summary"]), "minimumShouldMatch": 1},
+                "highlight": {"path": "summary"}}},
+            {"$limit": limit},
+            {"$project": {"summary": 1, "kind": 1, "at": 1, "actor": 1, "score": {"$meta": "searchScore"},
+                          "highlights": {"$meta": "searchHighlights"}}}]))
+        for d in docs:
+            d["highlights"] = _snippets(d.get("highlights"), limit=1)
+        if not docs and _basic_activity(db, query, business_id, 1):
+            raise OperationFailure("Atlas Search returned nothing but a plain match did (index missing or building?)")
+        return SearchResult(docs, "atlas")
+    except (OperationFailure, NotImplementedError) as e:
+        return _fallback(db, _basic_activity(db, query, business_id, limit), str(e)[:200])
+
+
+def _basic_activity(db: Database, query: str, business_id: str, limit: int) -> List[dict]:
+    words = _words(query)
+    hits = []
+    for e in db[schema.AGENT_LOG].find({"business_id": business_id}, {"summary": 1, "kind": 1, "at": 1, "actor": 1}).sort("at", -1).limit(500):
+        score = len(words & _words(e.get("summary")))
+        if score:
+            hits.append({**e, "score": float(score), "highlights": _basic_snippets([e.get("summary") or ""], query, 1)})
+    return sorted(hits, key=lambda d: -d["score"])[:limit]
+
+
+def search_notes(db: Database, query: str, business_id: str = BUSINESS_ID, limit: int = 5) -> dict:
+    """Past board memo insights and nearby events matching the query:
+    {"insights": [{"date", "title", "finding", "action", "status"}], "events": [{"name", "venue", "date", …}], "mode"}."""
+    query = (query or "").strip()[:MAX_QUERY_LEN]
+    if not re.search(r"\w", query):
+        return {"insights": [], "events": [], "mode": "atlas"}
+    words, mode = _words(query), "atlas"
+    try:
+        memos = list(db[schema.BOARD_MEMOS].aggregate([
+            {"$search": {"index": MEMOS_INDEX, "compound": {
+                "filter": [{"equals": {"path": "business_id", "value": business_id}}],
+                "should": _clauses(query, ["headline", "insights.title", "insights.finding", "insights.action"]),
+                "minimumShouldMatch": 1}}},
+            {"$limit": limit}, {"$project": {"date": 1, "insights": 1}}]))
+        events = list(db[schema.EVENTS].aggregate([
+            {"$search": {"index": EVENTS_INDEX, "compound": {
+                "filter": [{"equals": {"path": "business_id", "value": business_id}}],
+                "mustNot": [{"equals": {"path": "status", "value": "removed"}}],
+                "should": _clauses(query, ["name", "venue", "category", "genre"]), "minimumShouldMatch": 1}}},
+            {"$limit": limit}, {"$project": {"name": 1, "venue": 1, "date": 1, "category": 1, "distance_km": 1}}]))
+    except (OperationFailure, NotImplementedError) as e:
+        mode = "basic"
+        _fallback(db, [], str(e)[:200])
+        memos = [m for m in db[schema.BOARD_MEMOS].find({"business_id": business_id}).sort("date", -1).limit(30)
+                 if words & _words(" ".join([m.get("headline") or ""] + [" ".join(str(i.get(k) or "") for k in ("title", "finding", "action"))
+                                                                         for i in m.get("insights") or []]))][:limit]
+        events = [e for e in db[schema.EVENTS].find({"business_id": business_id, "status": {"$ne": "removed"}})
+                  if words & _words(" ".join(str(e.get(k) or "") for k in ("name", "venue", "category", "genre")))][:limit]
+    insights = []
+    for m in memos:  # the memo matched; show the insights in it that mention the query (all of them if none does)
+        found = [i for i in m.get("insights") or []
+                 if words & _words(" ".join(str(i.get(k) or "") for k in ("title", "finding", "action")))] or m.get("insights") or []
+        insights += [{"date": m.get("date"), **{k: i.get(k) for k in ("title", "finding", "action", "status")}} for i in found]
+    return {"insights": insights[:limit], "events": [{k: e.get(k) for k in ("name", "venue", "date", "category", "distance_km")}
+                                                     for e in events], "mode": mode}
 
 
 # ---------------------------------------------------------------- helpers
@@ -363,7 +685,9 @@ def _basic_similar(db: Database, invoice: dict, limit: int) -> List[dict]:
 
 def live_check(db: Database) -> List[tuple]:
     """Before the demo: are the indexes up and does each search mode really answer? Returns (ok, what) pairs."""
-    statuses = {i["name"]: i.get("status") for i in db[schema.INVOICES].list_search_indexes()}
+    statuses = {}
+    for coll in {c for c, _k, _d in INDEXES.values()}:
+        statuses.update({i["name"]: i.get("status") for i in db[coll].list_search_indexes()})
     results = [(statuses.get(n) == "READY", f"index {n}: {statuses.get(n, 'missing')}") for n in INDEXES]
     typo = search_invoices(db, "diary")
     results.append((typo.mode == "hybrid" and any("keyword" in h["matched_by"] and "Dairy" in h["counterparty"] for h in typo.hits),
@@ -371,6 +695,27 @@ def live_check(db: Database) -> List[tuple]:
     meaning = search_invoices(db, "milk supplier")
     results.append((meaning.mode == "hybrid" and any("meaning" in h["matched_by"] and "Dairy" in h["counterparty"] for h in meaning.hits),
                     f"by meaning: 'milk supplier' → {[h['counterparty'] for h in meaning.hits][:3]} ({meaning.mode})"))
+    hl = [h for h in search_invoices(db, "oat milk").hits if h.get("highlights")]
+    results.append((bool(hl) and any(p["hit"] for p in hl[0]["highlights"][0]),
+                    f"highlights: 'oat milk' → {[''.join(('[' + p['value'] + ']') if p['hit'] else p['value'] for p in h['highlights'][0]) for h in hl][:2]}"))
+    facets = invoice_facets(db)
+    results.append((facets["mode"] == "atlas" and bool(facets["counterparty"]), f"facets ({facets['mode']}): {facets['counterparty'][:3]}"))
+    sug = suggest(db, "eas")
+    results.append((sug.mode == "atlas" and any(h["name"].startswith("Eastside") for h in sug.hits),
+                    f"autocomplete 'eas' → {[h['name'] for h in sug.hits]} ({sug.mode})"))
+    stored = db[schema.INVOICES].find_one({"business_id": BUSINESS_ID, "invoice_number": "EDC-7781"}, FIELDS)
+    if stored:
+        twin = {**stored, "_id": None, "invoice_number": "EDC 7781", "counterparty": "Eastside Dairy", "counterparty_key": "eastsidedairy"}
+        dup = possible_duplicate(db, twin)
+        results.append((bool(dup) and dup["invoice_number"] == "EDC-7781", f"duplicate check: 'EDC 7781' → {dup and dup['invoice_number']}"))
+    product = find_products(db, "flat whte")
+    results.append((product.mode == "atlas" and bool(product.hits) and product.hits[0]["name"] == "Flat White",
+                    f"typo-tolerant product: 'flat whte' → {[h['name'] for h in product.hits][:3]} ({product.mode})"))
+    acts = search_activity(db, "overdue")
+    results.append((acts.mode == "atlas" and bool(acts.hits), f"activity search 'overdue': {len(acts.hits)} hit(s) ({acts.mode})"))
+    notes = search_notes(db, "milk")
+    results.append((notes["mode"] == "atlas", f"board memos + events 'milk': {len(notes['insights'])} insight(s), "
+                                              f"{len(notes['events'])} event(s) ({notes['mode']})"))
     since = datetime.now(timezone.utc) - timedelta(hours=24)
     fallbacks = db[schema.AGENT_LOG].count_documents({"kind": "search_fallback", "at": {"$gte": since}})
     results.append((fallbacks == 0, f"search fallbacks in the last 24 h: {fallbacks}"))
@@ -385,6 +730,7 @@ def main() -> None:
     parser.add_argument("--setup", action="store_true", help="backfill search_text and create/update the indexes")
     parser.add_argument("--similar", metavar="INVOICE_NUMBER", help="similar invoices + price check")
     parser.add_argument("--check", action="store_true", help="live self-test against Atlas")
+    parser.add_argument("--activity", metavar="QUERY", help="search the agent's own record")
     args = parser.parse_args()
     db = get_db()
     if args.check:
@@ -393,7 +739,13 @@ def main() -> None:
             print(f"  {'✓' if ok else '✗'} {what}")
         raise SystemExit(0 if all(ok for ok, _ in results) else 1)
     if args.setup:
-        print(ensure_search_indexes(db))
+        for name, status in ensure_search_indexes(db).items():
+            print(f"  {name}: {status}")
+    if args.activity:
+        result = search_activity(db, args.activity)
+        print(f"mode: {result.mode}")
+        for h in result.hits:
+            print(f"  {h['score']:.3f}  {h.get('at')}  {h['summary']}")
     if args.query:
         result = search_invoices(db, args.query)
         print(f"mode: {result.mode}" + (f" ({result.error})" if result.error else ""))

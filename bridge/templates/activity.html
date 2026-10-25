@@ -5,6 +5,32 @@
 {% block heading %}What I did on my own{% endblock %}
 {% block lede %}Every step I take is written down: what I read, what I checked, what I drafted, and every decision you made.{% endblock %}
 {% block body %}
+<form class="search" method="get" action="/activity" role="search">
+  <svg class="ico"><use href="#i-spark"/></svg>
+  <label class="sr" for="act-q">Search what I did</label>
+  <input id="act-q" name="q" value="{{ q }}" autocomplete="off" placeholder="Search what I did… try “Hackney” or “oat milk”">
+  <button class="btn btn--soft" type="submit">Search</button>
+</form>
+{% if found is not none %}
+<section class="block search__results">
+  <h2>{{ found.hits|length }} step{{ "s" if found.hits|length != 1 }} matching “{{ q }}” <small>{{ "MongoDB Atlas Search over my activity log" if found.mode == "atlas" else "plain word match (Atlas Search unavailable here)" }}</small></h2>
+  <ol class="timeline">
+    {% for e in found.hits %}
+    <li class="event">
+      <span class="gem{{ ' gem--sage' if e.actor == 'owner' else '' }}"><svg class="ico"><use href="#i-spark"/></svg></span>
+      <div>
+        <div class="event__head"><span class="event__label">{{ "You · " if e.actor == "owner" else "" }}{{ (e.kind or "update")|replace("_", " ")|capitalize }}</span>
+          <time class="event__ago" datetime="{{ e.at.isoformat() if e.at else '' }}">{% if e.at %}{{ e.at|stamp }}{% endif %}</time></div>
+        <p class="event__text">{% if e.highlights %}{% for part in e.highlights[0] %}{% if part.hit %}<mark>{{ part.value }}</mark>{% else %}{{ part.value }}{% endif %}{% endfor %}{% else %}{{ e.summary }}{% endif %}</p>
+      </div>
+    </li>
+    {% else %}
+    <li class="empty"><svg class="ico"><use href="#i-spark"/></svg><div><b>Nothing matched.</b>Try a supplier, a customer or a word like “reminder”.</div></li>
+    {% endfor %}
+  </ol>
+  <p><a class="btn btn--text" href="/activity">Back to everything</a></p>
+</section>
+{% else %}
 <ol class="timeline">
   {% for e in timeline %}
   <li class="event">
@@ -19,4 +45,5 @@
   <li class="empty"><svg class="ico"><use href="#i-spark"/></svg><div><b>Nothing yet.</b>My first steps will show up here.</div></li>
   {% endfor %}
 </ol>
+{% endif %}
 {% endblock %}

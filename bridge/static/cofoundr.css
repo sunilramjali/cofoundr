@@ -483,3 +483,12 @@ html.js .ask.is-edited .js-edited { display: inline-flex; animation: pop .35s va
 .search__results .chip { margin-left: 6px; }
 
 .wind-warning { margin: 8px 0 0; font-weight: 600; color: var(--ink); }
+
+/* Atlas Search: matched words, facets (Sunil, Sun 25 Oct) */
+mark { background: var(--amber-bg); color: inherit; border-radius: 3px; padding: 0 2px; }
+.row__hl { font-size: 13px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.facets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -6px 0 18px; }
+.facets__label { font-size: 13px; color: var(--muted); margin-right: 4px; }
+.facets__label small { display: block; font-size: 11px; }
+.chip--facet { text-decoration: none; color: var(--ink); }
+.chip--facet b { font-weight: 600; margin-left: 2px; }

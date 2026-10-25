@@ -669,15 +669,20 @@ MEADOWFIELD = {"business_id": "gaia-coffee", "invoice_number": "MF-1", "directio
 
 
 class FakeAtlas:
-    """Stands in for the Atlas invoices collection: returns canned $rankFusion results and records the pipeline."""
+    """Stands in for the Atlas invoices collection: returns canned $rankFusion results and records every pipeline
+    (`pipeline` = the first: the search itself; later ones are e.g. the highlight lookup)."""
     def __init__(self, docs):
-        self.docs, self.pipeline = docs, None
+        self.docs, self.pipelines = docs, []
+
+    @property
+    def pipeline(self):
+        return self.pipelines[0] if self.pipelines else None
 
     def __getitem__(self, _name):
         return self
 
     def aggregate(self, pipeline):
-        self.pipeline = pipeline
+        self.pipelines.append(pipeline)
         return list(self.docs)
 
     def find(self, *_a, **_k):
