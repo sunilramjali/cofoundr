@@ -32,7 +32,8 @@ WHAT_IF_DAYS = 28  # price what-ifs use the last 4 weeks of till lines
 MAX_PRICE_CHANGE = 200  # pence; a bigger move is a menu rethink, not a what-if
 MONEY = re.compile(r"£\s?(\d[\d,]*(?:\.\d{1,2})?)")
 CLAIMS_ACTION = re.compile(r"\bI(?:'ve| have)?\s+(?:just\s+)?(approved|rejected|paid|sent|emailed|chased)\b", re.IGNORECASE)
-ASKS_FOR_LIST = re.compile(r"\b(waiting|pending|to ?do|todo|brief|summary|status|today|what'?s (up|new|next|on))\b", re.IGNORECASE)
+ASKS_FOR_LIST = re.compile(r"\b(waiting|pending|to[ -]?do|todo|brief|summary|status|today|needs? (to be |doing|done)|"
+                           r"anything for me|what'?s (up|new|next|on))\b", re.IGNORECASE)
 
 SYSTEM = """You are CoFoundr, the AI co-founder of GAIA Coffee, a mobile coffee truck in East London. The owner is asking
 you something in the dashboard chat. All data is synthetic demo data.
@@ -58,6 +59,13 @@ you something in the dashboard chat. All data is synthetic demo data.
   "#N" means approval N (the owner replies "approve N"): never put # on anything else, e.g. *Sat 24 Oct* not *#1 Sat*.
   When approvals are listed, end with that question and the exact reply. No explanations the owner didn't ask for.
   A simple answer with no list: at most 2 short sentences.
+- Stock amounts come from the tools as whole numbers with their unit ("3 kg", "12 litres", "40"): quote them exactly
+  like that, never with decimals.
+- If a day_conditions result has a wind_warning, always pass it on, starting with 💨.
+- "What needs to be done?", "what's our to-do list?", "what's on?", "anything for me?" all mean the to-do list:
+  call pending_approvals and priorities, list the approvals first (they need a yes), then up to 3 other priorities.
+  "What's up today?" or "how's today looking?": today's forecast, weather (call day_conditions for today) and, if any,
+  what's waiting for a yes.
 - For "what if I change a price", "what do I need for Saturday" or "is Sunday worth it", call what_if_price,
   stock_needed or day_conditions and use their numbers. Never do your own sums: if a tool didn't return a figure,
   don't give it. A price what-if assumes customers keep buying the same amount: always say so, with the break-even.
@@ -229,9 +237,11 @@ def tools(record: Callable[[str, dict], dict]) -> list:
                 continue
             by_then = max(0.0, r["estimate"] - r["per_day"] * days_until)
             need = r["per_day"] * scale
-            rows.append({"item": r["name"], "unit": r["unit"], "on_truck_by_then": round(by_then, 1), "day_needs": round(need, 1),
-                         "short_by": round(max(0.0, need - by_then), 1)})
-        short = sorted((r for r in rows if r["short_by"] > 0), key=lambda x: -x["short_by"])
+            short_by = max(0.0, need - by_then)
+            rows.append({"item": r["name"], "on_truck_by_then": view.qty(by_then, r["unit"]),
+                         "day_needs": view.qty(need, r["unit"], up=True),
+                         "short_by": view.qty(short_by, r["unit"], up=True) if short_by > 0 else None, "_short": short_by})
+        short = [{k: v for k, v in r.items() if k != "_short"} for r in sorted((r for r in rows if r["_short"] > 0), key=lambda x: -x["_short"])]
         counted = est["counted_at"].astimezone(LONDON)
         return record("stock_needed", {
             "date": day.isoformat(), "trading": True, "expected_takings": expected,
@@ -241,7 +251,10 @@ def tools(record: Callable[[str, dict], dict]) -> list:
                      "between counts; deliveries aren't recorded"})
 
     def day_conditions(date: str) -> dict:
-        """Weather at the pitch, events nearby and TfL disruptions for one day (YYYY-MM-DD), with that day's forecast."""
+        """Weather at the pitch (with a wind_warning when it's windy), events nearby and TfL disruptions for one day
+        (YYYY-MM-DD), with that day's forecast."""
+        from bridge import view  # the dashboard's wind rule: one threshold for the page and the answer
+
         try:
             day = datetime.strptime((date or "").strip(), "%Y-%m-%d").date().isoformat()
         except ValueError:
@@ -252,6 +265,7 @@ def tools(record: Callable[[str, dict], dict]) -> list:
         return record("day_conditions", {
             "date": day,
             "weather": {k: w.get(k) for k in ("summary",) + conditions.WEATHER_NUMBERS} if w else None,
+            "wind_warning": view.wind_warning(w),
             "events": [{"name": e.get("name"), "venue": e.get("venue"), "category": e.get("category"),
                         "distance_km": e.get("distance_km"), "starts_at": _iso(e.get("starts_at"))} for e in c["events"][:MAX_ROWS]],
             "transport": [{"reason": t.get("reason"), "impact": t.get("impact"), "stations": t.get("stations"),
@@ -349,7 +363,7 @@ def fallback(text: str) -> str:
         blocks.append(f"Would you like to approve any now? Reply *approve {todo[0]['ref']}* (or another number).")
         return "\n\n".join(blocks)
     return ("I can't think that through right now (Gemini is unavailable), so nothing was done. "
-            "Try “what's waiting?”, or decide with “approve 1” / “reject 1”.")
+            "Try “what needs doing?”, or decide with “approve 1” / “reject 1”.")
 
 
 def _ask(contents: list, fns: list) -> str:

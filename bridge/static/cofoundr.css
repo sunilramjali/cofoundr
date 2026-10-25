@@ -481,3 +481,5 @@ html.js .ask.is-edited .js-edited { display: inline-flex; animation: pop .35s va
 .search .ico { width: 18px; height: 18px; color: var(--muted); flex: none; }
 .search input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: var(--ink); outline: none; }
 .search__results .chip { margin-left: 6px; }
+
+.wind-warning { margin: 8px 0 0; font-weight: 600; color: var(--ink); }

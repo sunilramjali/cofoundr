@@ -1179,3 +1179,26 @@ def test_dashboard_shows_whatsapp_bold_as_bold_and_still_escapes(db):
     page = web.get("/", params={"msg": "*4 waiting* <script>x</script> *#1 <b>Evil</b>*"})
     assert "<strong>4 waiting</strong>" in page.text and "<script>x</script>" not in page.text
     assert "<strong>#1 &lt;b&gt;Evil&lt;/b&gt;</strong>" in page.text
+
+
+@pytest.mark.parametrize("amount, unit, up, expected", [
+    (3.4, "kg", False, "3 kg"), (11.6, "litre", False, "12 litres"), (1.2, "litre", False, "1 litre"), (250.4, "g", False, "250 g"),
+    (2.0, "bag", False, "2 bags"), (1, "slice", False, "1 slice"), (39.7, "unit", False, "40"), (5, "", False, "5"),
+    (0.3, "kg", True, "1 kg"), (2.0, "litre", True, "2 litres"), (-1, "kg", False, "0 kg"), (None, "kg", False, "0 kg"),
+])
+def test_stock_is_whole_numbers_with_units(amount, unit, up, expected):
+    assert view.qty(amount, unit, up=up) == expected
+
+
+@pytest.mark.parametrize("kmh, warned", [(None, False), (12, False), (29.9, False), (30, True), (41.6, True)])
+def test_wind_warning_only_when_windy(kmh, warned):
+    w = view.wind_warning({"wind_max_kmh": kmh} if kmh is not None else None)
+    assert bool(w) == warned and (not w or "42 km/h" in w or "30 km/h" in w)
+
+
+@pytest.mark.parametrize("question", ["what needs to be done?", "what's our to do list", "what's up today?",
+                                      "what needs doing", "anything for me?", "what's on?"])
+def test_to_do_questions_get_the_list_even_without_gemini(db, gemini_down, question):
+    overdue.run()
+    r = assistant.answer(question)
+    assert r.by == "fallback" and r.text.startswith("*4 waiting for your yes*"), question
