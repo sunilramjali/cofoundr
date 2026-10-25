@@ -1501,3 +1501,26 @@ def test_chat_panel_stays_open_across_pages_until_closed(db):
     assert ".chat-restore .chat[hidden] { display: flex; }" in css and ".chat { view-transition-name: chat; }" in css
     js = web.get("/static/cofoundr.js").text
     assert 'store("cf-chat-open", null)' in js and "cf-chat-pending" in js and "/chat/latest" in js
+
+
+def test_highlight_marks_key_facts_and_never_lets_markup_through():
+    out = str(view.highlight("Owe £1,130.00, 21 days overdue, +20% on Mon 26 Oct; napkins probably out <script>x</script>"))
+    for fact in ("£1,130.00", "21 days overdue", "+20%", "Mon 26 Oct", "probably out"):
+        assert f'<mark class="hl">{fact}</mark>' in out, fact
+    assert "<script>" not in out and "&lt;script&gt;" in out
+
+
+def test_todo_list_on_every_page_puts_approvals_first_most_overdue_first(db, gemini_down):
+    overdue.run()
+    db[schema.TASKS].insert_many([{"business_id": "gaia-coffee", "rank": 1, "kind": "approval", "title": "Approve #1"},
+                                  {"business_id": "gaia-coffee", "rank": 2, "kind": "prep_day", "title": "Prep for Saturday",
+                                   "reason": "about £600 expected"}])
+    for path in ("/", "/board", "/activity", "/settings"):
+        page = web.get(path).text
+        assert 'id="todo"' in page and "todo__count" in page, path
+    page = web.get("/activity").text
+    todo = page[page.index('id="todo"'):page.index("</details>", page.index('id="todo"'))]
+    approvals = [i for i in range(len(todo)) if todo.startswith("todo__item--approve", i)]
+    assert approvals and todo.index("todo__item--approve") < todo.index("todo__item--do")  # yes-needed first
+    assert "Prep for Saturday" in todo and "Approve #1" not in todo  # an approval task isn't listed twice
+    assert 'href="/approvals#a' in todo and "localStorage" in page  # each item links to where it's done; state kept

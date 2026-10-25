@@ -7,6 +7,8 @@ from datetime import date, datetime, time as dtime, timezone
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
+from markupsafe import Markup, escape
+
 from backend.inputs import weather
 from backend.inputs.pitches import PITCHES
 
@@ -397,3 +399,46 @@ def payment_checks(pending: List[dict], invoices: List[dict]) -> Dict[str, dict]
             "from_email": inv.get("counterparty_email"),
         }
     return out
+
+
+TODO_SHOWN = 6
+TASK_LINKS = {"prep_day": "/sales", "price_rise": "/invoices", "price_match": "/invoices", "fee_overcharge": "/sales",
+              "review_invoice": "/invoices"}
+
+
+def todo_list(pending: List[dict], review: List[dict], tasks: List[dict], stock: dict) -> dict:
+    """The owner's to-do list on every page: what needs a yes first (most overdue first), then invoices to check, the top
+    priorities and stock running out. Each item links to where it's done. Display only: nothing here changes data."""
+    items = []
+    for a in sorted(pending, key=lambda a: -(a.get("days_overdue") or 0)):
+        verb = "Pay" if a.get("action_type") == "supplier_payment" else "Chase"
+        late = f" · {a['days_overdue']} days overdue" if a.get("days_overdue") else ""
+        items.append({"kind": "approve", "text": f"{verb} {a.get('counterparty') or a['title']}",
+                      "detail": f"£{a['amount']:,.2f}{late} · reply “approve {a['ref']}”", "href": f"/approvals#a{a['ref']}"})
+    for inv in review:
+        items.append({"kind": "check", "text": f"Check {inv.get('invoice_number')} from {inv.get('counterparty')}",
+                      "detail": (inv.get("verification_issues") or ["didn't add up when I read it"])[0], "href": "/invoices"})
+    for t in tasks:
+        if t.get("kind") in ("approval", "review_invoice"):
+            continue  # already listed above
+        items.append({"kind": "do", "text": t["title"], "detail": t.get("reason") or "", "href": TASK_LINKS.get(t.get("kind"), "/")})
+    for s in stock.get("low", [])[:2]:
+        left = "probably out" if s.get("out") else f"about {round(s.get('cover') or 0)} days left"
+        items.append({"kind": "stock", "text": f"Order {s['name'].lower()}",
+                      "detail": f"{left} · about {qty(s['order'], s['unit'], up=True)}" if s.get("order") else left, "href": "/inventory"})
+    return {"items": items[:TODO_SHOWN], "more": max(0, len(items) - TODO_SHOWN), "count": len(items)}
+
+
+HIGHLIGHT = re.compile(
+    r"£\s?\d[\d,]*(?:\.\d{1,2})?(?:k|m)?"                                                     # money
+    r"|[+−-]?\d+(?:\.\d+)?%"                                                                   # percentages
+    r"|\b\d+\s+days?\s+(?:overdue|late|left)\b|\bprobably out\b|\boverdue\b"                    # urgency
+    r"|\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\b",  # dates
+    re.IGNORECASE)
+
+
+def highlight(text) -> Markup:
+    """Long text with its key facts (money, percentages, deadlines, dates) marked so they can be found at a glance.
+    Escapes first, so text from invoices or Gemini can never inject markup."""
+    safe = str(escape(text or ""))
+    return Markup(HIGHLIGHT.sub(lambda m: f'<mark class="hl">{m.group(0)}</mark>', safe))
