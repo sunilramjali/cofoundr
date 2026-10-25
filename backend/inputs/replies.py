@@ -29,3 +29,23 @@ def parse_rejection(text: str) -> Optional[Tuple[int, str]]:
     if not m or MIXED.search(m.group(2)):  # "no 2, approve it instead": unclear, so not a decision at all
         return None
     return int(m.group(1)), m.group(2)
+
+
+# The owner's own to-do list (backend/todos.py), read exactly, never by Gemini: "todo: order oat milk",
+# "add to my list: cups", "remind me to call the dairy"; "done T3" ticks one off.
+TODO = re.compile(r"^\s*(?:to-?\s?do|add\s+(?:to\s+(?:my|the)\s+(?:list|to-?\s?do\s+list)|an?\s+to-?\s?do|to-?\s?do)|remind\s+me\s+to)"
+                  r"(?:\s*[:,\-–—]\s*|\s+)(\S.*?)\s*$", re.IGNORECASE | re.DOTALL)
+NOT_A_TODO = re.compile(r"^(list|lists)\b|\?$", re.IGNORECASE)  # "todo list?", "to do today?": questions, not to-dos
+DONE = re.compile(r"^\s*(?:done|did|ticked?|finished)\s*#?\s*T(\d{1,6})\s*[.!]*\s*$", re.IGNORECASE)
+
+
+def parse_todo(text: str) -> Optional[str]:
+    """The to-do's words for "todo: …", else None."""
+    m = TODO.match(text or "")
+    return m.group(1) if m and not NOT_A_TODO.search(m.group(1)) else None
+
+
+def parse_done(text: str) -> Optional[int]:
+    """The to-do number for "done T3", else None."""
+    m = DONE.match(text or "")
+    return int(m.group(1)) if m else None
