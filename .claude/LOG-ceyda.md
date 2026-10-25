@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 04:10 — Sidebar follows the owner's day; Activity labels
+- **Did:** sidebar = Home · Approvals (was Tasks) · Inbox (new) · Finances · Insights · Board · Activity (new), then "More": Inventory · News · Chat (was Ask) · Settings. Activity: friendly labels for WhatsApp/brief/assistant events; the dashboard chat's own `chat_message` copies hidden (the "Answered your question" entry covers it). Checked in the browser. Live record shows #1 approved on the dashboard at 03:01 and its reminder really emailed to the demo inbox. 565 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **Next:** demo script + README
+- **Blockers / notes for partner:** Sunil, edit in your test `tests/test_news.py`: News moved to `NAV_MORE`, assertion now checks `NAV + NAV_MORE`
+
 ## Sun 25 Oct, 03:45 — Morning brief on WhatsApp at 08:00 + "Send me today's brief" button
 - **Did:** `brief.morning_brief()`: friendly WhatsApp brief from MongoDB only (no Gemini, always arrives): today's forecast + why (or "a day off", next trading day), weather + 💨 wind warning, top 3 non-approval priorities, what's waiting for a yes. `whatsapp.start_brief_schedule(MORNING_BRIEF_AT)`: once a day after 08:00 London (logged `morning_brief_sent`). `POST /brief/send` + Home button (30 s gap). Sandbox: schedule off. 563 tests pass
 - **Status:** done, PR into `stage` + release PR

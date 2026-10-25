@@ -261,7 +261,7 @@ def test_news_facets(db):
 # ---------------------------------------------------------------- what the owner sees
 
 def test_news_page_home_card_and_safe_links(db):
-    from bridge.main import NAV, app
+    from bridge.main import NAV, NAV_MORE, app
     _seed(db)
     news.record_news([_item("https://e/x", "<script>alert(1)</script> market", published_at=NOW)], NOW)
     web = TestClient(app)
@@ -272,7 +272,7 @@ def test_news_page_home_card_and_safe_links(db):
     events = web.get("/news", params={"show": "event"}).text
     assert "Concert in Wembley" in events and "Bakery opens" not in events
     assert "<mark>Bakery</mark>" in web.get("/news", params={"q": "bakery"}).text
-    assert "Around your pitches" in web.get("/").text and ("News", "/news", "spark") in NAV
+    assert "Around your pitches" in web.get("/").text and ("News", "/news", "spark") in NAV + NAV_MORE
 
 
 def test_assistant_reads_local_news_but_can_only_read(db):

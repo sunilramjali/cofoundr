@@ -1421,3 +1421,19 @@ def test_send_brief_button_when_twilio_fails_says_why(db, twilio, monkeypatch):
     twilio.fail = 1
     assert "Couldn't send the brief" in _flash(web.post("/brief/send", data={"back": "/"}, follow_redirects=False))
     assert not db[schema.AGENT_LOG].find_one({"kind": wa_out.BRIEF_KIND})
+
+
+def test_sidebar_follows_the_owners_day_with_a_quieter_more_group(db):
+    page = web.get("/activity").text
+    labels = ["Home", "Approvals", "Inbox", "Finances", "Insights", "Board", "Activity", "More", "Inventory", "News", "Chat", "Settings"]
+    side = page[page.index('class="side glass"'):page.index('class="side__foot"') + 400]
+    positions = [side.index(f">{label}<") for label in labels]
+    assert positions == sorted(positions) and ">Tasks<" not in side
+    assert 'href="/activity" class="is-on" aria-current="page"' in side  # the page you're on is highlighted
+
+
+def test_activity_shows_the_answer_once_not_the_chat_copy(db, ask):
+    ask(lambda tools: "All quiet.")
+    web.post("/ask", data={"text": "anything for me?", "back": "/"})
+    page = web.get("/activity").text
+    assert "Answered your question" in page and "Chat message" not in page

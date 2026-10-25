@@ -20,6 +20,11 @@ _weather_lock = threading.Lock()
 
 # activity kind → (icon, short label); unknown kinds fall back to a dot
 ACTIVITY = {
+    "whatsapp_pushed": ("chat", "Messaged you on WhatsApp"),
+    "whatsapp_received": ("chat", "WhatsApp from you"),
+    "whatsapp_send_failed": ("alert", "Couldn't send a WhatsApp"),
+    "morning_brief_sent": ("chat", "Sent your morning brief"),
+    "assistant_answered": ("chat", "Answered your question"),
     "invoice_extracted": ("doc", "Read an invoice"),
     "ingest_failed": ("alert", "Couldn't read a document"),
     "gmail_checked": ("mail", "Checked the inbox"),
@@ -225,9 +230,14 @@ def week(forecasts: List[dict], weather_days: Dict[str, dict], today: date) -> d
             "next": next((d for d in trading if d["date"] >= today), None)}
 
 
+TIMELINE_HIDDEN = {"chat_message"}  # the dashboard chat's own copy of an exchange; "Answered your question" covers it
+
+
 def timeline(entries: List[dict], now: datetime) -> List[dict]:
     out = []
     for e in entries:
+        if e.get("kind") in TIMELINE_HIDDEN:
+            continue
         icon, label = ACTIVITY.get(e.get("kind"), ("dot", (e.get("kind") or "update").replace("_", " ").capitalize()))
         out.append({"icon": icon, "label": label, "summary": e.get("summary") or "", "ago": ago(e.get("at"), now),
                     "at": e.get("at"), "actor": e.get("actor") or "agent", "kind": e.get("kind")})
