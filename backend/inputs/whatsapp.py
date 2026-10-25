@@ -6,7 +6,8 @@ answers at once; handle() then runs in the background, because Gemini can take l
 - Only the owner's number (OWNER_WHATSAPP) is acted on; anyone else is logged and ignored.
 - A photo/PDF → pipeline.ingest_invoice(source="whatsapp_photo"); the reply is the pipeline's own message.
 - Exactly "approve 4" / "reject 2" → approvals.decide(via="whatsapp"), never via Gemini.
-- Anything else → the Gemini assistant (read-only), whose answer is the reply.
+- Anything else → the Gemini assistant (read-only), whose answer is the reply. A question that needs
+  judgement first gets "give me a moment", because Gemini thinks harder on those.
 """
 import base64
 import hashlib
@@ -102,4 +103,6 @@ def handle(params: dict) -> Optional[str]:
     parsed = parse_reply(text)
     if parsed:
         return _decide(*parsed)
+    if assistant.HARD.search(text):  # Gemini thinks harder (~20-40 s): say so instead of going quiet
+        whatsapp.send("Good question, give me a moment to think it through ☕")
     return assistant.answer(text).text

@@ -753,9 +753,9 @@ def test_chat_bar_decides_like_whatsapp_and_never_guesses(db, gemini_down, sent)
     r = web.post("/ask", data={"text": "approve 4", "back": "/"}, follow_redirects=False)
     assert r.headers["location"].startswith("/?msg=") and "#4 approved" in _flash(r)
     assert db[schema.APPROVALS].find_one({"ref": 4})["decided_via"] == "dashboard"
-    for text, expected in [("don't approve 1", "nothing was done"), ("tell me a joke", "nothing was done"), ("", "Type a question"),
-                           ("what's waiting?", "*3 waiting for your yes*\n\n*#1 Shoreditch Design Studio*\nReminder · £288.00"),
-                           ("brief", "Reply *approve 1*"), ("approve 99", "no #99"), ("approve 4", "already")]:
+    for text, expected in [("don't approve 1", "I haven't done anything"), ("tell me a joke", "I haven't done anything"), ("", "Type a question"),
+                           ("what's waiting?", "You've got *3 waiting for your yes*.\n\n*#1 Shoreditch Design Studio*\nReminder · £288.00"),
+                           ("brief", "reply *approve 1*"), ("approve 99", "no #99"), ("approve 4", "already")]:
         assert expected in _flash(web.post("/ask", data={"text": text, "back": "/"}, follow_redirects=False)), text
     assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "pending"  # the negated message changed nothing
 
@@ -907,6 +907,7 @@ class FakeGemini:
     def generate_content(self, model, contents, config):
         assert model == assistant.MODEL and config.system_instruction == assistant.SYSTEM
         self.prompts.append(contents[0])
+        self.levels = getattr(self, "levels", []) + [config.thinking_config.thinking_level if config.thinking_config else None]
         turn = self.turns.pop(0) if len(self.turns) > 1 else self.turns[0]
         return SimpleNamespace(text=turn({f.__name__: f for f in config.tools}))
 
@@ -992,8 +993,8 @@ def test_assistant_tools_return_the_shapes_gemini_is_told_about(db, ask):
 def test_assistant_falls_back_to_plain_data_when_gemini_is_down(db, gemini_down, sent):
     overdue.run()
     r = assistant.answer("what's waiting?")
-    assert r.by == "fallback" and r.text.startswith("*4 waiting for your yes*\n\n*#1")
-    assert "nothing was done" in assistant.answer("tell me a joke").text
+    assert r.by == "fallback" and r.text.startswith("You've got *4 waiting for your yes*.\n\n*#1")
+    assert "I haven't done anything" in assistant.answer("tell me a joke").text
     assert db[schema.AGENT_LOG].find_one({"kind": "assistant_answered", "detail.by": "fallback"})
 
 
@@ -1112,7 +1113,7 @@ def test_whatsapp_question_goes_to_the_assistant(db, ask, twilio):
 def test_whatsapp_question_with_gemini_down_still_gets_a_plain_answer(db, gemini_down, sent, twilio):
     overdue.run()
     _whatsapp("what's waiting?")
-    assert twilio[-1]["Body"].startswith("*4 waiting for your yes*")
+    assert twilio[-1]["Body"].startswith("You've got *4 waiting for your yes*")
 
 
 def test_whatsapp_photo_becomes_an_invoice_and_is_not_announced_twice(db, fake_extraction, twilio, monkeypatch):
@@ -1201,4 +1202,40 @@ def test_wind_warning_only_when_windy(kmh, warned):
 def test_to_do_questions_get_the_list_even_without_gemini(db, gemini_down, question):
     overdue.run()
     r = assistant.answer(question)
-    assert r.by == "fallback" and r.text.startswith("*4 waiting for your yes*"), question
+    assert r.by == "fallback" and r.text.startswith("You've got *4 waiting for your yes*"), question
+
+
+
+def test_hard_questions_think_harder_and_lookups_stay_quick(ask):
+    fake = ask(lambda t: "Done.")
+    assistant.answer("what's on today?")
+    assistant.answer("should I trade on Sunday?")
+    assistant.answer("what if I put flat whites up 20p?")
+    assert fake.levels == [assistant.MEDIUM, assistant.HIGH, assistant.HIGH]
+
+
+def test_heads_up_only_flags_what_code_found_and_never_repeats(ask, db, monkeypatch):
+    db[schema.TASKS].insert_one({"business_id": "gaia-coffee", "rank": 1, "title": "Order oat milk", "reason": "runs out Thu"})
+    monkeypatch.setattr(assistant.conditions, "conditions_for",
+                        lambda dates: {d: {"weather": {"wind_max_kmh": 41.6 if i == 1 else 10}} for i, d in enumerate(dates)})
+    fake = ask(lambda t: "All quiet.\n\n💡 *Heads-up:* Windy tomorrow, up to 42 km/h, secure the awning.")
+    r = assistant.answer("anything for me?")
+    sent_to_gemini = fake.prompts[0]
+    assert "Heads-up candidates found by code" in sent_to_gemini and "42 km/h" in sent_to_gemini and "Order oat milk" in sent_to_gemini
+    assert r.text.endswith("secure the awning.") and "heads_up" in r.tools
+    again = [i["kind"] for i in assistant.heads_up()]  # the wind was just mentioned: not again for 2 hours
+    assert "wind" not in again and "top_priority" in again
+
+
+def test_heads_up_with_nothing_to_flag_sends_nothing(ask, db, monkeypatch):
+    monkeypatch.setattr(assistant.conditions, "conditions_for", lambda dates: {d: {"weather": None} for d in dates})
+    db[schema.INVOICES].update_many({}, {"$set": {"needs_review": False}})
+    fake = ask(lambda t: "All quiet.")
+    assistant.answer("anything for me?")
+    assert assistant.heads_up() == [] and "Heads-up" not in fake.prompts[0]
+
+
+def test_hard_whatsapp_question_says_give_me_a_moment_first(ask, twilio):
+    ask(lambda t: "Probably worth it.")
+    _whatsapp("should I trade on Sunday?")
+    assert [m["Body"] for m in twilio][-2:] == ["Good question, give me a moment to think it through ☕", "Probably worth it."]
