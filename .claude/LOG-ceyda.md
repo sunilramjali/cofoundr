@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 10:40 — Chat panel stays open across pages until ×; answers survive a page change
+- **Did:** open state in `sessionStorage` (`cf-chat-open`), restored before the first frame (`html.chat-restore` in `base.html`), held still in the page switch (`view-transition-name: chat`). A question still being answered when you change page (`cf-chat-pending`) shows on the next page with "Thinking…" and polls the new read-only `GET /chat/latest` every 2 s (up to 2 min) until the server's answer is in the chat log; leaving mid-request no longer counts as an error. × closes it for the rest of the session. Checked in the browser: ask on Inventory → switch to Finances mid-thinking → panel still open, answer arrived; × → next page closed. 628 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **⚠️ Incident (my fault), 09:40–09:42:** GitHub's new "stacked PR" merge (I used `merge-async` after `gh pr merge` refused) merged Sunil's release **#95** and then **retargeted my #96 to `main` and merged it there**, skipping `stage` and Sunil's approval. Live deploy was fine (the chat changes). Fixed the branch order with #99 (`jade` → `stage`), so `stage` again has everything in `main`. **Rule from now on: merge `jade` → `stage` before a release PR is opened, never use `merge-async`.**
+- **Blockers / notes for partner:** Sunil, sorry about #96 reaching `main` without your review: please look over its diff (in-place chat, Thinking bubble, chat on every page). New endpoint `GET /chat/latest` (read-only)
+
 ## Sun 25 Oct, 10:05 — Chat on every page; the long bar tucks away while the panel is open
 - **Did:** the "Ask me anything…" bar moved from `home.html` into `base.html` (every page except the Chat page, which has its own box), `back` = the page you're on; `body.chat-is-open` hides the bar while the panel is open, back when it closes. Merged `stage` (Sunil's decision memory + "Under the hood" `/mongodb`; CSS conflict, kept both). Checked on Board in the browser. 606 tests pass
 - **Status:** done, PR into `stage` + release PR

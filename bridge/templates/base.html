@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <link rel="preload" href="/static/gaia-van.webp?v=2" as="image" type="image/webp">
-<link rel="stylesheet" href="/static/cofoundr.css?v=33">
+<link rel="stylesheet" href="/static/cofoundr.css?v=34">
 <script>
   document.documentElement.classList.add("js");
   /* Loading screen: once per browser session (or ?splash=1), never for reduced motion. Decided before first paint. */
@@ -21,6 +21,8 @@
       document.documentElement.classList.add("splash-on"); sessionStorage.setItem("cf-splash", "1");
     }
   } catch (e) {}
+  /* Chat panel left open on the last page: show it again before the first frame, so it never flickers closed */
+  try { if (sessionStorage.getItem("cf-chat-open")) document.documentElement.classList.add("chat-restore"); } catch (e) {}
   /* Page switch direction: going down the sidebar the new page rises from below, going back up it drops in from above.
      Set on the new page just before its first frame (pagereveal), cleared when the animation ends. */
   addEventListener("pagereveal", (e) => {
@@ -141,6 +143,6 @@
     {% endif %}
   </main>
 </div>
-<script src="/static/cofoundr.js?v=23" defer></script>
+<script src="/static/cofoundr.js?v=24" defer></script>
 </body>
 </html>

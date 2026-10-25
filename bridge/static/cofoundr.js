@@ -237,16 +237,55 @@
       const p = document.createElement("p"); p.className = cls; p.innerHTML = html; log.append(p);
       log.scrollTo({ top: log.scrollHeight, behavior: calm ? "auto" : "smooth" }); return p;
     };
-    const open = () => {
-      if (!panel.hidden) return;
-      panel.hidden = false; panel.classList.add("is-opening");
+    const store = (key, value) => { try { value == null ? sessionStorage.removeItem(key) : sessionStorage.setItem(key, value); } catch (e) {} };
+    const read = (key) => { try { return sessionStorage.getItem(key); } catch (e) { return null; } };
+    const open = (animate = true) => {
+      store("cf-chat-open", "1");  // stays open on every page until ×
       document.body.classList.add("chat-is-open");  // the long bar tucks away: the panel has its own box
+      if (!panel.hidden) return;
+      panel.hidden = false;
+      if (animate) { panel.classList.add("is-opening"); setTimeout(() => panel.classList.remove("is-opening"), 400); }
       log.scrollTop = log.scrollHeight;
-      setTimeout(() => panel.classList.remove("is-opening"), 400);
     };
     $(".chat__close", panel).addEventListener("click", (e) => {
       e.preventDefault(); panel.hidden = true; document.body.classList.remove("chat-is-open");
+      document.documentElement.classList.remove("chat-restore");
+      store("cf-chat-open", null);
     });
+    if (!panel.hidden || document.documentElement.classList.contains("chat-restore")) open(false);
+
+    /* A question still being answered when the owner changed page: show it with "Thinking…" and pick up the answer
+       (the server finishes it either way and keeps it in the chat log) */
+    const finishBubble = (el, html) => {
+      el.innerHTML = html; el.classList.remove("is-thinking"); el.removeAttribute("aria-label"); el.classList.add("is-new");
+      const asked = el.previousElementSibling;
+      log.scrollTo({ top: Math.max(0, (asked || el).offsetTop - log.offsetTop - 8), behavior: calm ? "auto" : "smooth" });
+    };
+    const thinkingBubble = () => {
+      const p = bubble("chat__them is-thinking", 'Thinking<span class="dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span>');
+      p.setAttribute("aria-label", "Thinking"); return p;
+    };
+    let leaving = false;
+    ["pageswap", "pagehide", "beforeunload"].forEach((ev) => addEventListener(ev, () => { leaving = true; }));
+    let waiting = null;
+    try { waiting = JSON.parse(read("cf-chat-pending") || "null"); } catch (e) {}
+    if (waiting && Date.now() - waiting.at < 180000) {
+      const shown = $$(".chat__me", log).some((q) => q.textContent === waiting.q) && $$(".chat__me", log).slice(-1)[0].textContent === waiting.q;
+      if (!shown) {
+        bubble("chat__me", esc(waiting.q));
+        const el = thinkingBubble();
+        const poll = async (tries = 0) => {
+          try {
+            const data = await (await fetch("/chat/latest", { headers: { Accept: "application/json" } })).json();
+            const hit = data.messages.slice().reverse().find((m) => m.q === waiting.q && m.at >= waiting.at - 30000);
+            if (hit) { finishBubble(el, bold(hit.a)); store("cf-chat-pending", null); return; }
+          } catch (e) {}
+          if (tries < 60) setTimeout(() => poll(tries + 1), 2000);
+          else finishBubble(el, "Still working on that one. The answer will be here in the chat once it's ready.");
+        };
+        poll();
+      } else store("cf-chat-pending", null);
+    } else if (waiting) store("cf-chat-pending", null);
     $$('form[action="/ask"]').forEach((form) => form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const input = $('input[name="text"]', form), text = input.value.trim();
@@ -254,21 +293,21 @@
       form.dataset.busy = "1";
       const body = new FormData(form);  // before the box is cleared below
       open();
+      store("cf-chat-pending", JSON.stringify({ q: text, at: Date.now() }));  // survives a page change mid-answer
       bubble("chat__me", esc(text));
       if (form !== $(".chat__form", panel)) setTimeout(() => $("#chat-msg").focus({ preventScroll: true }), 50);
       input.value = "";
-      const thinking = bubble("chat__them is-thinking", 'Thinking<span class="dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span>');
-      thinking.setAttribute("aria-label", "Thinking");
+      const thinking = thinkingBubble();
       try {
         const res = await fetch("/ask", { method: "POST", body, headers: { Accept: "application/json" } });
         const data = await res.json();
         thinking.innerHTML = bold(data.answer || data.error || "Sorry, something went wrong.");
       } catch (err) {
+        if (leaving || err.name === "AbortError") return;  // left the page mid-answer: the next page picks it up
         thinking.textContent = "Sorry, I couldn't reach CoFoundr just now. Nothing was changed: please try again.";
       }
-      thinking.classList.remove("is-thinking"); thinking.removeAttribute("aria-label"); thinking.classList.add("is-new");
-      const asked = thinking.previousElementSibling;  // read from the top of the answer, with the question just above it
-      log.scrollTo({ top: Math.max(0, (asked || thinking).offsetTop - log.offsetTop - 8), behavior: calm ? "auto" : "smooth" });
+      store("cf-chat-pending", null);
+      finishBubble(thinking, thinking.innerHTML);  // read from the top of the answer, with the question just above it
       delete form.dataset.busy;
       $("#chat-msg").focus({ preventScroll: true });
     }));
