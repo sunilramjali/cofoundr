@@ -540,3 +540,6 @@ mark { background: var(--amber-bg); color: inherit; border-radius: 3px; padding:
 @keyframes splash-bar { to { transform: scaleX(1); } }
 @keyframes splash-failsafe { to { opacity: 0; visibility: hidden; pointer-events: none; } }
 .splash-on body { overflow: hidden; }
+.addlink { display: flex; flex-wrap: wrap; gap: 8px; }
+.addlink input, .addlink select { flex: 1 1 160px; min-width: 0; border: 1px solid var(--line-2); border-radius: 12px; padding: 9px 12px; font: inherit; background: transparent; color: var(--ink); }
+.btn--small { font-size: 12.5px; padding: 2px 0; }

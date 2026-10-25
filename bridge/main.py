@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from backend import approvals, payments
+from backend import approvals, news, payments
 from backend.ai import board, fees, overdue, review
 from backend.inputs import evo, gmail, whatsapp as whatsapp_in
 from backend.inputs.replies import parse_reply  # noqa: F401 (also imported from here by tests)
@@ -174,7 +174,7 @@ def _forecast_record(db) -> dict:
 
 def _page(name: str):
     def render(request: Request, msg: Optional[str] = None, show: Optional[str] = None, q: Optional[str] = None,
-               chat: Optional[str] = None):
+               chat: Optional[str] = None, like: Optional[str] = None):
         ctx = _context(request, msg)
         ctx.update(path=request.url.path, show=show, q=(q or "").strip(), found=None, chat=chat_log() if chat else None)
         if name == "invoices":
@@ -183,10 +183,14 @@ def _page(name: str):
                 ctx["found"] = search.search_invoices(get_db(), ctx["q"])
         if name == "activity" and ctx["q"]:  # Atlas Search over the agent's own record
             ctx["found"] = search.search_activity(get_db(), ctx["q"], limit=30)
-        if name == "news":  # awareness only: ranked by how soon and how close, searchable, faceted by kind
-            kind = show if show in ("event", "market", "venue", "opportunity", "news") else None
-            ctx.update(kind=kind, feed=search.news_feed(get_db(), ctx["q"], kind=kind, limit=30),
-                       news_facets=search.news_facets(get_db()))
+        if name == "news":  # awareness only: ranked by how soon and how close, searched by words + meaning, faceted
+            kind = show if show in news.KINDS else None
+            db = get_db()
+            liked = db[schema.NEWS].find_one({"_id": like, "business_id": BUSINESS_ID}, {"headline": 1}) if like else None
+            ctx.update(kind=kind, kinds=news.KINDS, liked=liked, news_facets=search.news_facets(db),
+                       feed=(search.similar_news(db, like, limit=10) if liked else
+                             search.news_search(db, ctx["q"], kind=kind, limit=30) if ctx["q"] else
+                             search.news_feed(db, "", kind=kind, limit=30)))
         return templates.TemplateResponse(request, f"{name}.html", ctx)
     return render
 
@@ -326,6 +330,19 @@ def _too_soon(what: str, every: int) -> Optional[int]:
         return left
     _last_run[what] = time.monotonic()
     return None
+
+
+NEWS_LINK_EVERY = 5  # seconds between added links: each one is a fetch from our server
+
+
+@app.post("/news/add")
+def news_add(url: str = Form(""), kind: str = Form("opportunity"), note: str = Form(""), when: str = Form("")):
+    """The owner adds one link to their news (read once, politely; awareness only)."""
+    left = _too_soon("news_link", NEWS_LINK_EVERY)
+    if left:
+        return _back(f"One link at a time: try again in {left} s.", "/news")
+    when = when if re.fullmatch(r"\d{4}-\d{2}-\d{2}", when or "") else ""
+    return _back(news.add_link(url[:2000], kind, note[:500], when)["message"], "/news")
 
 
 @app.post("/board/run")
