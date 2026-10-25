@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 08:10 — Background: Jade's own photo of the GAIA van
+- **Did:** `bridge/static/gaia-van.webp` (Jade's photo, 256 KB) replaces the WebGL gradient as the backdrop: colours untouched, `cover` anchored at 50%/50% (the van's centre), preloaded. Readability without tinting the photo: glass panes a little more solid; the greeting and the "Needs you" label on their own frosted panels; sidebar tighter on screens under 860 px tall (and scrolls rather than cutting off its footer). Checked in the browser at laptop sizes (phone width not checked visually). 566 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **Next:** see the 04:40 handover list
+- **Blockers / notes for partner:** the photo shows the real van and @gaiacoffee.ldn (Jade's own photo): the "GAIA owner OK with the name" question in the plan still applies
+
 ## Sun 25 Oct, 04:40 — Demo script updated; HANDOVER for the morning
 - **Did:** `docs/demo-script.md` updated for tonight's work: open on `/?splash=1`, "Send me today's brief" as the opener, approve → show the reminder email in the demo Gmail, Tasks → Approvals, what-if now ~10 s, don't ask "should/why/worth" live (40–60 s), no releases or Fly secret changes from 30 min before. Flagged that **GAIA-1050 is used up** (my 02:44 live test → approval #5). Code: "what if" no longer gets HIGH thinking (`assistant.HARD`): code does the maths, answer in 10 s (measured with real Gemini). 565 tests pass
 - **Status:** done, PR into `stage` + release PR (needs Sunil)
