@@ -754,7 +754,7 @@ def test_chat_bar_decides_like_whatsapp_and_never_guesses(db, gemini_down, sent)
     assert r.headers["location"].startswith("/?msg=") and "#4 approved" in _flash(r)
     assert db[schema.APPROVALS].find_one({"ref": 4})["decided_via"] == "dashboard"
     for text, expected in [("don't approve 1", "nothing was done"), ("tell me a joke", "nothing was done"), ("", "Type a question"),
-                           ("what's waiting?", "3 waiting for your yes: #1 Shoreditch Design Studio £288.00"),
+                           ("what's waiting?", "3 waiting for your yes:\n#1 Shoreditch Design Studio · £288.00"),
                            ("brief", "Reply “approve 1”"), ("approve 99", "no #99"), ("approve 4", "already")]:
         assert expected in _flash(web.post("/ask", data={"text": text, "back": "/"}, follow_redirects=False)), text
     assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "pending"  # the negated message changed nothing
@@ -992,7 +992,7 @@ def test_assistant_tools_return_the_shapes_gemini_is_told_about(db, ask):
 def test_assistant_falls_back_to_plain_data_when_gemini_is_down(db, gemini_down, sent):
     overdue.run()
     r = assistant.answer("what's waiting?")
-    assert r.by == "fallback" and r.text.startswith("4 waiting for your yes: #1")
+    assert r.by == "fallback" and r.text.startswith("4 waiting for your yes:\n#1")
     assert "nothing was done" in assistant.answer("tell me a joke").text
     assert db[schema.AGENT_LOG].find_one({"kind": "assistant_answered", "detail.by": "fallback"})
 

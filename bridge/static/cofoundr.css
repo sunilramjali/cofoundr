@@ -387,7 +387,7 @@ html.js .ask.is-edited .js-edited { display: inline-flex; animation: pop .35s va
   display: flex; gap: 10px; align-items: flex-start; padding: 13px 12px 13px 16px; border-radius: 18px; background: rgba(21, 18, 15, .92); color: #fff;
   backdrop-filter: blur(12px); box-shadow: 0 20px 50px -18px rgba(21, 18, 15, .5); animation: toast-in .55s var(--spring) both; view-transition-name: toast; }
 .toast .ico { color: #9fd9b1; margin-top: 2px; }
-.toast p { margin: 0; flex: 1; font-size: 14.5px; }
+.toast p { margin: 0; flex: 1; font-size: 14.5px; white-space: pre-line; } /* keep the assistant's one-line-per-item answers */
 .toast button { border: 0; background: none; color: rgba(255, 255, 255, .6); cursor: pointer; font-size: 20px; line-height: 1; padding: 0 6px; border-radius: 8px; }
 .toast.is-leaving { animation: toast-out .35s var(--ease) forwards; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -20px) scale(.96); } }

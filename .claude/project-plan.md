@@ -20,7 +20,7 @@ Framed for small businesses generally. Demo business: **GAIA Coffee** (East Lond
 | Layer | Tool | Role |
 |---|---|---|
 | Database | MongoDB Atlas | Single source of truth: invoices, sales, products, events, tasks, approvals |
-| AI | Gemini | Multimodal extraction (invoices, card fee summaries), reasoning, prioritisation, forecast adjustment + lessons from its own grades, the 1M-context board meeting, drafting, **and the owner's conversation** (read-only assistant on WhatsApp and in the dashboard chat bar) |
+| AI | Gemini | Multimodal extraction (invoices, card fee summaries), reasoning, prioritisation, forecast adjustment + lessons from its own grades, the 1M-context board meeting, drafting, **and the owner's conversation** (assistant on WhatsApp and in the dashboard chat bar: function calling over MongoDB, can draft a reminder but never approve, pay or send) |
 | WhatsApp channel | Twilio (WhatsApp sandbox) | Owner talks to CoFoundr on WhatsApp: messages and invoice photos in (signed webhook), replies and unprompted updates out (REST API) |
 | Web app | FastAPI on Fly.io | **One app.** Server-rendered HTML dashboard (owner's control panel + approval queue), the Twilio webhook and the background workers (Gmail poll, WhatsApp push). The only thing that talks to Gemini, Twilio and MongoDB. (Streamlit dropped.) |
 
@@ -33,7 +33,7 @@ Owner ⇄ WhatsApp ⇄ Twilio ⇄ Fly.io web app (dashboard + /whatsapp/twilio +
 ```
 
 - Approvals can happen in the dashboard or by WhatsApp reply. Both go through `approvals.decide` and update the same MongoDB record.
-- "approve 4" / "reject 2" are parsed exactly, **never by Gemini**. Anything else the owner types goes to the Gemini assistant, which can read the data but never change it.
+- "approve 4" / "reject 2" are parsed exactly, **never by Gemini**. Anything else the owner types goes to the Gemini assistant, which can read the data and draft a reminder into the approval queue (`propose_reminder`), but never approve, pay or send.
 
 ### 3a. Web app + WhatsApp (Twilio ⇄ MongoDB)
 
@@ -57,7 +57,7 @@ MongoDB ◄──► Fly.io web app (FastAPI)
 |---|---|---|
 | Invoice photo/PDF | `pipeline.ingest_invoice(source="whatsapp_photo")` | The pipeline's result ("Added … checked ✓" or "needs your check") |
 | "approve 4" / "reject 2" | `approvals.decide(via="whatsapp")` | "✅ #4 approved: …" (or why it couldn't) |
-| Anything else | Gemini assistant (`backend/outputs/assistant.py`), read-only | Gemini's answer from the data |
+| Anything else | Gemini assistant (`backend/outputs/assistant.py`): 11 tools; reads the data, can only draft a reminder | Gemini's answer from the data, every £ checked against the tool results |
 | *(nothing: unprompted)* | Every `WHATSAPP_PUSH_SECONDS` (30), new `/updates` messages are sent | "New invoice from Eastside Dairy…", "Reminder drafted, reply approve 4" |
 
 **WhatsApp 24-hour rule:** WhatsApp only delivers free-form messages within 24 h of the owner's last message, so before the demo the owner sends "hi" to the sandbox number.
@@ -96,13 +96,14 @@ MongoDB ◄──► Fly.io web app (FastAPI)
    **Gmail intake design:** a dedicated demo Gmail account (not anyone's personal inbox) with 2-step verification and an **app password**; the Fly.io app polls it over IMAP about every minute, processes new emails with PDF/image attachments once (tracked by Message-ID), labels them processed, and logs each step in `agent_log`. Secrets: `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` (Fly secrets + `.env`).
 2. **Revenue forecaster** — Python baseline (statsmodels/Prophet) on POS history; Gemini adjusts for events + weather and explains why (e.g. "+28% Sat: market nearby + sunny").
 3. **Approval flow** — Approve / Edit / Reject queue for all finance actions. Never cut this — it's the trust story.
-4. **Auto-prioritise & schedule** — Gemini ranks open tasks via function calling over MongoDB, with a one-line reason each; produces a weekly plan.
+4. **Auto-prioritise & schedule** — code gathers the open tasks from MongoDB, Gemini ranks them with a one-line reason each (ranking checked: invented tasks dropped, missing ones added back); produces a weekly plan.
 
 **Built beyond the original plan (Sat night, Sunil, live since release #43)**
 - **Card payments in:** EVO CSV upload on `/sales` (`POST /import/evo`; EVO has no merchant API), Square + SumUp read-only connectors (`backend/inputs/evo|square|sumup.py` → `backend/payments.py record_payments()`). Card data stripped, salted-hash ids, idempotent. The forecast uses card takings when there are no till orders.
 - **Self-grading forecast** (`backend/ai/review.py`): stored forecasts graded against actual takings; Gemini writes ≤3 checked lessons that go into the next forecast; Gemini's adjustment cap is **earned** (±10/20/35% by how often its adjustments helped). `--backtest N` replays past days with observed weather. Collections `forecast_reviews`, `lessons`.
 - **Board meeting** (`backend/ai/board.py`, page `/board`): Gemini reads every till line, invoice, approval, forecast, weather, transport and agent action in **one ~169k-token call** (Argon's 1M context); every number in the memo is a typed claim that code recomputes from MongoDB, wrong ones are corrected or withdrawn. Rate-limited (one per 10 min). Collection `board_memos`.
 - **Card fee audit** (`backend/ai/fees.py`, `POST /import/fees`): Gemini reads the card provider's fee summary image, the page's own worked example checks the reading, then code checks every card payment; overcharges become a `fee_overcharge` task. Collection `fee_audits`.
+- **Assistant tools** (Sun 02:00, release #59, `backend/outputs/assistant.py`): `what_if_price` (price change → extra takings + break-even, from the till), `stock_needed` (shortfalls for a day, scaled by its forecast), `day_conditions` (weather + events + TfL), and `propose_reminder`, the one writing tool: only a `pending` approval, under the overdue check's rules. Code does every sum.
 
 **Nice to have**
 5. **Events heatmap** — events API → map of demand spikes by location/date.

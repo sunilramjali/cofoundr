@@ -98,7 +98,7 @@ Keep the `Co-Authored-By` trailer after a blank line when Claude makes the commi
 | `backend/approvals.py` | Approval rules; the only place a decision is applied. Calls `outputs.email.send_reminder` after approval | **Sunil** |
 | `backend/db/`, `backend/db/schema.py` | MongoDB connection, activity log, indexes/search; **the shared data contract** | **Sunil** |
 | `data/` | Synthetic seed data, sample invoices | **Sunil** |
-| `backend/outputs/` | Owner-facing output: `brief.py` (WhatsApp brief), `updates.py` (`/updates` messages), `whatsapp.py` (Twilio send + unprompted push), `assistant.py` (read-only Gemini answers), `email.py` (sending after approval) | **Jade** |
+| `backend/outputs/` | Owner-facing output: `brief.py` (WhatsApp brief), `updates.py` (`/updates` messages), `whatsapp.py` (Twilio send + unprompted push), `assistant.py` (Gemini answers via function calling: reads the data, can only draft a reminder into the queue), `email.py` (sending after approval) | **Jade** |
 | `bridge/` | **The Fly.io web app**: routes in `main.py`, dashboard UI in `templates/` | **Jade** |
 | `tests/test_middle.py` / `tests/test_edges.py` | Fast tests, no network: middle / edges | **Sunil** / **Jade** |
 | `Dockerfile`, `fly.toml`, `.github/workflows/` | Deploy + CI/CD | **Sunil** |

@@ -108,7 +108,7 @@ Source: Encode London 2026 Luma page (luma.com/encode-london-2026), checked Sat 
 - [ ] Demo rehearsed to run live in **under 3 minutes, no slides**
 - [x] Multimodal: invoice photo/PDF → structured JSON (+ card fee summary image → rates)
 - [x] Reasoning shown in UI: forecast adjustment explanations, approval reasons, board memo with every number checked, forecast lessons
-- [ ] Function calling over MongoDB for prioritisation
+- [x] Function calling over MongoDB: the assistant picks from 11 tools (`backend/outputs/assistant.py`: invoices, hybrid search, forecast, sales, priorities, activity, price what-ifs, stock, day conditions, draft-only `propose_reminder`); code does the sums, every £ in the answer checked against the tool results. (Prioritisation ranks a list code gathers: no tools needed)
 - [ ] "Real person" story: GAIA Coffee owner (synthetic data, real business)
 
 ### Saint — not entered
@@ -120,7 +120,7 @@ What it shows: the agent acts **unprompted** (Agents That Ship: "not a chatbot")
 - [ ] Be explicit about the split: CoFoundr reads, drafts and updates **on its own**, and **stops and asks** before any money action
 - [ ] WhatsApp is the owner's interface: invoice photos in (`POST /whatsapp/twilio`), updates and the morning brief out
 - [ ] Approvals by WhatsApp reply ("approve 4") update MongoDB, never parsed by Gemini
-- [ ] Owner's questions on WhatsApp answered by Gemini from the data (read-only)
+- [ ] Owner's questions on WhatsApp answered by Gemini from the data (can draft a reminder, never approve, pay or send)
 - [ ] Every webhook, reply and failed send is in `agent_log` (forged Twilio signatures rejected)
 
 ---
