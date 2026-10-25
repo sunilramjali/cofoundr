@@ -1441,8 +1441,8 @@ def test_activity_shows_the_answer_once_not_the_chat_copy(db, ask):
 
 def test_backdrop_is_the_van_photo_centred_on_the_van(db):
     page = web.get("/").text
-    assert 'class="backdrop" aria-hidden="true"></div>' in page and 'href="/static/gaia-van.webp" as="image"' in page
+    assert 'class="backdrop" aria-hidden="true"></div>' in page and 'href="/static/gaia-van.webp?v=2" as="image"' in page
     css = web.get("/static/cofoundr.css").text
-    assert 'url("/static/gaia-van.webp") 50% 50% / cover' in css  # the van sits at the photo's centre
+    assert 'url("/static/gaia-van.webp?v=2") 51% 55% / cover' in css  # anchored on the van's centre in the photo
     photo = web.get("/static/gaia-van.webp")
     assert photo.status_code == 200 and photo.headers["content-type"] == "image/webp" and len(photo.content) < 400_000
