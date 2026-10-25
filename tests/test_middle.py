@@ -292,7 +292,7 @@ import copy  # noqa: E402
 from backend import sales  # noqa: E402
 from backend.inputs.pos.client import PosClient  # noqa: E402
 
-CLOCK = "2026-12-01"  # after the last of Jade's synthetic till data (Sep–Nov 2026)
+CLOCK = "2026-12-04"  # after the last of Jade's synthetic till data (4 Sep – 3 Dec 2026, Thu–Sun)
 POS = PosClient(now=CLOCK)
 
 
@@ -340,7 +340,7 @@ def test_cancelled_and_refunded_orders_are_skipped(db):
 @pytest.mark.parametrize("breakage,reason", [
     (lambda o: o.update(order_id=""), "missing order_id"),
     (lambda o: o.update(items=[]), "no items"),
-    (lambda o: o.update(placed_at="2026-12-02T09:00:00+00:00"), "future"),  # after the pinned clock
+    (lambda o: o.update(placed_at="2026-12-05T09:00:00+00:00"), "future"),  # after the pinned clock
     (lambda o: o.update(placed_at="yesterday"), "Invalid isoformat"),
     (lambda o: o["items"][0].update(quantity=-1), "refunds"),
     (lambda o: o["items"][0].update(quantity="2"), "must be a number"),
@@ -464,7 +464,7 @@ def test_forecast_run_on_jades_data_matches_a_manual_calculation(db):
         per_day[d] = per_day.get(d, 0) + o["total_gbp"]
     last6 = sorted((d for d in per_day if d.weekday() == 5), reverse=True)[:6]
     assert sat["weekday"] == "Saturday" and sat["expected_revenue"] == round(_mean(per_day[d] for d in last6), 2)
-    assert [f["weekday"] for f in out if f["trading"]] == ["Saturday", "Monday", "Wednesday", "Friday"]
+    assert [f["weekday"] for f in out if f["trading"]] == ["Saturday", "Sunday", "Thursday", "Friday"]
     assert sat["products"][0]["name"] in {"Flat White", "Latte", "Cappuccino"}
 
 

@@ -12,6 +12,13 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, ~10:40 — Synthetic till moved to GAIA's real week (Thu–Sun), demo DB rebuilt
+- **Why:** the till export traded Mon/Wed/Fri/Sat while the card payments (EVO sample) and real GAIA trade Thu–Sun, so the forecast showed Mon/Wed open
+- **Did:** `data/shift_trading_week.py` (one-off, refuses to run twice): every order + stock count moves within its own week (Mon→Thu, Wed→Fri, Fri→Sat, Sat→Sun), same London wall-clock time, ids follow the date, items/amounts unchanged → 3,969 orders, all Thu–Sun, ids unique. Text: `forecast.py` docstring, `settings.html` ("trades Thu–Sun"), README roadmap line dropped. 10 tests pinned old dates → updated (incl. 4 in `test_edges.py`) → 626 pass
+- **Demo DB (Sunil OK'd):** deleted gaia-coffee orders (2,422), sales (4,504), stock_counts (3), forecasts (7), forecast_reviews (12), lessons (2); logged `demo_data_shifted`. Re-synced till (2,388 orders up to now), backtest 21 (10 Thu–Sun days, 3 new checked lessons), forecast (Sun + Thu–Sat open, Mon–Wed closed), board memo, prioritise. Card payments, invoices, approvals, memories, news untouched. Fly doesn't sync the till on its own, so the old files in the deployed image can't re-insert old orders
+- **Status:** done, PR into `stage`; rides release #95
+- **Blockers / notes for partner:** Jade, **your area**: `backend/inputs/pos/data/*.json` (shifted), `tests/test_edges.py` (4 POS date assertions), `settings.html`. Pull `stage` before the demo; never run an old `pos.sync` from a branch without these files
+
 ## Sun 25 Oct, ~10:00 — Memory limits fixed: reasons on WhatsApp, no other customer's name in an email
 - **Did:** (1) `replies.parse_rejection`: "reject 2: they're regulars" / "no 2 because …" → a no with the owner's reason (WhatsApp + chat bar). **Only a no** (never moves money); a yes stays strict (`parse_reply` untouched); anything mixed ("no 2, approve it") is not a decision. (2) Privacy: another customer's name is scrubbed from the prompt by every distinctive word ("Dalston lot" → "them lot"), and a **code check** after Gemini drafts: an email that names any other business (from the same batch or a recalled case) → template + `draft_check_failed` log. The batch case was an existing risk, now closed. Kept as designed: memory never skips a draft ("never chase them" still asks you). 612 pass
 - **Live:** real Gemini drafts for the 4 overdue receivables all pass the check (no false alarms). Nothing saved
