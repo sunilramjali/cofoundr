@@ -354,9 +354,9 @@ def tools(record: Callable[[str, dict], dict]) -> list:
             {"when": _iso(e.get("at")), "what": e.get("summary"), "by": e.get("actor") or "agent"} for e in result.hits]})
 
     def local_news(query: str = "") -> dict:
-        """What's happening near the truck (events, markets, venues, openings), soonest and closest first; optionally
-        searched, e.g. "market", "film". For the owner to know about: nothing here is an action."""
-        result = search.news_feed(db, query, limit=MAX_ROWS)
+        """What's happening near the truck (events, markets, venues, openings, Tube disruptions), soonest and closest
+        first; optionally searched by words or meaning, e.g. "market", "catering work". Awareness only: never an action."""
+        result = search.news_search(db, query, limit=MAX_ROWS) if query.strip() else search.news_feed(db, limit=MAX_ROWS)
         return record("local_news", {"query": query, "items": [
             {"headline": n["headline"], "kind": n["kind"], "why": n.get("summary"), "source": n.get("source"),
              "when": _iso(n.get("starts_at")), "km_away": n.get("distance_km")} for n in result.hits]})

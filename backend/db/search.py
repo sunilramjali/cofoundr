@@ -7,7 +7,9 @@ Atlas features used (each doing the job it's best at):
 - More Atlas Search indexes: "products_text" (typo-tolerant product names for price what-ifs), "agent_log_text" (search
   what the agent did), "board_memos_text" and "events_text" (search past board memos and nearby events), and
   "news_text" (local news ranked by how soon and how close with `near` on dates + a geo point, duplicates across
-  sources found with `moreLikeThis`, facets by kind).
+  sources found with `moreLikeThis`, facets by kind) + "news_semantic" (Automated Embedding with Voyage: news searched
+  by meaning, "catering partnership" finds "craft baristas for film shoots"; hybrid with keywords via $rankFusion;
+  "more like this one" by vector similarity).
 - Automated Embedding + Vector Search ("invoices_semantic"): Atlas embeds `search_text` itself with a Voyage AI model on
   every insert/update (no embedding code here) so we can search by meaning: "milk supplier" finds Meadowfield Dairy.
 - Hybrid Search ($rankFusion): one search box that merges both rankings.
@@ -52,7 +54,7 @@ SIZE = re.compile(r"(\d+(?:\.\d+)?)\s*(ml|cl|litres?|liters?|l|kg|g|oz|lb)?\b", 
 UNITS = {"litre": "l", "litres": "l", "liter": "l", "liters": "l"}
 
 PRODUCTS_INDEX, ACTIVITY_INDEX, MEMOS_INDEX, EVENTS_INDEX = "products_text", "agent_log_text", "board_memos_text", "events_text"
-NEWS_INDEX = "news_text"
+NEWS_INDEX, NEWS_SEMANTIC = "news_text", "news_semantic"
 AUTOCOMPLETE = {"type": "autocomplete", "tokenization": "edgeGram", "minGrams": 2, "maxGrams": 15, "foldDiacritics": True}
 
 # name → (collection, kind, definition). Each is created on its own, in this order: a cluster that allows fewer search
@@ -97,6 +99,12 @@ INDEXES = {
         "expires_at": {"type": "date"},
         "location": {"type": "geo"},
     }}}),
+    NEWS_SEMANTIC: (schema.NEWS, "vectorSearch", {"fields": [
+        {"type": "autoEmbed", "modality": "text", "path": "search_text", "model": EMBEDDING_MODEL},
+        {"type": "filter", "path": "business_id"},
+        {"type": "filter", "path": "kind"},
+        {"type": "filter", "path": "expires_at"},
+    ]}),
     EVENTS_INDEX: (schema.EVENTS, "search", {"mappings": {"dynamic": False, "fields": {
         "business_id": {"type": "token"},
         "status": {"type": "token"},
@@ -580,7 +588,7 @@ SOON_PIVOT_MS = 3 * 24 * 3600 * 1000  # an event 3 days away scores half as much
 FRESH_PIVOT_MS = 7 * 24 * 3600 * 1000  # a story a week old scores half as much as today's
 NEAR_PIVOT_M = 1000  # a place 1 km from the pitch scores half as much as one at the pitch
 NEWS_FIELDS = {"kind": 1, "headline": 1, "summary": 1, "url": 1, "source": 1, "published_at": 1, "starts_at": 1,
-               "distance_km": 1, "expires_at": 1}
+               "distance_km": 1, "expires_at": 1, "search_text": 1}
 
 
 def _news_filter(business_id: str, now: datetime, kind: Optional[str]) -> List[dict]:
@@ -628,6 +636,84 @@ def news_feed(db: Database, query: str = "", kind: Optional[str] = None, now: Op
         return _fallback(db, _basic_news(db, query, kind, now, business_id, limit), str(e)[:200])
 
 
+def news_search(db: Database, query: str, kind: Optional[str] = None, now: Optional[datetime] = None,
+                business_id: str = BUSINESS_ID, limit: int = 8) -> SearchResult:
+    """Local news by words AND meaning (Hybrid Search: Atlas Search + Vector Search with Automated Embedding, merged with
+    $rankFusion). "catering partnership" also finds "Film and TV shoots hire craft baristas". Meaning-only hits must be
+    close enough (as for invoices); expired items and duplicates are left out. Falls back to the keyword feed."""
+    now = now or datetime.now(timezone.utc)
+    query = (query or "").strip()[:MAX_QUERY_LEN]
+    if not re.search(r"\w", query):
+        return news_feed(db, "", kind, now, business_id, limit)
+    vector_filter = {"business_id": business_id, "expires_at": {"$gte": now}, **({"kind": kind} if kind else {})}
+    pipelines = {
+        "keyword": [{"$search": {"index": NEWS_INDEX, "compound": {
+            "filter": _news_filter(business_id, now, kind), "mustNot": [{"exists": {"path": "duplicate_of"}}],
+            "should": _clauses(query, ["headline", "summary"]), "minimumShouldMatch": 1}}}, {"$limit": limit * 2}],
+        "meaning": [{"$vectorSearch": {"index": NEWS_SEMANTIC, "path": "search_text", "query": {"text": query},
+                                       "filter": vector_filter, "numCandidates": 100, "limit": limit * 2}}],
+    }
+    try:
+        docs = list(db[schema.NEWS].aggregate([
+            {"$rankFusion": {"input": {"pipelines": pipelines}, "scoreDetails": True}},
+            {"$project": {**NEWS_FIELDS, "duplicate_of": 1, "score": {"$meta": "score"}, "details": {"$meta": "scoreDetails"}}}]))
+    except (OperationFailure, NotImplementedError):
+        return news_feed(db, query, kind, now, business_id, limit)  # keyword search (and its own fallback)
+    hits = [d for d in _relevant(docs) if not d.get("duplicate_of")][:limit]
+    if not hits:
+        return news_feed(db, query, kind, now, business_id, limit)
+    _highlight_news(db, query, hits, business_id, now)
+    return SearchResult(hits, "hybrid")
+
+
+def _highlight_news(db: Database, query: str, hits: List[dict], business_id: str, now: datetime) -> None:
+    keyword = [h for h in hits if "keyword" in (h.get("matched_by") or [])]
+    for h in hits:
+        h["highlights"] = []
+    if not keyword:
+        return
+    try:
+        found = {d.get("_id"): d.get("highlights") for d in db[schema.NEWS].aggregate([
+            {"$search": {"index": NEWS_INDEX, "compound": {"filter": _news_filter(business_id, now, None),
+                                                           "should": _clauses(query, ["headline", "summary"]), "minimumShouldMatch": 1},
+                         "highlight": {"path": ["headline", "summary"]}}},
+            {"$match": {"_id": {"$in": [h.get("_id") for h in keyword]}}},
+            {"$project": {"highlights": {"$meta": "searchHighlights"}}}])}
+        for h in keyword:
+            h["highlights"] = _snippets(found.get(h.get("_id")), limit=1)
+    except (OperationFailure, NotImplementedError, TypeError, AttributeError):
+        for h in keyword:
+            h["highlights"] = _basic_snippets([h.get("headline") or "", h.get("summary") or ""], query, 1)
+
+
+def similar_news(db: Database, news_id: str, now: Optional[datetime] = None, business_id: str = BUSINESS_ID,
+                 limit: int = 5) -> SearchResult:
+    """"More like this one": live news closest in meaning to one item (Vector Search on its Voyage embedding).
+    Without vector search: the items sharing the most words."""
+    now = now or datetime.now(timezone.utc)
+    me = db[schema.NEWS].find_one({"_id": news_id, "business_id": business_id})
+    if not me:
+        return SearchResult([], "atlas")
+    try:
+        docs = list(db[schema.NEWS].aggregate([
+            {"$vectorSearch": {"index": NEWS_SEMANTIC, "path": "search_text", "query": {"text": me.get("search_text") or me["headline"]},
+                               "filter": {"business_id": business_id, "expires_at": {"$gte": now}}, "numCandidates": 100, "limit": limit + 6}},
+            {"$project": {**NEWS_FIELDS, "duplicate_of": 1, "score": {"$meta": "vectorSearchScore"}}}]))
+        hits = [d for d in docs if d.get("_id") != news_id and not d.get("duplicate_of")][:limit]
+        if not hits and db[schema.NEWS].count_documents({"business_id": business_id, "_id": {"$ne": news_id}}, limit=1):
+            raise OperationFailure("Vector Search returned nothing (index missing or building?)")
+        return SearchResult(hits, "atlas")
+    except (OperationFailure, NotImplementedError) as e:
+        mine = _words(me.get("search_text") or me.get("headline"))
+        others = []
+        for d in db[schema.NEWS].find({"business_id": business_id, "_id": {"$ne": news_id}, "duplicate_of": {"$exists": False}}, NEWS_FIELDS):
+            if d.get("expires_at") and _aware(d["expires_at"]) >= now:
+                score = _overlap(" ".join(mine), d.get("search_text") or f"{d.get('headline', '')} {d.get('summary', '')}")
+                if score:
+                    others.append({**d, "score": round(score, 3)})
+        return _fallback(db, sorted(others, key=lambda d: -d["score"])[:limit], str(e)[:200])
+
+
 def _basic_news(db: Database, query: str, kind: Optional[str], now: datetime, business_id: str, limit: int) -> List[dict]:
     """The same ranking by hand: soon + fresh + near, the way Atlas `near` scores them (pivot / (pivot + distance))."""
     words = _words(query)
@@ -670,10 +756,22 @@ def news_facets(db: Database, now: Optional[datetime] = None, business_id: str =
         return {"kind": Counter(d.get("kind") for d in live).most_common(), "total": len(live), "mode": "basic"}
 
 
+SAME_STORY = 0.6  # share of meaningful headline words two links must have in common to be one story
+NEWS_STOPWORDS = {"at", "in", "on", "to", "by", "with", "from", "is", "are", "as", "its", "new", "this", "that", "after"}
+
+
+def _headline_overlap(a: Optional[str], b: Optional[str]) -> float:
+    """Like _overlap, without the little words: "Coffee carts at weddings" vs "Coffee carts at film shoots" = 0.4."""
+    wa = {w for w in _words(a) if not w[0].isdigit() and w not in NEWS_STOPWORDS}
+    wb = {w for w in _words(b) if not w[0].isdigit() and w not in NEWS_STOPWORDS}
+    return len(wa & wb) / len(wa | wb) if wa and wb else 0.0
+
+
 def is_same_story(doc: dict, other: dict) -> bool:
-    """Two links, one story: headlines share most words AND the same event day (±1) or, for plain news, published
-    within 2 days. "Halloween market at London Fields" (Ticketmaster) = "London Fields Halloween market returns" (paper)."""
-    if doc.get("_id") == other.get("_id") or _overlap(doc.get("headline"), other.get("headline")) < 0.5:
+    """Two links, one story: most meaningful headline words shared (≥ 0.6) AND the same event day (±1) or, for plain
+    news, published within 2 days. "Halloween market at London Fields" (Ticketmaster) = "London Fields Halloween market"
+    (paper); "Coffee carts at weddings" ≠ "Coffee carts at film shoots"."""
+    if doc.get("_id") == other.get("_id") or _headline_overlap(doc.get("headline"), other.get("headline")) < SAME_STORY:
         return False
     a, b = doc.get("starts_at"), other.get("starts_at")
     if a and b:
@@ -869,6 +967,13 @@ def live_check(db: Database) -> List[tuple]:
                 "starts_at": feed.hits[0].get("starts_at"), "published_at": feed.hits[0].get("published_at")}
         found = same_story(db, twin)
         results.append((bool(found), f"moreLikeThis finds the same story: {bool(found)}"))
+    mean = news_search(db, "catering work for a coffee van")
+    results.append((mean.mode == "hybrid" and any("meaning" in (h.get("matched_by") or []) for h in mean.hits),
+                    f"news by meaning 'catering work for a coffee van' → {[h['headline'][:35] for h in mean.hits][:3]} ({mean.mode})"))
+    if feed.hits:
+        like = similar_news(db, feed.hits[0]["_id"])
+        results.append((like.mode == "atlas" and bool(like.hits), f"more like '{feed.hits[0]['headline'][:30]}' → "
+                                                                   f"{[h['headline'][:30] for h in like.hits][:2]} ({like.mode})"))
     nf = news_facets(db)
     results.append((nf["mode"] == "atlas" and bool(nf["kind"]), f"news facets ({nf['mode']}): {nf['kind']}"))
     since = datetime.now(timezone.utc) - timedelta(hours=24)

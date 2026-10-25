@@ -4,7 +4,10 @@ nothing here contacts anyone or changes the business's data.
 Sources → `news` (one doc per link, idempotent):
 - local RSS feeds (backend/inputs/news_feeds.py), filtered by Gemini to what matters to a coffee truck (backend/ai/news.py)
 - events near the pitches already stored by the events connector (Ticketmaster)
+- TfL disruptions at stations near the pitch (already stored by the transport connector; "Powered by TfL Open Data")
 - the owner's own scouting notes (data/news_notes.json): each one a public fact with its source link
+- links the owner adds on /news (a web page, an event page, a TikTok video via TikTok's official oEmbed, or an
+  Instagram post with the owner's own note): read once, politely (robots.txt), never scraped or searched
 The same story from two sources is stored once (Atlas Search moreLikeThis + a date check, backend/db/search.py).
 Only recent news (the last 7 days) and upcoming events: everything else expires. The feed ranks by how soon and how
 close (Atlas Search `near` on date + distance).
@@ -29,10 +32,14 @@ from backend.inputs.pitches import PITCHES
 
 BUSINESS_ID = "gaia-coffee"
 NOTES_FILE = Path(__file__).resolve().parent.parent / "data" / "news_notes.json"
+KINDS = ("event", "market", "venue", "opportunity", "transport", "news")
+TFL_STATUS = "https://tfl.gov.uk/tube-dlr-overground/status/"
+TFL_SOURCE = "TfL (Powered by TfL Open Data)"
 RECENT = timedelta(days=7)  # only recent news: older stories aren't stored, stored ones drop out after this
 # Only upcoming events: an event counts from today on and drops out when its (UTC) day ends
 MAX_HEADLINE, MAX_SUMMARY = 300, 200
-FIELDS = ("kind", "headline", "summary", "url", "source", "published_at", "starts_at", "location", "distance_km", "expires_at")
+FIELDS = ("kind", "headline", "summary", "url", "source", "published_at", "starts_at", "location", "distance_km", "expires_at",
+          "search_text")  # search_text too: a changed summary must be re-embedded, never left stale
 
 
 def news_id(url: str) -> str:
@@ -66,7 +73,7 @@ def to_doc(item: dict, now: datetime) -> dict:
     if not headline:
         raise ValueError("no headline")
     kind = item.get("kind") or "news"
-    if kind not in ("event", "market", "venue", "opportunity", "news"):
+    if kind not in KINDS:
         raise ValueError(f"unknown kind {kind!r}")
     published = _aware(item.get("published_at")) or now
     if published < now - RECENT:
@@ -75,7 +82,7 @@ def to_doc(item: dict, now: datetime) -> dict:
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     if starts and starts < today:  # an article about something already over is news, not an upcoming event
         starts, kind = None, ("news" if kind == "event" else kind)
-    if kind == "event" and not starts:
+    if kind in ("event", "transport") and not starts:  # only upcoming: no date (or one already over) is plain news
         kind = "news"
     summary = re.sub(r"\s+", " ", item.get("summary") or "").strip()
     doc = {"_id": news_id(url), "business_id": BUSINESS_ID, "kind": kind, "headline": headline,
@@ -89,8 +96,13 @@ def to_doc(item: dict, now: datetime) -> dict:
         pitch = PITCHES[0]
         doc["location"] = {"type": "Point", "coordinates": [float(lon), float(lat)]}
         doc["distance_km"] = round(_km(pitch["lat"], pitch["lon"], lat, lon), 2)
-    doc["expires_at"] = (starts.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) if starts
+    elif isinstance(item.get("distance_km"), (int, float)) and item["distance_km"] >= 0:  # e.g. TfL: nearest station
+        doc["distance_km"] = round(float(item["distance_km"]), 2)
+    until = _aware(item.get("until")) if starts else None  # a disruption or event over several days: its last day
+    last = max(starts, until) if until else starts
+    doc["expires_at"] = (last.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1) if last
                          else published + RECENT)
+    doc["search_text"] = f"{doc['headline']} | {doc['summary']}"  # what Atlas Search + Automated Embedding index
     return doc
 
 
@@ -114,7 +126,7 @@ def record_news(items: Iterable[dict], now: Optional[datetime] = None) -> dict:
         if twin:
             doc["duplicate_of"] = twin["_id"]
             out["duplicates"] += 1
-        coll.insert_one({**doc, "fetched_at": now, "search_text": f"{doc['headline']} | {doc['summary']}"})
+        coll.insert_one({**doc, "fetched_at": now})
         out["new"] += 1
     return out
 
@@ -144,6 +156,46 @@ def from_events(now: datetime) -> List[dict]:
     return out
 
 
+def from_transport(now: datetime) -> List[dict]:
+    """Active TfL disruptions at stations near the pitch, today or later, as news items (one per disruption)."""
+    db = get_db()
+    today = now.date().isoformat()
+    out = []
+    for t in db[schema.TRANSPORT].find({"business_id": BUSINESS_ID, "state": "active", "dates": {"$elemMatch": {"$gte": today}}}):
+        days = [d for d in t.get("dates") or [] if d >= today]
+        stations = ", ".join(t.get("stations") or [])
+        out.append({"kind": "transport", "headline": f"{t.get('line_name') or t.get('line_id')}: {(t.get('status') or 'disruption').lower()} at {stations}",
+                    "summary": t.get("reason") or "", "url": f"{TFL_STATUS}#{t.get('line_id')}-{t.get('source_id')}",
+                    "source": TFL_SOURCE, "published_at": t.get("last_seen_at") or t.get("fetched_at"),
+                    "starts_at": f"{days[0]}T00:00:00+00:00", "until": f"{days[-1]}T00:00:00+00:00",
+                    "distance_km": (t.get("nearest_m") or 0) / 1000})
+    return out
+
+
+def add_link(url: str, kind: str = "opportunity", note: str = "", when: str = "", now: Optional[datetime] = None) -> dict:
+    """The owner adds one link to their news (awareness only). Read once by backend/inputs/link_preview.py.
+    Returns {"ok", "message", "id"}; never raises."""
+    from backend.inputs import link_preview
+
+    now = now or datetime.now(timezone.utc)
+    if kind not in KINDS:
+        return {"ok": False, "message": f"Pick one of: {', '.join(KINDS)}."}
+    try:
+        page = link_preview.read(url, note=note)
+    except link_preview.LinkRefused as e:
+        activity.log("news_link_refused", f"Didn't add a link: {e}", actor="owner")
+        return {"ok": False, "message": str(e)}
+    item = {**page, "kind": kind, "published_at": now}
+    if when:
+        item["starts_at"] = f"{when}T00:00:00+00:00"
+    stored = record_news([item], now)
+    if stored["skipped"]:
+        return {"ok": False, "message": f"Couldn't add it: {stored['skipped'][0].split(': ', 1)[-1]}."}
+    doc_id = news_id(page["url"])
+    activity.log("news_link_added", f"Added to your news: {page['headline'][:80]} ({page['source']})", actor="owner", news_id=doc_id)
+    return {"ok": True, "message": f"Added “{page['headline'][:80]}” to your news.", "id": doc_id}
+
+
 def load_notes(path: Path = NOTES_FILE) -> List[dict]:
     """The owner's scouting notes: public facts with a source link each, dated when written (they age out like news)."""
     if not path.exists():
@@ -164,7 +216,7 @@ def refresh(now: Optional[datetime] = None, dry_run: bool = False) -> dict:
     fresh = [i for i in fetched if _aware(i.get("published_at")) and _aware(i["published_at"]) >= now - RECENT
              and not db[schema.NEWS].find_one({"_id": news_id(i["url"])}, {"_id": 1})]
     picked, by = ai_news.relevant(fresh, now) if fresh else ([], "gemini")
-    items = picked + from_events(now) + load_notes()
+    items = picked + from_events(now) + from_transport(now) + load_notes()
     summary = {"fetched": len(fetched), "new_from_feeds": len(fresh), "relevant": len(picked), "by": by, "errors": errors,
                "items": items}
     if dry_run:
