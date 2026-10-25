@@ -10,7 +10,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="/static/cofoundr.css?v=20">
+<link rel="preload" href="/static/gaia-van.webp" as="image" type="image/webp">
+<link rel="stylesheet" href="/static/cofoundr.css?v=23">
 <script>
   document.documentElement.classList.add("js");
   /* Loading screen: once per browser session (or ?splash=1), never for reduced motion. Decided before first paint. */
@@ -31,7 +32,7 @@
     <span class="splash__bar"><i></i></span>
   </div>
 </div>
-<div class="backdrop" aria-hidden="true"><canvas></canvas></div>
+<div class="backdrop" aria-hidden="true"></div>
 <div class="grain" aria-hidden="true"></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></symbol>
