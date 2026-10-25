@@ -9,41 +9,10 @@
   <h1><em>{{ greeting }},</em> GAIA.</h1>
 </header>
 
-<!-- Today's update: the 3D orb floats out of the card -->
-<a class="hero glass tilt" href="/sales" data-tilt="3" style="view-transition-name: m-sales">
-  <div class="hero__copy">
-    <span class="kicker"><svg class="ico"><use href="#i-spark"/></svg>Here's your update for today</span>
-    {% if day %}
-    <h2>You're forecast to make <b class="num">{{ day.revenue|money0 }}</b> {{ "today" if day.is_today else "on " ~ day.date.strftime("%A") }}.</h2>
-    <p>Based on the {{ day.basis[:1]|lower ~ day.basis[1:] if day.basis else "your recent sales" }}{% if day.wx %}, with {{ day.wx.summary|lower }} and {{ day.wx.temp_max_c|round|int }}° forecast{% endif %}{% if day.products %}. Expect around {{ day.products[0].expected_qty|round|int }} {{ day.products[0].name }}s{% endif %}.</p>
-    {% if wind_warning(day.wx) %}<p class="wind-warning" role="note">💨 {{ wind_warning(day.wx) }}</p>{% endif %}
-    {% else %}
-    <h2>No forecast yet.</h2><p>Once the till has a few weeks of sales, I'll tell you what each day should bring in.</p>
-    {% endif %}
-    <div class="hero__stats">
-      {% if sales.last %}<div><b class="num">{{ sales.last.revenue|money0 }}</b><span>{{ sales.last.date.strftime("%A") }}'s takings</span></div>{% endif %}
-      <div><b class="num">{{ week.total|money0 }}</b><span>expected next {{ week.trading_days }} days</span></div>
-      <div><b class="num">{{ sales.average|money0 }}</b><span>average day</span></div>
-    </div>
-  </div>
-  <div class="hero__viz">
-    <div class="orb" aria-hidden="true"><canvas></canvas></div>
-    {% if trend.actual %}
-    <div class="chart" aria-label="Recent takings and forecast">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-        <defs><linearGradient id="g-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#c07a45" stop-opacity=".22"/><stop offset="1" stop-color="#c07a45" stop-opacity="0"/></linearGradient></defs>
-        <path class="area" d="{{ trend.area }}"/>
-        <path class="line" d="{{ trend.actual }}"/>
-        {% if trend.forecast %}<path class="fc" d="{{ trend.forecast }}"/>{% endif %}
-      </svg>
-      {% if trend.dot %}<span class="chart__now" style="left:{{ trend.split }}%"></span><span class="chart__dot" style="left:{{ trend.dot[0] }}%;top:{{ trend.dot[1] }}%"></span>{% endif %}
-    </div>
-    <div class="chart__legend"><span><i></i>Recent takings</span><span><i class="fc"></i>Forecast</span></div>
-    {% endif %}
-  </div>
-</a>
-
-<div class="feed">
+{% if payables or reminders or review %}
+<!-- Needs you first: the things waiting for a yes come before the numbers -->
+<section class="feed feed--urgent" aria-labelledby="needs-you">
+  <p class="section-label" id="needs-you">Needs you</p>
   {% for a in payables[:2] %}{% set c = checks.get(a._id|string, {}) %}
   <div class="card glass tilt" style="--i:{{ loop.index0 }}">
     <span class="gem{{ ' gem--rose' if c.new_sender else '' }}"><svg class="ico"><use href="#i-{{ 'alert' if c.new_sender else 'pound' }}"/></svg></span>
@@ -69,7 +38,43 @@
     <span class="btn btn--soft">Check</span>
   </a>
   {% endif %}
+</section>
+{% endif %}
 
+<!-- Today's update: forecast and the numbers -->
+<a class="hero glass tilt" href="/sales" data-tilt="3" style="view-transition-name: m-sales">
+  <div class="hero__copy">
+    <span class="kicker"><svg class="ico"><use href="#i-spark"/></svg>Here's your update for today</span>
+    {% if day %}
+    <h2>You're forecast to make <b class="num">{{ day.revenue|money0 }}</b> {{ "today" if day.is_today else "on " ~ day.date.strftime("%A") }}.</h2>
+    <p>Based on the {{ day.basis[:1]|lower ~ day.basis[1:] if day.basis else "your recent sales" }}{% if day.wx %}, with {{ day.wx.summary|lower }} and {{ day.wx.temp_max_c|round|int }}° forecast{% endif %}{% if day.products %}. Expect around {{ day.products[0].expected_qty|round|int }} {{ day.products[0].name }}s{% endif %}.</p>
+    {% if wind_warning(day.wx) %}<p class="wind-warning" role="note">💨 {{ wind_warning(day.wx) }}</p>{% endif %}
+    {% else %}
+    <h2>No forecast yet.</h2><p>Once the till has a few weeks of sales, I'll tell you what each day should bring in.</p>
+    {% endif %}
+    <div class="hero__stats">
+      {% if sales.last %}<div><b class="num">{{ sales.last.revenue|money0 }}</b><span>{{ sales.last.date.strftime("%A") }}'s takings</span></div>{% endif %}
+      <div><b class="num">{{ week.total|money0 }}</b><span>expected next {{ week.trading_days }} days</span></div>
+      <div><b class="num">{{ sales.average|money0 }}</b><span>average day</span></div>
+    </div>
+  </div>
+  <div class="hero__viz">
+    {% if trend.actual %}
+    <div class="chart" aria-label="Recent takings and forecast">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+        <defs><linearGradient id="g-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#c07a45" stop-opacity=".22"/><stop offset="1" stop-color="#c07a45" stop-opacity="0"/></linearGradient></defs>
+        <path class="area" d="{{ trend.area }}"/>
+        <path class="line" d="{{ trend.actual }}"/>
+        {% if trend.forecast %}<path class="fc" d="{{ trend.forecast }}"/>{% endif %}
+      </svg>
+      {% if trend.dot %}<span class="chart__now" style="left:{{ trend.split }}%"></span><span class="chart__dot" style="left:{{ trend.dot[0] }}%;top:{{ trend.dot[1] }}%"></span>{% endif %}
+    </div>
+    <div class="chart__legend"><span><i></i>Recent takings</span><span><i class="fc"></i>Forecast</span></div>
+    {% endif %}
+  </div>
+</a>
+
+<div class="feed">
   {% if away %}
   <section class="card card--list glass" style="view-transition-name: m-activity; --i:2">
     <span class="gem gem--sage"><svg class="ico"><use href="#i-spark"/></svg></span>

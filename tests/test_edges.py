@@ -1348,3 +1348,10 @@ def test_inbox_check_never_reads_coFoundrs_own_reminders(db, inbox_env, gemini_d
     r = gmail.check_inbox(connect=lambda: FakeInbox(bytes(own)))
     assert "0 invoice(s) added" in r.message and "own email" in r.emails[0].note
     assert not db[schema.INVOICES].find_one({"invoice_number": "GAIA-1029", "source": "email"})
+
+
+def test_home_puts_what_needs_a_yes_before_the_numbers(db, gemini_down):
+    overdue.run()
+    page = web.get("/").text
+    assert 'id="needs-you"' in page and page.index("Needs you") < page.index("Here's your update for today")
+    assert 'class="orb"' not in page  # the floating bubble is gone

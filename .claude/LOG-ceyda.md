@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 03:20 — Home: "Needs you" first, bubble removed; Fly "freezes" explained
+- **Did:** home puts the urgent cards (bill to pay, reminders ready, invoices to check) under "Needs you" above the forecast/KPI card; the 3D orb removed. Checked in the browser. Fly health-check failures were deploy restarts (each 2 s after "reboot: Restarting system", one per release), not freezes: no fix needed, just no releases or secret changes during the demo
+- **Status:** done, PR into `stage` + release PR
+- **Next:** morning brief push (MVP2), demo script + README
+- **Blockers / notes for partner:** Sunil, don't release or change Fly secrets during the demo (≈2–4 s blip per deploy)
+
 ## Sun 25 Oct, 03:00 — Unprompted WhatsApp seen live; approved reminders really emailed
 - **Did:** uploaded the synthetic `gaia_overdue.png` live → GAIA-1050 (Hackney Hub, £225) read ✓ + #5 drafted → 25 s later both WhatsApp updates **delivered** unprompted. `outputs/email.py`: approved reminders sent via Gmail SMTP from the demo inbox, always to `REMINDER_INBOX` (default the demo inbox), never the customer's address; header `X-CoFoundr: reminder`; `inputs/gmail.py` skips CoFoundr's own emails; failed send → back in the queue (existing rule). No credentials → still simulated. SMTP verified with one test email to the demo inbox. 526 tests pass
 - **Status:** done, PR into `stage` + release PR

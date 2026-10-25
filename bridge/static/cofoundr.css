@@ -543,3 +543,9 @@ mark { background: var(--amber-bg); color: inherit; border-radius: 3px; padding:
 .addlink { display: flex; flex-wrap: wrap; gap: 8px; }
 .addlink input, .addlink select { flex: 1 1 160px; min-width: 0; border: 1px solid var(--line-2); border-radius: 12px; padding: 9px 12px; font: inherit; background: transparent; color: var(--ink); }
 .btn--small { font-size: 12.5px; padding: 2px 0; }
+
+/* ---------- Home: what needs a yes comes first, then the numbers ---------- */
+.feed--urgent { margin: 0 0 16px; }
+.section-label { margin: 0 0 -4px 4px; font: 600 12px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.hero { min-height: 0; }
+.hero__viz { min-height: 200px; }
