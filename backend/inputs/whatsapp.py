@@ -18,7 +18,7 @@ from typing import Iterable, List, Optional, Tuple
 
 from backend import approvals
 from backend.db import activity
-from backend.inputs.replies import parse_reply
+from backend.inputs.replies import parse_rejection, parse_reply
 from backend.outputs import assistant, whatsapp
 from backend.pipeline import MAX_BYTES, ingest_invoice
 
@@ -75,16 +75,17 @@ def _photos(params: dict) -> List[str]:
     return replies
 
 
-def _decide(decision: str, ref: int) -> str:
+def _decide(decision: str, ref: int, note: Optional[str] = None) -> str:
     approval = approvals.find(ref=ref)
     if not approval:
         return f"There's no #{ref} waiting for you."
     try:
-        result = approvals.decide(approval, decision, via="whatsapp")
+        result = approvals.decide(approval, decision, via="whatsapp", note=note)
     except approvals.DecisionError as e:
         return str(e)
     emoji = "✅" if result["status"] == "approved" else "❌"
-    return f"{emoji} #{result['ref']} {result['status']}: {result['title']} ({result['effect']})"
+    return (f"{emoji} #{result['ref']} {result['status']}: {result['title']} ({result['effect']})"
+            + (". Got it, I'll remember why next time." if result.get("owner_note") else ""))
 
 
 def handle(params: dict) -> Optional[str]:
@@ -103,6 +104,9 @@ def handle(params: dict) -> Optional[str]:
     parsed = parse_reply(text)
     if parsed:
         return _decide(*parsed)
+    rejection = parse_rejection(text)  # "reject 2: they're regulars": a no with the owner's reason
+    if rejection:
+        return _decide("reject", rejection[0], note=rejection[1])
     if assistant.HARD.search(text):  # Gemini thinks harder (~20-40 s): say so instead of going quiet
         whatsapp.send("Good question, give me a moment to think it through ☕")
     return assistant.answer(text).text

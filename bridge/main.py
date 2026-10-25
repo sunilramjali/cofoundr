@@ -24,15 +24,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from backend import approvals, news, payments
+from backend import approvals, memory, news, payments
 from backend.ai import board, fees, overdue, review
 from backend.inputs import evo, gmail, whatsapp as whatsapp_in
-from backend.inputs.replies import parse_reply  # noqa: F401 (also imported from here by tests)
+from backend.inputs.replies import parse_rejection, parse_reply  # noqa: F401 (also imported from here by tests)
 from backend.outputs import assistant, whatsapp as whatsapp_out
 from backend.outputs.brief import build_brief
 from backend.outputs.updates import get_updates
 from backend.pipeline import ingest_invoice
-from backend.db import activity, schema, search
+from backend.db import activity, schema, search, showcase
 from backend.db.client import RealDataRefused, get_db
 from bridge import view
 
@@ -98,7 +98,7 @@ def _public_url(request: Request) -> str:
     return os.environ.get("PUBLIC_URL") or str(request.base_url).rstrip("/")
 
 
-PAGES = {"/", "/board", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings", "/news"}
+PAGES = {"/", "/board", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings", "/news", "/mongodb"}
 
 
 def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
@@ -114,6 +114,7 @@ NAV = [  # sidebar, in the order of the owner's day (and the demo): (label, path
 ]
 NAV_MORE = [  # a quieter second group: useful, not daily
     ("Inventory", "/inventory", "box"), ("News", "/news", "spark"), ("Chat", "/whatsapp", "chat"),
+    ("Under the hood", "/mongodb", "gear"),
 ]
 
 
@@ -196,13 +197,17 @@ def _page(name: str):
                        feed=(search.similar_news(db, like, limit=10) if liked else
                              search.news_search(db, ctx["q"], kind=kind, limit=30) if ctx["q"] else
                              search.news_feed(db, "", kind=kind, limit=30)))
+        if name == "mongodb":  # every Atlas feature run live with the exact pipeline it sent (backend/db/showcase.py)
+            ctx.update(sections=showcase.run(get_db()), indexes=showcase.indexes(get_db()),
+                       memories=list(get_db()[schema.MEMORIES].find({"business_id": BUSINESS_ID}).sort("at", -1).limit(8)),
+                       memory_line=memory.line)
         return templates.TemplateResponse(request, f"{name}.html", ctx)
     return render
 
 
 for _path, _name in [("/", "home"), ("/board", "board"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
                      ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp"), ("/inventory", "inventory"),
-                     ("/settings", "settings"), ("/news", "news")]:
+                     ("/settings", "settings"), ("/news", "news"), ("/mongodb", "mongodb")]:
     app.add_api_route(_path, _page(_name), methods=["GET"], response_class=HTMLResponse, name=f"page_{_name}")
 
 
@@ -265,12 +270,12 @@ def import_fees(file: UploadFile = File(...), back: str = Form("/sales")):
 
 @app.post("/approvals/{approval_id}/decide")
 def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Optional[str] = Form(None),
-                          back: str = Form("/approvals")):
+                          note: Optional[str] = Form(None), back: str = Form("/approvals")):
     approval = approvals.find(approval_id=approval_id)
     if not approval:
         return _back("Approval not found.", back)
-    try:
-        result = approvals.decide(approval, decision, via="dashboard", edited_draft=draft)
+    try:  # `note` = the owner's optional reason: CoFoundr remembers it next time (backend/memory.py)
+        result = approvals.decide(approval, decision, via="dashboard", edited_draft=draft, note=note)
     except approvals.DecisionError as e:
         return _back(str(e), back)
     return _back(f"#{result['ref']} {result['status']}: {result['effect']}.", back)
@@ -284,7 +289,10 @@ CHAT_SHOWN = 12  # exchanges
 def _chat_reply(text: str) -> str:
     """Decisions ("approve 1", "reject 2") follow exactly the WhatsApp rules and never reach Gemini; anything else is a
     question for the Gemini assistant, which can read the data but not change it."""
-    parsed = parse_reply(text)
+    parsed, note = parse_reply(text), None
+    if not parsed and parse_rejection(text):  # "reject 2: they're regulars": a no with a reason, remembered
+        ref, note = parse_rejection(text)
+        parsed = ("reject", ref)
     if not parsed:
         return assistant.answer(text).text
     decision, ref = parsed
@@ -292,10 +300,10 @@ def _chat_reply(text: str) -> str:
     if not approval:
         return f"There's no #{ref} waiting for you."
     try:
-        result = approvals.decide(approval, decision, via="dashboard")
+        result = approvals.decide(approval, decision, via="dashboard", note=note)
     except approvals.DecisionError as e:
         return str(e)
-    return f"#{result['ref']} {result['status']}: {result['effect']}."
+    return f"#{result['ref']} {result['status']}: {result['effect']}." + (" I'll remember why." if result.get("owner_note") else "")
 
 
 def chat_log() -> list:
