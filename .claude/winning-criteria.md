@@ -120,8 +120,8 @@ What it shows: the agent acts **unprompted** (Agents That Ship: "not a chatbot")
 - [ ] Be explicit about the split: CoFoundr reads, drafts and updates **on its own**, and **stops and asks** before any money action
 - [ ] WhatsApp is the owner's interface: invoice photos in (`POST /whatsapp/twilio`), updates and the morning brief out
 - [ ] Approvals by WhatsApp reply ("approve 4") update MongoDB, never parsed by Gemini
-- [ ] Owner's questions on WhatsApp answered by Gemini from the data (can draft a reminder, never approve, pay or send)
-- [ ] Every webhook, reply and failed send is in `agent_log` (forged Twilio signatures rejected)
+- [x] Owner's questions on WhatsApp answered by Gemini from the data (can draft a reminder, never approve, pay or send) ✓ live Sun 00:48
+- [x] Every webhook, reply and failed send is in `agent_log` (forged Twilio signatures rejected) ✓ (`whatsapp_received`, `whatsapp_rejected`, `whatsapp_send_failed`, `whatsapp_pushed`)
 
 ---
 
