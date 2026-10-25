@@ -7,6 +7,8 @@
 <header class="hello">
   <p>{{ now.strftime("%A") }} {{ now.day }} {{ now.strftime("%B") }}</p>
   <h1><em>{{ greeting }},</em> GAIA.</h1>
+  <form method="post" action="/brief/send" class="hello__brief"><input type="hidden" name="back" value="/">
+    <button class="btn btn--soft" data-busy="Sending…"><svg class="ico"><use href="#i-chat"/></svg>Send me today's brief</button></form>
 </header>
 
 {% if payables or reminders or review %}

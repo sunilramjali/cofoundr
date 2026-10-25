@@ -1355,3 +1355,69 @@ def test_home_puts_what_needs_a_yes_before_the_numbers(db, gemini_down):
     page = web.get("/").text
     assert 'id="needs-you"' in page and page.index("Needs you") < page.index("Here's your update for today")
     assert 'class="orb"' not in page  # the floating bubble is gone
+
+
+# ---------------------------------------------------------------- morning brief on WhatsApp
+from datetime import date  # noqa: E402
+
+from backend.outputs import brief as brief_out  # noqa: E402
+
+
+def _forecast_day(db, day, revenue=600, trading=True, reason=None):
+    db[schema.FORECASTS].replace_one({"_id": f"gaia-coffee:{day}"}, {
+        "_id": f"gaia-coffee:{day}", "business_id": "gaia-coffee", "date": day, "trading": trading, "expected_revenue": revenue,
+        "final_revenue": revenue, "low_revenue": revenue - 50, "high_revenue": revenue + 40,
+        "adjustment": {"reason": reason} if reason else None}, upsert=True)
+
+
+def test_morning_brief_has_today_wind_priorities_and_approvals(db, gemini_down, monkeypatch):
+    overdue.run()
+    today = date(2026, 10, 24)
+    monkeypatch.setattr(brief_out, "_today_london", lambda: today)
+    _forecast_day(db, "2026-10-24", 612.4, reason="+8%: Broadway Market nearby")
+    db[schema.TASKS].insert_many([{"business_id": "gaia-coffee", "rank": 1, "kind": "approval", "title": "Approve #1"},
+                                  {"business_id": "gaia-coffee", "rank": 2, "kind": "prep_day", "title": "Prep for Saturday"}])
+    monkeypatch.setattr("backend.conditions.conditions_for", lambda dates: {d: {"weather": {
+        "summary": "Light rain", "temp_max_c": 15.6, "precip_chance_pct": 60, "wind_max_kmh": 34}} for d in dates})
+    text = brief_out.morning_brief()
+    assert text.startswith("Morning! ☕ Here's your *Saturday 24 Oct*.")
+    assert "*Today:* about £612 expected (£562–£652)" in text and "Broadway Market nearby" in text
+    assert "light rain, up to 16°, 60% chance of rain" in text and "💨 Windy: up to 34 km/h" in text
+    assert "*Do first*\n1. Prep for Saturday" in text and "Approve #1" not in text  # approvals have their own section
+    assert "*Waiting for your yes* · 4 ·" in text and "reply *approve 1*" in text
+
+
+def test_morning_brief_on_a_day_off_points_to_the_next_trading_day(db, monkeypatch):
+    monkeypatch.setattr(brief_out, "_today_london", lambda: date(2026, 10, 25))
+    _forecast_day(db, "2026-10-25", 0, trading=False)
+    _forecast_day(db, "2026-10-26", 598.7)
+    monkeypatch.setattr("backend.conditions.conditions_for", lambda dates: {d: {"weather": None} for d in dates})
+    text = brief_out.morning_brief()
+    assert "a day off" in text and "Next up: *Monday*, about £599 expected" in text and "Nothing's waiting" in text
+
+
+def test_brief_is_sent_once_a_day_after_eight(db, twilio, monkeypatch):
+    from zoneinfo import ZoneInfo
+    monkeypatch.setattr(brief_out, "morning_brief", lambda: "Morning! ☕")
+    london = ZoneInfo("Europe/London")
+    assert not wa_out.brief_due("08:00", datetime(2026, 10, 25, 7, 59, tzinfo=london))
+    assert wa_out.brief_due("08:00", datetime(2026, 10, 25, 8, 0, tzinfo=london))
+    monkeypatch.setattr(brief_out, "_today_london", lambda: date(2026, 10, 25))
+    assert wa_out.send_brief("scheduled").ok and twilio[-1]["Body"] == "Morning! ☕"
+    assert not wa_out.brief_due("08:00", datetime(2026, 10, 25, 9, 30, tzinfo=london))  # already sent today
+    assert wa_out.brief_due("08:00", datetime(2026, 10, 26, 8, 1, tzinfo=london))  # tomorrow again
+
+
+def test_send_brief_button_sends_now_but_not_twice_in_a_row(db, twilio, monkeypatch):
+    monkeypatch.setattr(brief_out, "morning_brief", lambda: "Morning! ☕")
+    assert "Sent today's brief" in _flash(web.post("/brief/send", data={"back": "/"}, follow_redirects=False))
+    assert "just sent it" in _flash(web.post("/brief/send", data={"back": "/"}, follow_redirects=False))
+    assert [m["Body"] for m in twilio] == ["Morning! ☕"]
+    assert 'action="/brief/send"' in web.get("/").text
+
+
+def test_send_brief_button_when_twilio_fails_says_why(db, twilio, monkeypatch):
+    monkeypatch.setattr(brief_out, "morning_brief", lambda: "Morning! ☕")
+    twilio.fail = 1
+    assert "Couldn't send the brief" in _flash(web.post("/brief/send", data={"back": "/"}, follow_redirects=False))
+    assert not db[schema.AGENT_LOG].find_one({"kind": wa_out.BRIEF_KIND})

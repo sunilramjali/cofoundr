@@ -44,6 +44,7 @@ def install() -> None:
         return whatsapp.Sent(True, "sandbox")
     whatsapp.send = no_whatsapp
     whatsapp.start_polling = lambda *_a, **_k: None
+    whatsapp.start_brief_schedule = lambda *_a, **_k: None
     print(f"CoFoundr sandbox: {sum(copy[n].estimated_document_count() for n in copy.list_collection_names())} documents copied "
           f"into memory from {real.name}; nothing you do locally reaches Atlas.")
 

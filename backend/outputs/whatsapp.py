@@ -17,9 +17,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
-from backend.db import activity
+from backend.db import activity, schema
+from backend.db.client import get_db
 from backend.outputs import updates
 
 API = "https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
@@ -126,6 +128,49 @@ def push_updates() -> int:
         return sent
     finally:
         _lock.release()
+
+
+BRIEF_KIND = "morning_brief_sent"
+BRIEF_GAP = 30  # seconds between manual sends (the dashboard button)
+
+
+def send_brief(why: str = "scheduled") -> Sent:
+    """Send the morning brief now and log it (once-a-day for the schedule is checked by the caller)."""
+    from backend.outputs.brief import _today_london, morning_brief
+
+    result = send(morning_brief())
+    if result.ok:
+        activity.log(BRIEF_KIND, f"Sent the owner the morning brief on WhatsApp ({why})", actor="agent",
+                     date=_today_london().isoformat(), why=why)
+    else:
+        _failed(result.error)
+    return result
+
+
+def brief_due(at: str, now=None) -> bool:
+    """True once it's past `at` ("08:00", London time) and today's brief hasn't gone out yet."""
+    from zoneinfo import ZoneInfo
+    now = now or datetime.now(ZoneInfo("Europe/London"))
+    hour, minute = (int(x) for x in at.split(":"))
+    if (now.hour, now.minute) < (hour, minute):
+        return False
+    return not get_db()[schema.AGENT_LOG].find_one({"kind": BRIEF_KIND, "detail.date": now.date().isoformat(),
+                                                    "detail.why": "scheduled"})
+
+
+def start_brief_schedule(at: str, check_every: int = 60) -> threading.Event:
+    """Send the morning brief once a day at `at` (London time). Set the returned event to stop."""
+    stop = threading.Event()
+
+    def loop():
+        while not stop.wait(check_every):
+            try:
+                if brief_due(at):
+                    send_brief("scheduled")
+            except Exception as e:  # never let the schedule die quietly
+                _failed(f"morning brief crashed ({type(e).__name__})")
+    threading.Thread(target=loop, name="morning-brief", daemon=True).start()
+    return stop
 
 
 def start_polling(every_seconds: int) -> threading.Event:
