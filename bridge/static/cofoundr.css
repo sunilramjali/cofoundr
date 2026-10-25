@@ -610,3 +610,15 @@ mark { background: var(--amber-bg); color: inherit; border-radius: 3px; padding:
 .gem:not([class*="gem--"]) { --c1: var(--butter); --c2: rgba(167, 127, 52, .7); --c3: var(--ochre); }
 .chart__legend i.fc { background: repeating-linear-gradient(90deg, var(--ochre) 0 4px, transparent 4px 7px); }
 .chip--ai { background: linear-gradient(120deg, #f4ead2, #e7ecd9); color: var(--leaf); }  /* "Drafted by Gemini": sun to leaf */
+
+/* ---------- Contrast (measured against the photo's darkest area, the road) ----------
+   Text: grey labels were 2.8-3.1:1 on the light parts and 1.4:1 over the road; now ~6:1 on light parts and ≥4.5:1 over the
+   road, because panes are a little more solid at their lower edge (blur + rim keep the glass look). */
+:root { --ink: #151613; --ink-2: #3a3b36; --muted: #5f5b52; }
+.glass { background: linear-gradient(155deg, rgba(253, 249, 239, .86), rgba(250, 245, 233, .8) 42%, rgba(247, 241, 227, .8)); }
+/* Hierarchy: what needs a yes is the most solid and lifted; the rest sits quieter behind it */
+.feed--urgent .card { background: linear-gradient(155deg, rgba(255, 253, 247, .96), rgba(252, 248, 238, .92));
+  box-shadow: var(--edge), var(--lift-2), 0 0 0 1px rgba(60, 50, 30, .06); }
+.feed--urgent .card h3 { font-weight: 700; }
+.feed:not(.feed--urgent) .card { box-shadow: var(--edge), 0 1px 2px rgba(70, 45, 25, .05), 0 10px 24px -18px rgba(70, 45, 25, .3); }
+.section-label { color: var(--ink); }
