@@ -2,7 +2,8 @@
 
 Every input channel (dashboard upload, Gmail, WhatsApp photo via Twilio, ...) calls
 `ingest_invoice` with the raw document. Everything after that is processing:
-Gemini extraction + verification loop → save to MongoDB → activity log → price check (supplier bills) → overdue check.
+Gemini extraction + verification loop → duplicate check (Atlas Search) → save to MongoDB → activity log → price check
+(supplier bills) → overdue check.
 Input code should not call extract/save/overdue directly. It never raises: every
 outcome comes back as an IngestResult with a message safe to show the owner.
 """
@@ -57,6 +58,21 @@ def _price_note(doc: dict) -> str:
     return lines[0] if lines else ""
 
 
+def _duplicate_issue(doc: dict) -> str:
+    """Flag a probable duplicate for the owner's check ("EDC 7781" when EDC-7781 is already in). Never blocks the ingest:
+    a failure is logged and the invoice goes in as normal."""
+    try:
+        dup = search.possible_duplicate(get_db(), doc)
+    except Exception as e:
+        activity.log("duplicate_check_failed", f"Couldn't check {doc['invoice_number']} for duplicates ({type(e).__name__})")
+        return ""
+    if not dup:
+        return ""
+    doc["possible_duplicate_of"] = str(dup["_id"])
+    return (f"looks like a duplicate of {dup['invoice_number']} from {dup['counterparty']} (same number and amount, "
+            f"£{dup['amount']:.2f}): check it before paying or chasing.")
+
+
 def _fail(error: str, message: str, source: str, origin: str, **detail) -> IngestResult:
     where = f" ({origin})" if origin else ""
     activity.log("ingest_failed", f"Couldn't add a document{where}: {message}", source=source, error=error, **detail)
@@ -90,7 +106,12 @@ def ingest_invoice(data: bytes, mime_type: str, source: Source, origin: str = ""
         return _fail("not_invoice", "That doesn't look like an invoice (no total, line items or invoice number). Nothing saved.",
                      source, origin)
 
-    doc, created = save_invoice(to_invoice_doc(ex, issues, attempts, source))
+    doc = to_invoice_doc(ex, issues, attempts, source)
+    duplicate = _duplicate_issue(doc)
+    if duplicate:  # asked, not guessed: held for review, so it's never chased or paid twice
+        issues = [duplicate] + list(issues)
+        doc.update(needs_review=True, verification_issues=issues)
+    doc, created = save_invoice(doc)
     if not created:
         return IngestResult(True, f"{doc['invoice_number']} from {doc['counterparty']} is already in CoFoundr.", invoice=doc)
 

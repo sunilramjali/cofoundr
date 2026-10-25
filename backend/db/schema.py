@@ -5,7 +5,7 @@ Any change to a shape here must be announced to your partner (and logged) before
 """
 import re
 from datetime import datetime
-from typing import List, Literal, Optional, TypedDict
+from typing import List, Literal, NotRequired, Optional, TypedDict
 
 DB_NAME = "cofoundr-db"
 
@@ -97,6 +97,7 @@ class Invoice(TypedDict):
     extraction_notes: Optional[str]  # Gemini notes on unclear values
     reminders_sent: int  # escalation level for receivables
     search_text: str  # invoice_search_text(doc): what Atlas Search + Automated Embedding index (backend/db/search.py)
+    possible_duplicate_of: NotRequired[str]  # _id of a stored invoice this one probably repeats ("EDC 7781" = "EDC-7781")
     synthetic: bool
     created_at: datetime
 

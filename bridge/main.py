@@ -174,8 +174,12 @@ def _page(name: str):
     def render(request: Request, msg: Optional[str] = None, show: Optional[str] = None, q: Optional[str] = None):
         ctx = _context(request, msg)
         ctx.update(path=request.url.path, show=show, q=(q or "").strip(), found=None)
-        if name == "invoices" and ctx["q"]:  # Atlas hybrid search (keyword + meaning); falls back to a plain match
-            ctx["found"] = search.search_invoices(get_db(), ctx["q"])
+        if name == "invoices":
+            ctx["facets"] = search.invoice_facets(get_db())  # Atlas $searchMeta: invoices per supplier/customer
+            if ctx["q"]:  # Atlas hybrid search (keyword + meaning, matched words highlighted); falls back to a plain match
+                ctx["found"] = search.search_invoices(get_db(), ctx["q"])
+        if name == "activity" and ctx["q"]:  # Atlas Search over the agent's own record
+            ctx["found"] = search.search_activity(get_db(), ctx["q"], limit=30)
         return templates.TemplateResponse(request, f"{name}.html", ctx)
     return render
 
@@ -184,6 +188,13 @@ for _path, _name in [("/", "home"), ("/board", "board"), ("/approvals", "approva
                      ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp"), ("/inventory", "inventory"),
                      ("/settings", "settings")]:
     app.add_api_route(_path, _page(_name), methods=["GET"], response_class=HTMLResponse, name=f"page_{_name}")
+
+
+@app.get("/search/suggest")
+def search_suggest(q: str = ""):
+    """Autocomplete for the Finances search box (Atlas Search autocomplete): names only, never amounts."""
+    result = search.suggest(get_db(), q[:40])
+    return {"suggestions": [h["name"] for h in result.hits], "mode": result.mode}
 
 
 @app.post("/upload")
