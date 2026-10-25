@@ -183,6 +183,7 @@ class Memory(TypedDict):
 class RecalledMemory(TypedDict):
     line: str  # owner-facing sentence, e.g. "24 Oct: you rejected chasing Hackney Hub: “friend, give them 2 weeks”"
     anonymous_line: str  # the same without another customer's/supplier's name: what Gemini sees for a similar case
+    counterparty: str  # whose decision it was (never sent to Gemini for a similar case; used to check the draft)
     decision: str
     note: Optional[str]
     same_counterparty: bool  # True = this customer/supplier's own history, False = a similar case found by meaning

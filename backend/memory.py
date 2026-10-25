@@ -158,9 +158,36 @@ def recall(db: Database, new_case: dict, limit: int = RECALL, details: Optional[
 
 
 def _recalled(m: dict, same: bool) -> dict:
-    return {"line": line(m), "anonymous_line": line(m, anonymous=not same), "decision": m.get("decision"),
+    return {"line": line(m), "anonymous_line": line(m, anonymous=not same), "counterparty": m.get("counterparty") or "",
+            "decision": m.get("decision"),
             "note": m.get("note"), "same_counterparty": same,
             "score": None if same else round(m.get("score") or 0.0, 3), "at": m.get("at")}
+
+
+# Words in a business name that don't identify anyone on their own ("Eastside Dairy Co" → {"eastside", "dairy"})
+GENERIC_WORDS = {"the", "and", "ltd", "limited", "company", "assoc", "association", "group", "services", "gaia", "coffee"}
+
+
+def distinctive_words(name: Optional[str]) -> set:
+    return {w for w in re.findall(r"[a-z0-9']+", (name or "").lower()) if len(w) >= 4 and w not in GENERIC_WORDS}
+
+
+def mentions_other(text: str, own: str, others: List[str]) -> Optional[str]:
+    """The first of `others` (business names) that `text` names, by any distinctive word not also in `own`; else None.
+    The check behind "an email to one customer never names another"."""
+    words = set(re.findall(r"[a-z0-9']+", (text or "").lower()))
+    mine = distinctive_words(own)
+    for name in others:
+        if (distinctive_words(name) - mine) & words:
+            return name
+    return None
+
+
+def _scrub(note: str, name: str) -> str:
+    note = re.sub(re.escape(name), "them", note, flags=re.IGNORECASE)
+    for w in distinctive_words(name):
+        note = re.sub(rf"\b{re.escape(w)}\b", "them", note, flags=re.IGNORECASE)
+    return note
 
 
 def line(m: dict, anonymous: bool = False) -> str:
@@ -168,8 +195,8 @@ def line(m: dict, anonymous: bool = False) -> str:
     anonymous=True: "another customer" instead of the name, also inside the owner's note (for a prompt about someone else)."""
     name = m.get("counterparty") or ""
     who = ("another customer" if m.get("action_type") == "invoice_reminder" else "another supplier") if anonymous else (name or "them")
-    if anonymous and name and m.get("note"):
-        m = {**m, "note": re.sub(re.escape(name), "them", m["note"], flags=re.IGNORECASE)}
+    if anonymous and name and m.get("note"):  # "Dalston lot are friends" → "them lot are friends"
+        m = {**m, "note": _scrub(m["note"], name)}
     if m.get("action_type") == "invoice_reminder":
         level = m.get("escalation_level")
         what = f"a {TONES[level]} to {who}" if level in (0, 1, 2) else f"chasing {who}"
