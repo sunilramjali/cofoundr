@@ -25,7 +25,7 @@ This is the smallest slice that proves the core story: *an agent that does a rea
 - [x] **Approval:** dashboard shows the queue with Approve / Edit / Reject; decision updates MongoDB (`status`, `decided_via`, `decided_at`)
 - [x] **Web app on Fly.io:** (live: https://cofoundr.fly.dev) one FastAPI app serving the dashboard pages (upload + approval queue) and `GET /health`, `GET /brief?token=…` (plain text from MongoDB: overdue invoices + pending approvals)
 - [x] **WhatsApp (Twilio):** the owner messages CoFoundr on WhatsApp through the Twilio sandbox. `POST /whatsapp/twilio` checks Twilio's signature and only acts on `OWNER_WHATSAPP`; "approve 4"/"reject 2" → `approvals.decide(via="whatsapp")`; other questions → the Gemini assistant (reads the data; can only draft). ✓ **live** Sun 00:48: "what's waiting?" on a real phone → Gemini's answer delivered in 9 s (legacy sandbox +1 415 523 8886)
-- [ ] **WhatsApp automatic updates:** the owner is messaged on WhatsApp **without asking** when something needs them, e.g. "New invoice from Eastside Dairy (£176.70) read and checked" or "Reminder drafted for Hackney Hub, reply approve 4". The app pushes the `/updates` feed (new invoices, new drafts, decisions) through Twilio every `WHATSAPP_PUSH_SECONDS`; a Twilio failure delays messages, never loses them. ✓ built + tested (PR #40); goes live with the item above
+- [x] **WhatsApp automatic updates:** the owner is messaged on WhatsApp **without asking** when something needs them, e.g. "New invoice from Eastside Dairy (£176.70) read and checked" or "Reminder drafted for Hackney Hub, reply approve 4". The app pushes the `/updates` feed (new invoices, new drafts, decisions) through Twilio every `WHATSAPP_PUSH_SECONDS`; a Twilio failure delays messages, never loses them. ✓ **live** Sun 02:45: invoice uploaded → 25 s later "📥 New invoice GAIA-1050…" and "📝 #5 Chase Hackney Hub… Reply approve 5" delivered to the phone unprompted
 
 ### Out of scope for MVP1
 Forecasting, prioritisation, events/weather, Atlas Search/Vector Search, Treg, heatmap, waste, partnerships, voice orders. (WhatsApp photo input was built with the Twilio channel; it counts for MVP2.)
@@ -81,7 +81,7 @@ Each morning the owner gets a WhatsApp brief **without asking**: what's coming i
 - [x] **Released:** all of the above live on Fly since release #43 (Sat 24 Oct). Demo-DB runs (backtest, forecast, board, fee upload, prioritise) still to do Sunday morning
 
 **Outputs (Jade)**
-- [ ] **Real reminder emails:** `outputs/email.py` sends approved reminders (Gmail SMTP from the demo inbox); `effect` shows "sent", never sends without approval
+- [ ] **Real reminder emails:** `outputs/email.py` sends approved reminders (Gmail SMTP from the demo inbox); `effect` shows "sent", never sends without approval. ✓ built + tested (Sun 03:00): always to `REMINDER_INBOX` (default the demo inbox), never the customer's address; CoFoundr's own emails skipped by the inbox check; SMTP login verified with a test send. Tick once released
 - [ ] **Morning brief pushed automatically** at ~08:00 on WhatsApp (Twilio): forecast + top 3 priorities + pending approvals (extends `brief.py`)
 - [ ] **Dashboard:** forecast chart with Gemini's reasons, ranked priorities, invoice search box
 
