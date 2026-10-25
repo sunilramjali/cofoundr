@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 08:40 — Colours taken from the van photo (glass kept)
+- **Did:** new landscape van photo (1672×941) as the backdrop, anchored on the van (51%/55%). "Photo palette" block at the end of `cofoundr.css` (easy to tweak or remove): leaf green accent (buttons, selected nav, chart line), ochre highlights (greeting gradient, £ figures, forecast line), butter cream, charcoal (counts, chat bubbles, send), brick red for overdue; glass tinted warm cream; the old copper/rose/sky/lilac accents mapped onto these. Checked Home, Approvals, Board in the browser. 566 tests pass
+- **Status:** done, PR into `stage`; live with the next release
+- **Next:** see the 04:40 handover list
+- **Blockers / notes for partner:** none in your area
+
 ## Sun 25 Oct, 08:10 — Background: Jade's own photo of the GAIA van
 - **Did:** `bridge/static/gaia-van.webp` (Jade's photo, 256 KB) replaces the WebGL gradient as the backdrop: colours untouched, `cover` anchored at 50%/50% (the van's centre), preloaded. Readability without tinting the photo: glass panes a little more solid; the greeting and the "Needs you" label on their own frosted panels; sidebar tighter on screens under 860 px tall (and scrolls rather than cutting off its footer). Checked in the browser at laptop sizes (phone width not checked visually). 566 tests pass
 - **Status:** done, PR into `stage` + release PR
