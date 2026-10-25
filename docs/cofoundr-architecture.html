@@ -1,0 +1,335 @@
+<title>CoFoundr Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one reading column; two wide figures break out to the full width and scroll sideways on phones */
+  :root {
+    --bg: #f5f1e8; --panel: #fffdf8; --panel-2: #efe8d8; --ink: #1c1d1b; --ink-2: #4a4b45; --muted: #6b675e;
+    --line: #cfc6b3; --navy: #1f3a5f; --navy-bg: #e1e7ef; --gold: #a8781a; --gold-bg: #f4e7c6; --rust: #a24a2f; --rust-bg: #f5e2d8;
+    --display: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    --body: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151615; --panel: #1f201e; --panel-2: #2a2a26; --ink: #f1ece2; --ink-2: #cdc7ba; --muted: #a29b8d;
+      --line: #4a4740; --navy: #8fb0dc; --navy-bg: #22303f; --gold: #e0b354; --gold-bg: #3a3020; --rust: #e08b6d; --rust-bg: #3d261e;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151615; --panel: #1f201e; --panel-2: #2a2a26; --ink: #f1ece2; --ink-2: #cdc7ba; --muted: #a29b8d;
+    --line: #4a4740; --navy: #8fb0dc; --navy-bg: #22303f; --gold: #e0b354; --gold-bg: #3a3020; --rust: #e08b6d; --rust-bg: #3d261e;
+    color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--body); }
+  .wrap { max-width: 1200px; margin: 0 auto; padding-block: 40px 64px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  header { max-width: 68ch; display: grid; gap: 10px; }
+  .kicker { font: 600 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
+  h1 { margin: 0; font: 700 clamp(32px, 5vw, 52px)/1.05 var(--display); letter-spacing: -.03em; text-wrap: balance; }
+  h1 .co { color: var(--gold); }
+  h1 .dot { color: var(--navy); }
+  header p { margin: 0; color: var(--ink-2); }
+  h2 { margin: 0 0 6px; font: 650 24px/1.2 var(--display); letter-spacing: -.015em; text-wrap: balance; }
+  section { display: grid; gap: 14px; margin-top: 52px; }
+  section > p { margin: 0; max-width: 68ch; color: var(--ink-2); }
+  figure { margin: 0; display: grid; gap: 10px; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); }
+  .scroll svg { display: block; width: 100%; min-width: 980px; height: auto; color: var(--ink); }
+  figcaption { font-size: 14px; color: var(--muted); max-width: 80ch; }
+  code, .mono { font-family: var(--mono); font-size: .88em; }
+  /* SVG parts (styled from the page, so they follow the theme) */
+  .bx { fill: var(--panel); stroke: var(--line); stroke-width: 1.2; }
+  .bx-app { fill: var(--panel-2); stroke: var(--line); stroke-width: 1.2; }
+  .bx-navy { fill: var(--navy-bg); stroke: var(--navy); stroke-width: 1.4; }
+  .bx-gold { fill: var(--gold-bg); stroke: var(--gold); stroke-width: 1.6; }
+  .bx-rust { fill: var(--rust-bg); stroke: var(--rust); stroke-width: 1.4; }
+  .t { font: 600 14px var(--body); fill: var(--ink); }
+  .ts { font: 400 12px var(--body); fill: var(--ink-2); }
+  .tm { font: 400 11.5px var(--mono); fill: var(--ink-2); }
+  .tl { font: 500 11.5px var(--body); fill: var(--muted); }
+  .tg { font: 600 12px var(--mono); fill: var(--gold); letter-spacing: .04em; }
+  .tn { font: 600 12px var(--mono); fill: var(--navy); letter-spacing: .04em; }
+  .ar { stroke: var(--ink-2); stroke-width: 1.4; fill: none; }
+  .ar-out { stroke: var(--navy); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .ar-gold { stroke: var(--gold); stroke-width: 1.8; fill: none; }
+  .ar-rust { stroke: var(--rust); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+  .head { fill: var(--ink-2); } .head-out { fill: var(--navy); } .head-gold { fill: var(--gold); } .head-rust { fill: var(--rust); }
+  .boundary { stroke: var(--gold); stroke-width: 1.4; stroke-dasharray: 3 5; }
+  /* Reference table */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 4px; min-width: 0; }
+  .card b { font: 600 15px var(--display); }
+  .card span { color: var(--ink-2); font-size: 14.5px; }
+  .card code { color: var(--navy); overflow-wrap: anywhere; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13.5px; color: var(--muted); }
+  .legend i { display: inline-block; width: 26px; height: 0; border-top: 2px solid var(--ink-2); vertical-align: middle; margin-right: 6px; }
+  .legend i.out { border-top: 2px dashed var(--navy); } .legend i.gold { border-top: 2px solid var(--gold); }
+  footer { margin-top: 48px; font-size: 13.5px; color: var(--muted); }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="kicker">Encode London 2026 · technical diagram</span>
+    <h1><span class="co">Co</span>Foundr<span class="dot">.</span> how it's built</h1>
+    <p>An AI co-founder for a one-truck coffee business. One FastAPI app on Fly.io sits between the owner's channels, Gemini 4 Argon and MongoDB Atlas. It does the work on its own and stops at one gate before any money moves.</p>
+  </header>
+
+  <section aria-labelledby="sys">
+    <h2 id="sys">The system</h2>
+    <p>Every input enters the same app, every decision passes through <code>approvals.decide()</code>, and every step lands in <code>agent_log</code>. Gemini is only ever called from inside the app, and its answers are checked by code before they're stored or shown.</p>
+    <div class="legend"><span><i></i>into the app</span><span><i class="out"></i>out to the owner</span><span><i class="gold"></i>the money gate</span></div>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1160 660" role="img" aria-label="Owner's WhatsApp, the Gmail inbox, the dashboard and open data all feed one FastAPI app on Fly.io. Inside it, the invoice pipeline, the assistant and approvals.decide call Gemini 4 Argon and read and write MongoDB Atlas; background workers push WhatsApp updates and the morning brief, and approved reminders are emailed.">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="head"/></marker>
+            <marker id="ah-out" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="head-out"/></marker>
+            <marker id="ah-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="head-gold"/></marker>
+          </defs>
+
+          <!-- Left: the owner's world -->
+          <text class="tl" x="16" y="22">THE OWNER'S WORLD</text>
+          <rect class="bx" x="16" y="36" width="200" height="74" rx="12"/>
+          <text class="t" x="32" y="64">Owner's phone</text>
+          <text class="ts" x="32" y="84">WhatsApp, Twilio sandbox</text>
+          <text class="tm" x="32" y="100">+1 415 523 8886</text>
+
+          <rect class="bx" x="16" y="150" width="200" height="60" rx="12"/>
+          <text class="t" x="32" y="176">Gmail demo inbox</text>
+          <text class="ts" x="32" y="196">invoices by email</text>
+
+          <rect class="bx" x="16" y="250" width="200" height="60" rx="12"/>
+          <text class="t" x="32" y="276">Dashboard</text>
+          <text class="ts" x="32" y="296">browser, chat on every page</text>
+
+          <rect class="bx" x="16" y="350" width="200" height="60" rx="12"/>
+          <text class="t" x="32" y="376">Open data</text>
+          <text class="ts" x="32" y="396">Open-Meteo, TfL, local news</text>
+
+          <rect class="bx" x="16" y="500" width="200" height="60" rx="12"/>
+          <text class="t" x="32" y="526">Demo inbox</text>
+          <text class="ts" x="32" y="546">where approved reminders land</text>
+
+          <!-- Inputs into the app -->
+          <line class="ar" x1="216" y1="66" x2="306" y2="66" marker-end="url(#ah)"/>
+          <text class="tl" x="222" y="58">webhook</text>
+          <line class="ar" x1="216" y1="180" x2="306" y2="180" marker-end="url(#ah)"/>
+          <text class="tl" x="222" y="172">IMAP · 60 s</text>
+          <line class="ar" x1="216" y1="280" x2="306" y2="280" marker-end="url(#ah)"/>
+          <text class="tl" x="222" y="272">HTTPS</text>
+          <line class="ar" x1="216" y1="380" x2="306" y2="380" marker-end="url(#ah)"/>
+          <text class="tl" x="222" y="372">scheduled</text>
+
+          <!-- The app -->
+          <rect class="bx-app" x="306" y="16" width="548" height="624" rx="18"/>
+          <text class="tl" x="326" y="40">COFOUNDR APP · FASTAPI ON FLY.IO</text>
+
+          <rect class="bx" x="326" y="52" width="508" height="44" rx="10"/>
+          <text class="t" x="342" y="79">Routes</text>
+          <text class="tm" x="404" y="79">/whatsapp/twilio · /ask · /upload · /approvals · /brief/send</text>
+
+          <!-- core trio -->
+          <rect class="bx-navy" x="326" y="138" width="156" height="118" rx="12"/>
+          <text class="t" x="340" y="162">Invoice pipeline</text>
+          <text class="tm" x="340" y="182">ingest_invoice()</text>
+          <text class="ts" x="340" y="204">read → check → save</text>
+          <text class="ts" x="340" y="222">→ overdue check</text>
+          <text class="ts" x="340" y="240">→ draft reminder</text>
+
+          <rect class="bx-navy" x="502" y="138" width="156" height="118" rx="12"/>
+          <text class="t" x="516" y="162">Assistant</text>
+          <text class="tm" x="516" y="182">17 tools</text>
+          <text class="ts" x="516" y="204">reads the data</text>
+          <text class="ts" x="516" y="222">can only draft</text>
+          <text class="ts" x="516" y="240">every £ re-checked</text>
+
+          <rect class="bx-gold" x="678" y="138" width="156" height="118" rx="12"/>
+          <text class="t" x="692" y="162">Money gate</text>
+          <text class="tm" x="692" y="182">approvals.decide()</text>
+          <text class="ts" x="692" y="204">exact "approve N"</text>
+          <text class="ts" x="692" y="222">never parsed by AI</text>
+          <text class="ts" x="692" y="240">owner's number only</text>
+
+          <line class="ar" x1="404" y1="96" x2="404" y2="136" marker-end="url(#ah)"/>
+          <text class="tl" x="410" y="122">photo, file</text>
+          <line class="ar" x1="580" y1="96" x2="580" y2="136" marker-end="url(#ah)"/>
+          <text class="tl" x="586" y="122">question</text>
+          <line class="ar-gold" x1="756" y1="96" x2="756" y2="136" marker-end="url(#ah-gold)"/>
+          <text class="tg" x="762" y="122">approve N</text>
+          <line class="ar" x1="658" y1="197" x2="676" y2="197" marker-end="url(#ah)"/>
+
+          <!-- workers -->
+          <rect class="bx" x="326" y="296" width="332" height="96" rx="12"/>
+          <text class="t" x="342" y="320">Background workers</text>
+          <text class="ts" x="342" y="342">Gmail check · every 60 s</text>
+          <text class="ts" x="342" y="360">WhatsApp updates · every 30 s</text>
+          <text class="ts" x="342" y="378">Morning brief · 08:00 London</text>
+
+          <!-- outputs -->
+          <rect class="bx" x="326" y="440" width="236" height="70" rx="12"/>
+          <text class="t" x="342" y="466">WhatsApp out</text>
+          <text class="ts" x="342" y="486">replies + unprompted updates</text>
+          <text class="tm" x="342" y="502">Twilio REST</text>
+
+          <rect class="bx" x="598" y="440" width="236" height="70" rx="12"/>
+          <text class="t" x="614" y="466">Reminder email</text>
+          <text class="ts" x="614" y="486">only after approval</text>
+          <text class="tm" x="614" y="502">Gmail SMTP</text>
+
+          <line class="ar" x1="444" y1="392" x2="444" y2="438" marker-end="url(#ah)"/>
+          <text class="tl" x="450" y="420">push</text>
+          <line class="ar-gold" x1="756" y1="256" x2="756" y2="438" marker-end="url(#ah-gold)"/>
+          <text class="tg" x="762" y="350">approved</text>
+          <text class="tg" x="762" y="366">→ send</text>
+
+          <!-- out to the owner -->
+          <polyline class="ar-out" points="326,475 294,475 294,96 218,96" marker-end="url(#ah-out)"/>
+          <text class="tn" x="222" y="124">replies +</text>
+          <text class="tn" x="222" y="139">updates</text>
+          <polyline class="ar-out" points="716,510 716,530 218,530" marker-end="url(#ah-out)"/>
+          <text class="tl" x="300" y="524">reminder, to the demo inbox only</text>
+
+          <!-- the record -->
+          <rect class="bx" x="326" y="560" width="508" height="58" rx="12"/>
+          <text class="t" x="342" y="585">agent_log</text>
+          <text class="ts" x="342" y="605">every step, tool call, webhook, decision and failed send: the Activity page</text>
+
+          <!-- Right: Gemini + MongoDB -->
+          <text class="tl" x="900" y="22">AI + MEMORY</text>
+          <rect class="bx" x="900" y="36" width="244" height="228" rx="14"/>
+          <text class="t" x="918" y="64">Gemini 4 Argon</text>
+          <text class="ts" x="918" y="90">reads invoice photos + PDFs</text>
+          <text class="ts" x="918" y="112">adjusts the forecast, says why</text>
+          <text class="ts" x="918" y="134">board memo: one ~170k-token call</text>
+          <text class="ts" x="918" y="156">assistant: function calling</text>
+          <text class="ts" x="918" y="178">ranks the priorities</text>
+          <rect class="bx-gold" x="914" y="196" width="216" height="52" rx="10"/>
+          <text class="t" x="928" y="218">checked by code</text>
+          <text class="ts" x="928" y="238">totals, factors, every £ claimed</text>
+
+          <rect class="bx" x="900" y="296" width="244" height="322" rx="14"/>
+          <text class="t" x="918" y="324">MongoDB Atlas</text>
+          <text class="ts" x="918" y="350">invoices · approvals · tasks · to-dos</text>
+          <text class="ts" x="918" y="372">sales: time-series collection</text>
+          <text class="ts" x="918" y="394">forecasts · lessons · board_memos</text>
+          <text class="ts" x="918" y="416">agent_log · news · chat history</text>
+          <line x1="918" y1="434" x2="1126" y2="434" stroke="currentColor" stroke-opacity=".18"/>
+          <text class="tn" x="918" y="458">ATLAS FEATURES</text>
+          <text class="ts" x="918" y="482">Atlas Search: facets, autocomplete</text>
+          <text class="ts" x="918" y="504">Vector Search · Automated Embedding</text>
+          <text class="ts" x="918" y="526">Voyage AI (voyage-4)</text>
+          <text class="ts" x="918" y="548">Hybrid Search with $rankFusion</text>
+          <text class="ts" x="918" y="570">duplicate check, moreLikeThis</text>
+
+          <!-- app ⇄ Gemini, app ⇄ MongoDB -->
+          <line class="ar" x1="834" y1="160" x2="898" y2="160" marker-end="url(#ah)"/>
+          <line class="ar" x1="898" y1="176" x2="836" y2="176" marker-end="url(#ah)"/>
+          <text class="tl" x="842" y="150">ask</text>
+          <text class="tl" x="842" y="194">answer</text>
+          <line class="ar" x1="854" y1="340" x2="898" y2="340" marker-end="url(#ah)"/>
+          <line class="ar" x1="898" y1="356" x2="856" y2="356" marker-end="url(#ah)"/>
+          <text class="tl" x="858" y="330">write</text>
+          <text class="tl" x="858" y="374">read</text>
+          <line class="ar" x1="834" y1="590" x2="898" y2="590" marker-end="url(#ah)"/>
+          <text class="tl" x="842" y="580">log</text>
+        </svg>
+      </div>
+      <figcaption>One app owns every connection: the owner's channels never touch the database, and Gemini never talks to the owner directly. The gold path is the only way money moves: an exact "approve N" from the owner's number, or the Approve button, into <code>approvals.decide()</code>.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="flow">
+    <h2 id="flow">One invoice, start to finish</h2>
+    <p>The path the demo shows. Everything left of the gold line happens on its own; nothing right of it happens without the owner.</p>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1160 300" role="img" aria-label="An invoice arrives, Gemini reads it, code checks the reading. If it doesn't add up it waits for the owner and is never chased. Otherwise it's saved, a reminder is drafted, the owner is told on WhatsApp, and only the owner's exact approve N sends the email.">
+          <defs>
+            <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="head"/></marker>
+            <marker id="ah2-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="head-gold"/></marker>
+            <marker id="ah2-rust" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="head-rust"/></marker>
+          </defs>
+          <text class="tl" x="16" y="26">ON ITS OWN</text>
+          <text class="tg" x="1144" y="26" text-anchor="end">OWNER ONLY</text>
+
+          <rect class="bx" x="16" y="44" width="140" height="84" rx="12"/>
+          <text class="t" x="30" y="72">Invoice in</text>
+          <text class="ts" x="30" y="94">WhatsApp photo,</text>
+          <text class="ts" x="30" y="112">email or upload</text>
+
+          <rect class="bx-navy" x="180" y="44" width="140" height="84" rx="12"/>
+          <text class="t" x="194" y="72">Gemini reads</text>
+          <text class="ts" x="194" y="94">supplier, £, due</text>
+          <text class="ts" x="194" y="112">date, line items</text>
+
+          <rect class="bx" x="344" y="44" width="140" height="84" rx="12"/>
+          <text class="t" x="358" y="72">Code checks</text>
+          <text class="ts" x="358" y="94">lines = total?</text>
+          <text class="ts" x="358" y="112">date makes sense?</text>
+
+          <rect class="bx" x="508" y="44" width="140" height="84" rx="12"/>
+          <text class="t" x="522" y="72">Saved</text>
+          <text class="ts" x="522" y="94">to MongoDB,</text>
+          <text class="ts" x="522" y="112">duplicates caught</text>
+
+          <rect class="bx" x="672" y="44" width="140" height="84" rx="12"/>
+          <text class="t" x="686" y="72">Reminder drafted</text>
+          <text class="ts" x="686" y="94">overdue → pending</text>
+          <text class="ts" x="686" y="112">approval #N</text>
+
+          <rect class="bx" x="836" y="44" width="140" height="84" rx="12"/>
+          <text class="t" x="850" y="72">Owner told</text>
+          <text class="ts" x="850" y="94">WhatsApp, unasked:</text>
+          <text class="ts" x="850" y="112">"reply approve N"</text>
+
+          <line class="boundary" x1="990" y1="34" x2="990" y2="200"/>
+
+          <rect class="bx-gold" x="1004" y="44" width="140" height="84" rx="12"/>
+          <text class="t" x="1018" y="72">approve N</text>
+          <text class="ts" x="1018" y="94">decide → email</text>
+          <text class="ts" x="1018" y="112">sent → logged</text>
+
+          <line class="ar" x1="156" y1="86" x2="178" y2="86" marker-end="url(#ah2)"/>
+          <line class="ar" x1="320" y1="86" x2="342" y2="86" marker-end="url(#ah2)"/>
+          <line class="ar" x1="484" y1="86" x2="506" y2="86" marker-end="url(#ah2)"/>
+          <text class="tl" x="486" y="78">ok</text>
+          <line class="ar" x1="648" y1="86" x2="670" y2="86" marker-end="url(#ah2)"/>
+          <line class="ar" x1="812" y1="86" x2="834" y2="86" marker-end="url(#ah2)"/>
+          <line class="ar-gold" x1="976" y1="86" x2="1002" y2="86" marker-end="url(#ah2-gold)"/>
+
+          <!-- the branch that stops and asks -->
+          <polyline class="ar-rust" points="414,128 414,206" marker-end="url(#ah2-rust)"/>
+          <text class="tl" x="422" y="172">doesn't add up</text>
+          <rect class="bx-rust" x="344" y="208" width="210" height="72" rx="12"/>
+          <text class="t" x="358" y="234">Needs your check</text>
+          <text class="ts" x="358" y="254">flagged with the reason,</text>
+          <text class="ts" x="358" y="270">never guessed, never chased</text>
+
+          <text class="tl" x="1004" y="160">or Approve on the</text>
+          <text class="tl" x="1004" y="176">dashboard: same gate</text>
+        </svg>
+      </div>
+      <figcaption>Two places the agent stops: a reading that doesn't check out goes to the owner instead of being chased, and nothing past the gold line runs without the owner's exact reply.</figcaption>
+    </figure>
+  </section>
+
+  <section aria-labelledby="where">
+    <h2 id="where">Where each part lives</h2>
+    <div class="grid">
+      <div class="card"><b>Web app</b><span>Routes, dashboard pages, chat panel.</span><code>bridge/main.py · bridge/templates/</code></div>
+      <div class="card"><b>Invoice pipeline</b><span>Every input calls this one function.</span><code>backend/pipeline.py · backend/ai/extract.py</code></div>
+      <div class="card"><b>Money gate</b><span>The only place a decision is applied.</span><code>backend/approvals.py</code></div>
+      <div class="card"><b>Assistant</b><span>Gemini function calling over MongoDB, 17 tools.</span><code>backend/outputs/assistant.py</code></div>
+      <div class="card"><b>WhatsApp</b><span>Signed webhook in; replies, updates and the brief out.</span><code>backend/inputs/whatsapp.py · backend/outputs/whatsapp.py</code></div>
+      <div class="card"><b>Search</b><span>Atlas Search, Vector Search, Hybrid Search.</span><code>backend/db/search.py</code></div>
+      <div class="card"><b>Forecast + board</b><span>Gemini adjusts and grades itself; the 1M-context memo.</span><code>backend/ai/forecast.py · review.py · board.py</code></div>
+      <div class="card"><b>Data contract</b><span>Every collection name and document shape.</span><code>backend/db/schema.py</code></div>
+    </div>
+  </section>
+
+  <footer>CoFoundr · Encode London Hackathon 2026 · Sunil &amp; Ceyda. Demo business GAIA Coffee; all business data is synthetic. Live at cofoundr.fly.dev · github.com/sunilramjali/cofoundr</footer>
+</div>
