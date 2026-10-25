@@ -122,7 +122,7 @@ def test_facets_fall_back_to_counting_when_atlas_is_down_or_odd(db):
 def test_finances_shows_facet_chips_that_search_that_supplier(db):
     from bridge.main import app
     page = TestClient(app).get("/invoices").text
-    assert 'href="/invoices?q=Eastside%20Dairy%20Co"' in page and "counted here" in page
+    assert 'href="/invoices?q=Eastside%20Dairy%20Co"' in page and "Atlas Search facets" not in page
 
 
 # ---------------------------------------------------------------- autocomplete

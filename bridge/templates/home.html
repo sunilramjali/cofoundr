@@ -90,8 +90,7 @@
   <section class="card card--list glass" style="--i:3">
     <span class="gem gem--lilac"><svg class="ico"><use href="#i-bulb"/></svg></span>
     <div><h3>Do first</h3>
-      <ol class="proof proof--ranked">{% for t in tasks %}<li><span><b>{{ t.title }}</b><br><span class="muted">{{ t.reason|highlight }}</span></span></li>{% endfor %}</ol>
-      <p class="muted" style="margin:6px 0 0">Ranked by {{ "Gemini" if tasks[0].ranked_by == "gemini" else "my rules" }} from your records{% if tasks[0].ranked_at %} · {{ tasks[0].ranked_at|ago }}{% endif %}</p></div>
+      <ol class="proof proof--ranked">{% for t in tasks %}<li><span><b>{{ t.title }}</b><br><span class="muted">{{ t.reason|highlight }}</span></span></li>{% endfor %}</ol></div>
     <a class="btn btn--text" href="/approvals">Approvals <svg class="ico ico--go"><use href="#i-arrow"/></svg></a>
   </section>
   {% endif %}

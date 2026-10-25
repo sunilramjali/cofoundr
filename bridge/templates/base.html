@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <link rel="preload" href="/static/gaia-van.webp?v=2" as="image" type="image/webp">
-<link rel="stylesheet" href="/static/cofoundr.css?v=37">
+<link rel="stylesheet" href="/static/cofoundr.css?v=40">
 <script>
   document.documentElement.classList.add("js");
   /* Loading screen: once per browser session (or ?splash=1), never for reduced motion. Decided before first paint. */
@@ -96,7 +96,7 @@
 
 <div class="app">
   <aside class="side glass" aria-label="CoFoundr">
-    <a class="logo" href="/">CoFoundr<i>.</i></a>
+    <a class="logo" href="/"><span class="logo__co">Co</span>Foundr<i>.</i></a>
     {% for group in [nav, nav_more] %}
     {% if not loop.first %}<p class="nav__group">More</p>{% endif %}
     <nav class="nav"{% if not loop.first %} aria-label="More"{% endif %}>
@@ -117,16 +117,21 @@
       <div class="me"><span class="me__avatar">G</span><span><b>GAIA Coffee</b><small>Owner · synthetic demo</small></span></div>
     </div>
   </aside>
-  {% if todo and todo.count %}
-  <details class="todo glass" id="todo">
-    <summary><svg class="ico"><use href="#i-yes"/></svg><b>To do</b><span class="todo__count">{{ todo.count }}</span><svg class="ico todo__chev"><use href="#i-chev"/></svg></summary>
-    <ol class="todo__list">
-      {% for t in todo["items"] %}<li class="todo__item todo__item--{{ t.kind }}"><a href="{{ t.href }}"><b>{{ t.text }}</b>{% if t.detail %}<small>{{ t.detail|highlight }}</small>{% endif %}</a></li>{% endfor %}
-    </ol>
-    {% if todo.more %}<a class="todo__more" href="/approvals">+{{ todo.more }} more</a>{% endif %}
-  </details>
-  {% endif %}
   <main class="main">
+    {# the to-do pill has its own row at the top, so minimised it never covers a module; open, it drops down like a menu #}
+    <div class="topbar">
+    {% if todo and todo.count %}
+    <details class="todo glass" id="todo">
+      <summary><svg class="ico"><use href="#i-yes"/></svg><b>To do</b><span class="todo__count">{{ todo.count }}</span><svg class="ico todo__chev"><use href="#i-chev"/></svg></summary>
+      <div class="todo__drop glass">
+      <ol class="todo__list">
+        {% for t in todo["items"] %}<li class="todo__item todo__item--{{ t.kind }}"><a href="{{ t.href }}"><b>{{ t.text }}</b>{% if t.detail %}<small>{{ t.detail|highlight }}</small>{% endif %}</a></li>{% endfor %}
+      </ol>
+      {% if todo.more %}<a class="todo__more" href="/approvals">+{{ todo.more }} more</a>{% endif %}
+      </div>
+    </details>
+    {% endif %}
+    </div>
     {% block content %}{% endblock %}
     {% if path != "/whatsapp" %}{# the Chat page has its own box at the top #}
     <form class="chatbar" method="post" action="/ask">
@@ -142,7 +147,7 @@
 {# the chat panel last in the page: drawn above the main panel, also during the page-switch animation #}
 {% if chat is not none %}
 <section class="chat glass" id="chat" aria-label="Chat with CoFoundr"{% if not chat_open %} hidden{% endif %}>
-  <header class="chat__head"><span class="chatbar__who" aria-hidden="true">C</span><div><b>CoFoundr</b><small>powered by Gemini · reads your data, never moves money</small></div>
+  <header class="chat__head"><span class="chatbar__who" aria-hidden="true">C</span><div><b>CoFoundr</b><small>reads your data, never moves money</small></div>
     <a class="chat__close" href="{{ path }}" aria-label="Close the chat">×</a></header>
   <div class="chat__log" role="log" aria-live="polite">
     {% for m in chat %}

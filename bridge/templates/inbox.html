@@ -3,7 +3,7 @@
 {% block vt %}m-inbox{% endblock %}
 {% block eyebrow %}<svg class="ico"><use href="#i-mail"/></svg>Inbox{% endblock %}
 {% block heading %}Bring me an invoice{% endblock %}
-{% block lede %}Drop a photo or PDF, or just email it. Gemini reads it, checks the numbers add up, and asks you if anything looks off. It never guesses.{% endblock %}
+{% block lede %}Drop a photo or PDF, or just email it. I read it, check the numbers add up, and asks you if anything looks off. It never guesses.{% endblock %}
 {% block body %}
 {%- set from_email = invoices|selectattr("source", "equalto", "email")|list -%}
 <div class="two">
@@ -14,7 +14,7 @@
     <h3>Drop an invoice here</h3>
     <p>or click to choose a photo or PDF · up to 10 MB</p>
     <span class="drop__file" aria-live="polite"></span>
-    <button class="btn" type="submit" data-busy="Reading with Gemini…">Read it <svg class="ico"><use href="#i-arrow"/></svg></button>
+    <button class="btn" type="submit" data-busy="Reading…">Read it <svg class="ico"><use href="#i-arrow"/></svg></button>
   </form>
   <div class="mail">
     <h3>Or just email it</h3>

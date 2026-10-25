@@ -21,13 +21,13 @@
 </form>
 {% if facets and facets.counterparty %}
 <nav class="facets" aria-label="Who you deal with most">
-  <span class="facets__label">Most invoices <small>{{ "Atlas Search facets" if facets.mode == "atlas" else "counted here" }}</small></span>
+  <span class="facets__label">Most invoices</span>
   {% for name, n in facets.counterparty %}<a class="chip chip--facet" href="/invoices?q={{ name|urlencode }}">{{ name }} <b>{{ n }}</b></a>{% endfor %}
 </nav>
 {% endif %}
 {% if found is not none %}
 <section class="block search__results">
-  <h2>{{ found.hits|length }} match{{ "es" if found.hits|length != 1 }} for “{{ q }}” <small>{{ "MongoDB Atlas hybrid search: keyword + meaning, merged with $rankFusion" if found.mode == "hybrid" else "plain word match (Atlas Search unavailable here)" }}</small></h2>
+  <h2>{{ found.hits|length }} match{{ "es" if found.hits|length != 1 }} for “{{ q }}”</h2>
   <ul class="rows">
     {% for h in found.hits %}
     <li class="row{% if h.direction == 'receivable' %} row--in{% endif %}">

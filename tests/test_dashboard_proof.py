@@ -33,7 +33,7 @@ def test_while_away_says_only_what_was_stored():
     lines = [w["text"] for w in view.while_away([{}, {}], [{"_id": 1}], fee, MEMO, worse)]
     assert lines[0] == "Read 2 invoices this week and checked every total, and flagged 1 invoice that doesn't add up."
     assert "4 overcharged card payments (£0.60)" in lines[1] and "888" in lines[1]
-    assert "169,208 tokens" in lines[2] and "caught 2 wrong numbers" in lines[2]
+    assert "tokens" not in lines[2] and "caught 2 wrong numbers" in lines[2]  # the count stays in board_memos, not on the page
     assert "made them worse (5.4% → 7.9% off)" in lines[3] and "±20%" in lines[3]
     better = {"overall": {"days": 10, "baseline_error": 8.0, "adjusted_error": 6.1, "helped": 7}, "cap": 35.0}
     only = view.while_away([], [{"_id": 1}, {"_id": 2}], {"audit": {"checked": 5, "overcharged": []}}, None, better)
@@ -50,7 +50,7 @@ def test_home_shows_what_needs_a_yes_what_i_did_and_what_to_do_first(db):
                                  "title": "Prep for Monday (Mon 26 Oct): ~£599 expected", "reason": "Busy start to the week.",
                                  "rank": 1, "impact": "high", "ranked_by": "gemini", "ranked_at": NOW, "synthetic": True})
     page = web.get("/").text
-    assert "While you were away, I…" in page and "169,208 tokens" in page and "caught 2 wrong numbers" in page
+    assert "While you were away, I…" in page and "169,208" not in page and "caught 2 wrong numbers" in page
     assert "Do first" in page and "Prep for Monday (Mon 26 Oct)" in page and "Busy start to the week." in page
     assert page.index("While you were away") < page.index("Do first")
 
@@ -66,8 +66,8 @@ def test_board_page_shows_what_the_database_check_caught(db):
     db[schema.BOARD_MEMOS].insert_one(MEMO)
     page = TestClient(app).get("/board").text
     assert "The database check caught:" in page and "<s>10 Fresh Pastries</s> → <b>8</b>" in page
-    assert "<s>£32.00</s> → <b>£25.60</b>" in page and "wrong numbers caught before you saw them" in page
-    assert "tokens read in one Gemini call" in page
+    assert "<s>£32.00</s> → <b>£25.60</b>" in page  # the correction itself stays; the counters above it are gone
+    assert "tokens read in one Gemini call" not in page and "gemini-4-argon" not in page  # owner-facing only
 
 
 def test_invoice_search_on_finances(db):
@@ -75,7 +75,7 @@ def test_invoice_search_on_finances(db):
     plain = web.get("/invoices").text
     assert 'name="q"' in plain and "match" not in plain.split("Search invoices")[1].split("</form>")[1][:200]
     found = web.get("/invoices", params={"q": "Eastside"}).text
-    assert "for “Eastside”" in found and "Eastside Dairy" in found and "plain word match" in found  # mongomock: no Atlas
+    assert "for “Eastside”" in found and "Eastside Dairy" in found and "Atlas" not in found.split("for “Eastside”")[1][:200]
     assert "Nothing matched." in web.get("/invoices", params={"q": "zzzz-no-such"}).text
     assert web.get("/invoices", params={"q": "<script>x</script>"}).text.count("<script>x</script>") == 0  # escaped
     assert web.get("/invoices", params={"q": "x" * 5000}).status_code == 200
