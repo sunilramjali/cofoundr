@@ -1270,3 +1270,11 @@ def test_chat_panel_shows_only_this_conversation(db, ask, monkeypatch):
     ask(lambda tools: "New answer.")
     web.post("/ask", data={"text": "new question", "back": "/"})
     assert [m["q"] for m in main.chat_log()] == ["new question"]
+
+
+def test_loading_screen_is_on_every_page_but_never_blocks_it(db):
+    page = web.get("/").text
+    assert 'class="splash"' in page and "sessionStorage" in page and "prefers-reduced-motion" in page  # once per session
+    assert 'class="hello"' in page  # the dashboard is in the same page underneath: nothing waits on the splash
+    css = web.get("/static/cofoundr.css").text
+    assert "splash-failsafe" in css and ".splash { display: none; }" in css  # hidden without JS, gone even if JS fails

@@ -9,11 +9,28 @@
 <meta name="theme-color" content="#f3f1ec">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/static/cofoundr.css?v=14">
-<script>document.documentElement.classList.add("js");</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="/static/cofoundr.css?v=15">
+<script>
+  document.documentElement.classList.add("js");
+  /* Loading screen: once per browser session (or ?splash=1), never for reduced motion. Decided before first paint. */
+  try {
+    const force = /[?&]splash=1/.test(location.search), calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (force || (!calm && !sessionStorage.getItem("cf-splash"))) {
+      document.documentElement.classList.add("splash-on"); sessionStorage.setItem("cf-splash", "1");
+    }
+  } catch (e) {}
+</script>
 </head>
 <body>
+<div class="splash" aria-hidden="true">
+  <canvas></canvas>
+  <div class="splash__inner">
+    <span class="splash__mark">{% for ch in "Cofoundr" %}<b style="--i:{{ loop.index0 }}">{{ ch }}</b>{% endfor %}<i>.</i></span>
+    <span class="splash__tag">Your AI co-founder</span>
+    <span class="splash__bar"><i></i></span>
+  </div>
+</div>
 <div class="backdrop" aria-hidden="true"><canvas></canvas></div>
 <div class="grain" aria-hidden="true"></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -99,6 +116,6 @@
     {% block content %}{% endblock %}
   </main>
 </div>
-<script src="/static/cofoundr.js?v=14" defer></script>
+<script src="/static/cofoundr.js?v=15" defer></script>
 </body>
 </html>
