@@ -106,3 +106,11 @@ def test_dashboard_add_tick_and_escape(db):
     assert "Done" in web.post(f"/todos/{t['ref']}/done", data={"back": "/"}, follow_redirects=False).headers["location"].replace("%20", " ")
     assert "/todos/1/done" not in web.get("/").text and "Nothing on your list" in web.get("/").text
     assert "add%20to" not in web.post("/todos/add", data={"text": "  "}, follow_redirects=False).headers["location"].lower() or True
+
+
+def test_todos_show_once_in_the_to_do_popover_on_every_page(db, gemini_down):
+    from bridge.main import app
+    todos.add("fix the van's awning", via="whatsapp", due="2026-10-31")
+    prioritise.run()  # the ranking also lists it as an owner_todo task: shown once, not twice
+    page = TestClient(app).get("/approvals").text
+    assert page.count("T1 fix the van&#39;s awning") == 1 and "reply “done T1”" in page and 'href="/#todos"' in page

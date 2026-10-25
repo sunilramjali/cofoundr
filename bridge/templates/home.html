@@ -81,7 +81,7 @@
   <section class="card card--list glass" style="view-transition-name: m-activity; --i:2">
     <span class="gem gem--sage"><svg class="ico"><use href="#i-spark"/></svg></span>
     <div><h3>While you were away, I…</h3>
-      <ul class="proof">{% for w in away %}<li><a href="{{ w.href }}"><svg class="ico"><use href="#i-{{ w.icon }}"/></svg><span>{{ w.text }}</span></a></li>{% endfor %}</ul></div>
+      <ul class="proof">{% for w in away %}<li><a href="{{ w.href }}"><svg class="ico"><use href="#i-{{ w.icon }}"/></svg><span>{{ w.text|highlight }}</span></a></li>{% endfor %}</ul></div>
     <a class="btn btn--text" href="/activity">Everything I did <svg class="ico ico--go"><use href="#i-arrow"/></svg></a>
   </section>
   {% endif %}
@@ -90,7 +90,7 @@
   <section class="card card--list glass" style="--i:3">
     <span class="gem gem--lilac"><svg class="ico"><use href="#i-bulb"/></svg></span>
     <div><h3>Do first</h3>
-      <ol class="proof proof--ranked">{% for t in tasks %}<li><span><b>{{ t.title }}</b><br><span class="muted">{{ t.reason }}</span></span></li>{% endfor %}</ol>
+      <ol class="proof proof--ranked">{% for t in tasks %}<li><span><b>{{ t.title }}</b><br><span class="muted">{{ t.reason|highlight }}</span></span></li>{% endfor %}</ol>
       <p class="muted" style="margin:6px 0 0">Ranked by {{ "Gemini" if tasks[0].ranked_by == "gemini" else "my rules" }} from your records{% if tasks[0].ranked_at %} · {{ tasks[0].ranked_at|ago }}{% endif %}</p></div>
     <a class="btn btn--text" href="/approvals">Approvals <svg class="ico ico--go"><use href="#i-arrow"/></svg></a>
   </section>
@@ -99,11 +99,11 @@
   <section class="card card--list glass" id="todos" style="--i:3">
     <span class="gem gem--sage"><svg class="ico"><use href="#i-check"/></svg></span>
     <div><h3>Your to-dos</h3>
-      {% if todos %}<ul class="todo">{% for t in todos %}<li><form method="post" action="/todos/{{ t.ref }}/done">
-        <button class="todo__tick" aria-label="Done: {{ t.text }}" data-busy="…"><svg class="ico"><use href="#i-check"/></svg></button></form>
+      {% if todos %}<ul class="mine">{% for t in todos %}<li><form method="post" action="/todos/{{ t.ref }}/done">
+        <button class="mine__tick" aria-label="Done: {{ t.text }}" data-busy="…"><svg class="ico"><use href="#i-check"/></svg></button></form>
         <span><b>T{{ t.ref }}</b> {{ t.text }}{% if t.due %} <span class="chip">by {{ t.due }}</span>{% endif %}</span></li>{% endfor %}</ul>
       {% else %}<p class="muted" style="margin:4px 0 0">Nothing on your list. Text me “todo: order cups” on WhatsApp, or add it here.</p>{% endif %}
-      <form class="todo__add" method="post" action="/todos/add"><label class="sr" for="todo-new">New to-do</label>
+      <form class="mine__add" method="post" action="/todos/add"><label class="sr" for="todo-new">New to-do</label>
         <input id="todo-new" name="text" maxlength="200" autocomplete="off" placeholder="Add a to-do… e.g. buy 6L oat milk by Saturday">
         <button class="btn btn--soft" data-busy="Adding…">Add</button></form></div>
   </section>
@@ -112,7 +112,7 @@
   <section class="card card--list glass" style="view-transition-name: m-news; --i:4">
     <span class="gem"><svg class="ico"><use href="#i-spark"/></svg></span>
     <div><h3>Around your pitches</h3>
-      <ul class="proof">{% for n in news %}<li><a href="/news"><svg class="ico"><use href="#i-spark"/></svg><span><b>{{ n.headline }}</b>{% if n.get("starts_at") %} · {{ n.get("starts_at")|day }}{% endif %}{% if n.get("distance_km") is not none %} · {{ "%.1f"|format(n.get("distance_km")) }} km{% endif %}<br><span class="muted">{{ n.get("summary") }}</span></span></a></li>{% endfor %}</ul>
+      <ul class="proof">{% for n in news %}<li><a href="/news"><svg class="ico"><use href="#i-spark"/></svg><span><b>{{ n.headline }}</b>{% if n.get("starts_at") %} · {{ n.get("starts_at")|day }}{% endif %}{% if n.get("distance_km") is not none %} · {{ "%.1f"|format(n.get("distance_km")) }} km{% endif %}<br><span class="muted">{{ n.get("summary")|highlight }}</span></span></a></li>{% endfor %}</ul>
       <p class="muted" style="margin:6px 0 0">For you to know about · I don't contact anyone</p></div>
     <a class="btn btn--text" href="/news">All news <svg class="ico ico--go"><use href="#i-arrow"/></svg></a>
   </section>
