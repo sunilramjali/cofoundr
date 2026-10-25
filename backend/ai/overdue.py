@@ -21,7 +21,7 @@ from typing import Dict, List
 from google.genai import types
 from pydantic import BaseModel
 
-from backend.ai.gemini import MODEL, get_client, with_retry
+from backend.ai.gemini import MEDIUM, MODEL, get_client, thinking, with_retry
 from backend.db import schema
 
 BUSINESS_ID = "gaia-coffee"
@@ -91,7 +91,7 @@ def draft_reminders(invoices: List[dict], today: datetime) -> Dict[str, tuple]:
     try:
         response = with_retry(lambda: get_client().models.generate_content(
             model=MODEL, contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=Drafts),
+            config=types.GenerateContentConfig(thinking_config=thinking(MEDIUM), response_mime_type="application/json", response_schema=Drafts),
         ))
         got = {d.invoice_number: (d, "gemini") for d in Drafts.model_validate_json(response.text).drafts}
     except Exception as e:  # quota, bad JSON, network: the flow must still work on stage

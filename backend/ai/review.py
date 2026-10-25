@@ -27,7 +27,7 @@ from google.genai import types
 from pydantic import BaseModel
 
 from backend.ai import forecast
-from backend.ai.gemini import MODEL, get_client, with_retry
+from backend.ai.gemini import HIGH, MODEL, get_client, thinking, with_retry
 from backend.db import schema
 
 BUSINESS_ID = "gaia-coffee"
@@ -147,7 +147,7 @@ def current_lessons(db) -> List[str]:
 def ask_gemini(prompt: str) -> List[Lesson]:
     response = with_retry(lambda: get_client().models.generate_content(
         model=MODEL, contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=Lessons),
+        config=types.GenerateContentConfig(thinking_config=thinking(HIGH), response_mime_type="application/json", response_schema=Lessons),
     ))
     if not response.text:
         raise ValueError("Gemini returned an empty response.")
