@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 03:45 — Morning brief on WhatsApp at 08:00 + "Send me today's brief" button
+- **Did:** `brief.morning_brief()`: friendly WhatsApp brief from MongoDB only (no Gemini, always arrives): today's forecast + why (or "a day off", next trading day), weather + 💨 wind warning, top 3 non-approval priorities, what's waiting for a yes. `whatsapp.start_brief_schedule(MORNING_BRIEF_AT)`: once a day after 08:00 London (logged `morning_brief_sent`). `POST /brief/send` + Home button (30 s gap). Sandbox: schedule off. 563 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **Next:** sidebar tidy (Jade deciding), demo script + README
+- **Blockers / notes for partner:** Sunil, edit in your `fly.toml`: `MORNING_BRIEF_AT = "08:00"`. WhatsApp only delivers if the owner messaged the sandbox in the last 24 h: send "hi" before 08:00
+
 ## Sun 25 Oct, 03:20 — Home: "Needs you" first, bubble removed; Fly "freezes" explained
 - **Did:** home puts the urgent cards (bill to pay, reminders ready, invoices to check) under "Needs you" above the forecast/KPI card; the 3D orb removed. Checked in the browser. Fly health-check failures were deploy restarts (each 2 s after "reboot: Restarting system", one per release), not freezes: no fix needed, just no releases or secret changes during the demo
 - **Status:** done, PR into `stage` + release PR

@@ -50,8 +50,10 @@ async def lifespan(_app):
     stop = gmail.start_polling(every) if every > 0 else None
     push = int(os.environ.get("WHATSAPP_PUSH_SECONDS") or 0)  # same idea: on Fly only, never from a laptop
     stop_push = whatsapp_out.start_polling(push) if push > 0 and whatsapp_out.configured() else None
+    brief_at = os.environ.get("MORNING_BRIEF_AT", "")  # "08:00" on Fly: the owner's morning on WhatsApp, unprompted
+    stop_brief = whatsapp_out.start_brief_schedule(brief_at) if brief_at and push > 0 and whatsapp_out.configured() else None
     yield
-    for s in (stop, stop_push):
+    for s in (stop, stop_push, stop_brief):
         if s:
             s.set()
 
@@ -310,6 +312,18 @@ def ask(text: str = Form(""), back: str = Form("/")):
     reply = _chat_reply(text)
     activity.log(CHAT_KIND, f"Chat: “{text[:60]}”", actor="owner", question=text[:500], answer=reply[:3000])
     return RedirectResponse(f"{back if back in PAGES else '/'}?chat=1#chat", status_code=303)
+
+
+@app.post("/brief/send")
+def send_brief_now(back: str = Form("/")):
+    """The dashboard's "Send me today's brief" button: the same message the 08:00 schedule sends."""
+    if not whatsapp_out.configured():
+        return _back("WhatsApp isn't connected, so I can't send the brief.", back)
+    last = get_db()[schema.AGENT_LOG].find_one({"kind": whatsapp_out.BRIEF_KIND}, sort=[("at", -1)])
+    if last and (datetime.now(timezone.utc) - last["at"].replace(tzinfo=timezone.utc)).total_seconds() < whatsapp_out.BRIEF_GAP:
+        return _back("I've just sent it, give it a moment to arrive.", back)
+    sent = whatsapp_out.send_brief("asked from the dashboard")
+    return _back("Sent today's brief to your WhatsApp ☕" if sent.ok else f"Couldn't send the brief: {sent.error}", back)
 
 
 @app.post("/check-inbox")
