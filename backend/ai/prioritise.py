@@ -69,11 +69,12 @@ def candidates(db, now: datetime) -> List[dict]:
     day = db[schema.FORECASTS].find_one({"business_id": BUSINESS_ID, "trading": True, "date": {"$gte": today}}, sort=[("date", 1)])
     if day:
         when = "today" if day["date"] == today else day["weekday"]
+        on = datetime.strptime(day["date"], "%Y-%m-%d").strftime("%a %-d %b")  # "Sat 24 Oct": the owner reads this
         top = ", ".join(f"{p['name']} ×{p['expected_qty']:g}" for p in day["products"][:3])
         revenue = day.get("final_revenue", day["expected_revenue"])
         tasks.append({
             "_id": f"{BUSINESS_ID}:prep_day:{day['date']}", "kind": "prep_day",
-            "title": f"Prep for {when} ({day['date']}): ~£{revenue:,.0f} expected", "target_id": day["_id"],
+            "title": f"Prep for {when} ({on}): ~£{revenue:,.0f} expected", "target_id": day["_id"],
             "approval_ref": None, "amount": revenue,
             "facts": f"next trading day {day['weekday']} {day['date']}, £{day['low_revenue']:,.0f}–£{day['high_revenue']:,.0f} "
                      f"({day['basis']}); top sellers {top}",

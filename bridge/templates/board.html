@@ -7,9 +7,11 @@
 {% block stats %}
 <div class="stats">
   {% if memo %}
-  {% if memo.read.tokens %}<div class="stat"><b class="num">{{ "{:,}".format(memo.read.tokens) }}</b><span>tokens read in one go</span></div>{% endif %}
+  {% if memo.read.tokens %}<div class="stat"><b class="num">{{ "{:,}".format(memo.read.tokens) }}</b><span>tokens read in one Gemini call</span></div>{% endif %}
   <div class="stat"><b class="num">{{ "{:,}".format(memo.read.sales_lines) }}</b><span>till lines + {{ memo.read.invoices }} invoices</span></div>
+  {%- set ns = namespace(fixed=0) -%}{%- for i in memo.insights %}{% set ns.fixed = ns.fixed + board_fixes(i.first_problems)|length %}{% endfor -%}
   <div class="stat"><b class="num">{{ memo.insights|selectattr("status", "in", ["verified", "corrected"])|list|length }}/{{ memo.insights|length }}</b><span>insights that checked out</span></div>
+  {% if ns.fixed %}<div class="stat"><b class="num">{{ ns.fixed }}</b><span>wrong numbers caught before you saw them</span></div>{% endif %}
   {% endif %}
 </div>
 {% endblock %}
@@ -33,6 +35,8 @@
       </p>
       <h3>{% if i.status in ["failed", "withdrawn"] %}<s>{{ i.title }}</s>{% else %}{{ i.title }}{% endif %}</h3>
       <p>{% if i.status in ["failed", "withdrawn"] %}<s>{{ i.finding }}</s>{% else %}{{ i.finding }}{% endif %}</p>
+      {% set fx = board_fixes(i.first_problems) %}
+      {% if fx %}<p class="fixes"><span class="muted">The database check caught:</span>{% for f in fx %} <span class="fix"><s>{{ f.says }}</s> → <b>{{ f.shown }}</b></span>{% endfor %}</p>{% endif %}
       {% if i.status not in ["failed", "withdrawn"] %}<p><b>Next:</b> {{ i.action }}</p>{% endif %}
       <details style="margin-top:8px"><summary class="muted">How I checked this ({{ i.claims|length }} number{{ "s" if i.claims|length != 1 }})</summary>
         <ul style="margin:8px 0 0;padding-left:18px">

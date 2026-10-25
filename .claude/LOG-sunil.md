@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, ~00:30 — Dashboard shows the proof, not the data (in Jade's area, she's on WhatsApp)
+- **Did:** Home: "While you were away, I…" (`view.while_away`: invoices read + flagged, fee overcharges, board tokens + wrong numbers caught, forecast self-grade, each links to its page) + "Do first" (top 3 `tasks` with Gemini's reason); opportunity + low stock folded into "More from me". Board: "The database check caught: ~~10 Fresh Pastries~~ → 8" chips up front (`view.board_fixes`), "tokens read in one Gemini call", "wrong numbers caught" stat. Insights: forecast grades + fee audit (`#record`, `#fees`) moved above the history. Finances: search box → `search.search_invoices` (Atlas hybrid, `by keyword`/`by meaning` chips; plain match when no Atlas). `prioritise.py`: prep task title "Prep for today (Sat 24 Oct)" not ISO. Bill cards, scam warning and Pay-now link kept as they were. `tests/test_dashboard_proof.py` (6) → 393 pass
+- **Status:** done, PR into `stage`
+- **Next:** re-run `python -m backend.ai.prioritise` Sunday morning (tasks still say Sat 24); rehearse on the new UI; UI freeze ~09:00
+- **Blockers / notes for partner:** Jade, **edits in your area**: `bridge/main.py` (`_context`: `away`, `tasks`, `board_fixes`; `_page` takes `q` → `found` on /invoices), `bridge/view.py` (`board_fixes`, `while_away`), templates `home.html`, `board.html`, `sales.html`, `invoices.html`, `static/cofoundr.css` (appended). Your tests untouched and passing
+
 ## Sun 25 Oct, ~04:45 — Demo prep run on the demo DB + board £ bug fixed
 - **Did (demo DB, Jade told on PR #48):** backtest 21 days → 11 graded, adjustments hurt (5.4% → 7.9% error, helped 4/11) → 2 lessons ("cut less for rain") → cap ±10%. Week forecast: rain now −5% (was −12…−16%). Board memo: 3 verified, 1 corrected (4 wrong numbers caught), 169k tokens. On Fly: synthetic EVO CSV 1,030 payments; fee summary → 888 checked, 4 overcharged (£0.60), 0 false alarms. Prioritise: 7 tasks incl. the fee refund
 - **Bug found live + fixed:** board recheck sent the memo back via `json.dumps` (ASCII escapes) → Gemini merged `\u00a3` with digits ("£276.00" → "ɶ.00"), corrected insights garbled though numbers checked. Fix: `ensure_ascii=False` (`board.py`), regression test in `test_board.py` (387 pass). Stored memo re-run clean

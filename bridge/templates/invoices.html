@@ -12,6 +12,31 @@
 </div>
 {% endblock %}
 {% block body %}
+<form class="search" method="get" action="/invoices" role="search">
+  <svg class="ico"><use href="#i-doc"/></svg>
+  <label class="sr" for="inv-q">Search invoices</label>
+  <input id="inv-q" name="q" value="{{ q }}" autocomplete="off" placeholder="Search by meaning or words… try “milk supplier” or “wedding”">
+  <button class="btn btn--soft" type="submit">Search</button>
+</form>
+{% if found is not none %}
+<section class="block search__results">
+  <h2>{{ found.hits|length }} match{{ "es" if found.hits|length != 1 }} for “{{ q }}” <small>{{ "MongoDB Atlas hybrid search: keyword + meaning, merged with $rankFusion" if found.mode == "hybrid" else "plain word match (Atlas Search unavailable here)" }}</small></h2>
+  <ul class="rows">
+    {% for h in found.hits %}
+    <li class="row{% if h.direction == 'receivable' %} row--in{% endif %}">
+      <span class="avatar" aria-hidden="true">{{ (h.counterparty or "?")[:1] }}</span>
+      <div style="min-width:0"><div class="row__who">{{ h.counterparty }}</div>
+        <div class="row__sub"><span>{{ h.invoice_number }}</span>{% for m in h.matched_by or [] %}<span class="chip chip--{{ 'sky' if m == 'meaning' else 'sage' }}">{{ "by meaning" if m == "meaning" else "by keyword" }}</span>{% endfor %}</div></div>
+      <span class="row__due{% if h.status == 'overdue' %} row__due--late{% endif %}">{{ due_label(h, now.date()) }}</span>
+      <span class="row__amt num">{{ h.amount|money }}<small>{{ "owed to you" if h.direction == "receivable" else "you owe" }}</small></span>
+    </li>
+    {% else %}
+    <li class="empty"><svg class="ico"><use href="#i-doc"/></svg><div><b>Nothing matched.</b>Try a supplier, a customer or an item, like “oat milk”.</div></div>
+    {% endfor %}
+  </ul>
+  <p><a class="btn btn--text" href="/invoices">Clear search</a></p>
+</section>
+{% endif %}
 {%- set overdue_n = invoices|selectattr("status", "equalto", "overdue")|list|length -%}
 <div class="books">
   <div class="filters" role="radiogroup" aria-label="Filter invoices">
