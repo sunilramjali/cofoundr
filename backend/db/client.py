@@ -86,6 +86,7 @@ def ensure_indexes(db: Database) -> None:
     db[schema.EVENTS].create_index([("business_id", ASCENDING), ("date", ASCENDING), ("status", ASCENDING)])
     db[schema.EVENTS].create_index([("business_id", ASCENDING), ("pitch_id", ASCENDING), ("date", ASCENDING)])
     db[schema.TRANSPORT].create_index([("business_id", ASCENDING), ("state", ASCENDING), ("dates", ASCENDING)])
+    db[schema.TODOS].create_index([("business_id", ASCENDING), ("status", ASCENDING), ("ref", ASCENDING)])
     # Owner-decision memory (backend/memory.py): one per approval, read by customer/supplier, newest first
     db[schema.MEMORIES].create_index([("approval_id", ASCENDING)], unique=True, name="one_memory_per_approval")
     db[schema.MEMORIES].create_index([("business_id", ASCENDING), ("counterparty_key", ASCENDING), ("at", ASCENDING)])

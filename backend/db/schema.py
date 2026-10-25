@@ -31,6 +31,7 @@ FEE_AUDITS = "fee_audits"  # card provider's fee summary read by Gemini + every 
 BOARD_MEMOS = "board_memos"  # Gemini's checked board memo, one per business per day (backend/ai/board.py)
 PAYMENTS = "payments"  # card payments from a card provider with no item detail (EVO CSV, SumUp), card data stripped
 NEWS = "news"  # read-only local news for the owner: events, markets, venues, openings near the pitches (backend/news.py)
+TODOS = "todos"  # the owner's own to-do list, added by WhatsApp / chat / Gemini (backend/todos.py); never rebuilt
 MEMORIES = "memories"  # how the owner decided each approval, and why; recalled by Vector Search next time (backend/memory.py)
 
 
@@ -147,6 +148,20 @@ class Approval(TypedDict):
     owner_note: NotRequired[str]  # the owner's reason for the decision, in their words (≤ 300 chars), remembered
     # The closest past decisions, recalled when this was drafted (backend/memory.py): shown with the draft, never decide
     memories: NotRequired[List["RecalledMemory"]]
+    synthetic: bool
+
+
+class Todo(TypedDict):
+    """One thing the owner asked CoFoundr to put on their list ("todo: order oat milk")."""
+    business_id: str
+    ref: int  # "T3": what the owner types to tick it off ("done T3")
+    text: str  # the owner's words, cleaned, ≤ 200 chars
+    key: str  # lower-case words of `text`: an open to-do with the same words isn't added twice
+    due: Optional[str]  # "YYYY-MM-DD" if the owner gave a day
+    status: Literal["open", "done"]
+    via: str  # "whatsapp" | "dashboard" | "chat" | "gemini" | "cli"
+    created_at: datetime
+    done_at: Optional[datetime]
     synthetic: bool
 
 
@@ -447,7 +462,8 @@ class Task(TypedDict):
     business_id: str
     # price_rise = a supplier charged more than last time; price_match = another supplier is cheaper, ask to match
     # fee_overcharge = the card provider charged more than its own fee summary allows (backend/ai/fees.py)
-    kind: Literal["approval", "review_invoice", "prep_day", "price_rise", "price_match", "fee_overcharge"]
+    # owner_todo = something the owner put on their own list (backend/todos.py)
+    kind: Literal["approval", "review_invoice", "prep_day", "price_rise", "price_match", "fee_overcharge", "owner_todo"]
     title: str  # one line, e.g. "Approve #3: chase Hackney Hub, £450.00, 12 days overdue"
     facts: str  # what the ranking was based on
     target_id: Optional[str]  # str(_id) of the approval / invoice / forecast it's about

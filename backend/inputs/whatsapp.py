@@ -16,9 +16,9 @@ import urllib.error
 import urllib.request
 from typing import Iterable, List, Optional, Tuple
 
-from backend import approvals
+from backend import approvals, todos
 from backend.db import activity
-from backend.inputs.replies import parse_rejection, parse_reply
+from backend.inputs.replies import parse_done, parse_rejection, parse_reply, parse_todo
 from backend.outputs import assistant, whatsapp
 from backend.pipeline import MAX_BYTES, ingest_invoice
 
@@ -88,6 +88,22 @@ def _decide(decision: str, ref: int, note: Optional[str] = None) -> str:
             + (". Got it, I'll remember why next time." if result.get("owner_note") else ""))
 
 
+def todo_reply(text: str, via: str) -> Optional[str]:
+    """The reply to an exact to-do command, or None when the message isn't one. Shared with the dashboard chat bar."""
+    words, ref = parse_todo(text), parse_done(text)
+    if words is None and ref is None:
+        return None
+    try:
+        if ref is not None:
+            return f"✅ Done: {todos.line(todos.complete(via, ref=ref))}. Nice one."
+        t = todos.add(words, via=via)
+    except todos.TodoError as e:
+        return str(e)
+    if t.get("duplicate"):
+        return f"That's already on your list: {todos.line(t)}."
+    return f"📝 Added to your to-do list: {todos.line(t)}. Reply “done T{t['ref']}” when it's done."
+
+
 def handle(params: dict) -> Optional[str]:
     """One incoming WhatsApp message → the reply to send back (None = say nothing)."""
     sender = whatsapp.number(params.get("From"))
@@ -107,6 +123,9 @@ def handle(params: dict) -> Optional[str]:
     rejection = parse_rejection(text)  # "reject 2: they're regulars": a no with the owner's reason
     if rejection:
         return _decide("reject", rejection[0], note=rejection[1])
+    todo = todo_reply(text, via="whatsapp")  # "todo: order oat milk" / "done T3": exact, no Gemini needed
+    if todo:
+        return todo
     if assistant.HARD.search(text):  # Gemini thinks harder (~20-40 s): say so instead of going quiet
         whatsapp.send("Good question, give me a moment to think it through ☕")
     return assistant.answer(text).text
