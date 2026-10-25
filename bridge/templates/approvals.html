@@ -42,6 +42,12 @@
         It came in by {{ "email" ~ (" from " ~ c.from_email if c.from_email else "") if c.source == "email" else "upload" }}. Anyone can send an invoice, so check it's genuine before you pay.</span></p>
       {% elif c.source == "email" %}<p class="ask__why"><span class="chip chip--sky"><svg class="ico"><use href="#i-mail"/></svg>Read from email</span></p>{% endif %}
       {% if c.needs_review %}<p class="warn"><svg class="ico"><use href="#i-alert"/></svg><span>The numbers on this invoice didn't fully check out. Look at it before paying.</span></p>{% endif %}
+      {% if a.memories %}
+      <div class="recall">
+        <p class="recall__head"><svg class="ico"><use href="#i-bulb"/></svg>What I remember <small>your past decisions, recalled with MongoDB Atlas Vector Search</small></p>
+        <ul>{% for m in a.memories %}<li><span class="chip{{ ' chip--sage' if m.same_counterparty else '' }}">{{ "This " ~ ("customer" if reminder else "supplier") if m.same_counterparty else "Similar case" }}</span> {{ m.line }}</li>{% endfor %}</ul>
+      </div>
+      {% endif %}
       <details class="draft">
         <summary><svg class="ico"><use href="#i-chev"/></svg>{{ "Read and edit the email" if reminder else "Read and edit the payment note" }}</summary>
         <div class="draft__meta">
@@ -51,6 +57,8 @@
         <label class="sr" for="draft-{{ a._id }}">Draft for #{{ a.ref }}</label>
         <textarea id="draft-{{ a._id }}" name="draft">{{ a.draft }}</textarea>
       </details>
+      <label class="recall__note"><span>Why? <small>optional: I'll remember it next time</small></span>
+        <input name="note" maxlength="300" autocomplete="off" placeholder="e.g. they always pay, just late: keep it gentle"></label>
       <div class="ask__actions">
         <button class="btn btn--approve" name="decision" value="approve" data-busy="{{ 'Sending…' if reminder else 'Approving…' }}">
           <svg class="ico"><use href="#i-check"/></svg>{{ "Approve & send" if reminder else "Approve payment" }}</button>
