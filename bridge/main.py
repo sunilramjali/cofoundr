@@ -13,6 +13,7 @@ import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote, urlsplit
@@ -172,9 +173,10 @@ def _forecast_record(db) -> dict:
 
 
 def _page(name: str):
-    def render(request: Request, msg: Optional[str] = None, show: Optional[str] = None, q: Optional[str] = None):
+    def render(request: Request, msg: Optional[str] = None, show: Optional[str] = None, q: Optional[str] = None,
+               chat: Optional[str] = None):
         ctx = _context(request, msg)
-        ctx.update(path=request.url.path, show=show, q=(q or "").strip(), found=None)
+        ctx.update(path=request.url.path, show=show, q=(q or "").strip(), found=None, chat=chat_log() if chat else None)
         if name == "invoices":
             ctx["facets"] = search.invoice_facets(get_db())  # Atlas $searchMeta: invoices per supplier/customer
             if ctx["q"]:  # Atlas hybrid search (keyword + meaning, matched words highlighted); falls back to a plain match
@@ -265,25 +267,45 @@ def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Op
     return _back(f"#{result['ref']} {result['status']}: {result['effect']}.", back)
 
 
-@app.post("/ask")
-def ask(text: str = Form(""), back: str = Form("/")):
-    """The chat bar. Decisions ("approve 1", "reject 2") follow exactly the WhatsApp rules and never reach Gemini;
-    anything else is a question for the Gemini assistant, which can read the data but not change it."""
-    text = text.strip()
-    if not text:
-        return _back("Type a question first, e.g. “what needs doing?”.", back)
+CHAT_KIND = "chat_message"  # one dashboard chat exchange (question + answer) in agent_log
+CHAT_WINDOW = timedelta(hours=2)  # the chat panel shows this conversation, not last week's
+CHAT_SHOWN = 12  # exchanges
+
+
+def _chat_reply(text: str) -> str:
+    """Decisions ("approve 1", "reject 2") follow exactly the WhatsApp rules and never reach Gemini; anything else is a
+    question for the Gemini assistant, which can read the data but not change it."""
     parsed = parse_reply(text)
     if not parsed:
-        return _back(assistant.answer(text).text, back)
+        return assistant.answer(text).text
     decision, ref = parsed
     approval = approvals.find(ref=ref)
     if not approval:
-        return _back(f"There's no #{ref} waiting for you.", back)
+        return f"There's no #{ref} waiting for you."
     try:
         result = approvals.decide(approval, decision, via="dashboard")
     except approvals.DecisionError as e:
-        return _back(str(e), back)
-    return _back(f"#{result['ref']} {result['status']}: {result['effect']}.", back)
+        return str(e)
+    return f"#{result['ref']} {result['status']}: {result['effect']}."
+
+
+def chat_log() -> list:
+    """This conversation in the dashboard chat, oldest first."""
+    since = datetime.now(timezone.utc) - CHAT_WINDOW
+    found = get_db()[schema.AGENT_LOG].find({"business_id": BUSINESS_ID, "kind": CHAT_KIND, "at": {"$gte": since}})
+    return [{"q": e["detail"].get("question", ""), "a": e["detail"].get("answer", ""), "at": e["at"]}
+            for e in reversed(list(found.sort("at", -1).limit(CHAT_SHOWN)))]
+
+
+@app.post("/ask")
+def ask(text: str = Form(""), back: str = Form("/")):
+    """The chat bar: the answer opens in the chat panel, which stays until the owner closes it."""
+    text = text.strip()
+    if not text:
+        return _back("Type a question first, e.g. “what needs doing?”.", back)
+    reply = _chat_reply(text)
+    activity.log(CHAT_KIND, f"Chat: “{text[:60]}”", actor="owner", question=text[:500], answer=reply[:3000])
+    return RedirectResponse(f"{back if back in PAGES else '/'}?chat=1#chat", status_code=303)
 
 
 @app.post("/check-inbox")
