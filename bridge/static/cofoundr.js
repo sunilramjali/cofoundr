@@ -206,6 +206,11 @@
   }));
 
   /* Toast: auto-dismiss, and a refresh shouldn't replay it */
+  const log = $(".chat__log");  // the chat panel opens on the newest message
+  if (log) {
+    log.scrollTop = log.scrollHeight;
+    const url = new URL(location.href); url.searchParams.delete("chat"); url.hash = ""; history.replaceState(null, "", url);
+  }
   const toast = $(".toast");
   if (toast) {
     const close = () => { toast.classList.add("is-leaving"); setTimeout(() => toast.remove(), 350); };
