@@ -20,7 +20,7 @@ from google.genai import types
 
 from backend import approvals, conditions
 from backend.ai import overdue
-from backend.ai.gemini import MODEL, get_client, with_retry
+from backend.ai.gemini import MEDIUM, MODEL, get_client, thinking, with_retry
 from backend.db import activity, schema, search
 from backend.db.client import get_db
 
@@ -356,7 +356,7 @@ def _ask(contents: list, fns: list) -> str:
     response = with_retry(lambda: get_client().models.generate_content(
         model=MODEL, contents=contents,
         config=types.GenerateContentConfig(
-            system_instruction=SYSTEM, tools=fns,
+            system_instruction=SYSTEM, tools=fns, thinking_config=thinking(MEDIUM),
             automatic_function_calling=types.AutomaticFunctionCallingConfig(maximum_remote_calls=MAX_TOOL_CALLS))))
     return (response.text or "").strip()
 

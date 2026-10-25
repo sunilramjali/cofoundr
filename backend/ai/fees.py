@@ -26,7 +26,7 @@ from typing import List, Literal, Optional, Tuple
 from google.genai import types
 from pydantic import BaseModel, Field
 
-from backend.ai.gemini import MODEL, get_client, with_retry
+from backend.ai.gemini import MEDIUM, MODEL, get_client, thinking, with_retry
 from backend.db import schema
 
 BUSINESS_ID = "gaia-coffee"
@@ -117,7 +117,7 @@ def verify(schedule: FeeSchedule) -> List[str]:
 def ask_gemini(data: bytes, mime: str, prompt: str) -> FeeSchedule:
     response = with_retry(lambda: get_client().models.generate_content(
         model=MODEL, contents=[types.Part.from_bytes(data=data, mime_type=mime), prompt],
-        config=types.GenerateContentConfig(response_mime_type="application/json", response_schema=FeeSchedule),
+        config=types.GenerateContentConfig(thinking_config=thinking(MEDIUM), response_mime_type="application/json", response_schema=FeeSchedule),
     ))
     if not response.text:
         raise ValueError("Gemini returned an empty response.")
