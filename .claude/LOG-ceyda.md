@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 11:15 — CoFoundr spelling, logo colours, to-do pill row, Board higher in the sidebar
+- **Did:** "CoFoundr" with a capital F in the sidebar logo + loading screen (#105); logo "Co" mustard, "Foundr" charcoal, dot navy; to-do pill moved into its own row at the top of `main` (`.topbar`), so minimised it covers nothing, open it drops down; sidebar: Board second, below Home; Board title starts "Our latest board meeting:". 633 tests pass
+- **Status:** done, PR into `stage`; in release #104
+- **Next:** README judging + user guide, video, submit by 12:00
+- **Blockers / notes for partner:** edit in your `board.html` heading block (lead-in only)
+
 ## Sun 25 Oct, 11:00 — To-do list on every page, key facts highlighted, chat panel above the page switch
 - **Did:** `view.todo_list()` + a frosted "To do · N" pill top-right on every page (`<details>`, open/minimised kept in `localStorage`): approvals first (most overdue first, link to the approval), invoices to check, top priorities, stock running out; 6 shown + "+N more". `view.highlight` filter marks money, %, "N days overdue/left", "probably out", dates (escaped first) in Board findings/next steps, While you were away, Do first reasons, news summaries, approval reasons, to-do details. Chat panel moved last in `base.html` + `::view-transition-group(chat) { z-index: 50 }` so it stays above the morphing main panel. Checked in the browser. 630 tests pass
 - **Status:** done, PR into `stage` + new release PR (closed my #101 first so the PR isn't "stacked")
