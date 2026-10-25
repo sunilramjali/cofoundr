@@ -754,8 +754,8 @@ def test_chat_bar_decides_like_whatsapp_and_never_guesses(db, gemini_down, sent)
     assert r.headers["location"].startswith("/?msg=") and "#4 approved" in _flash(r)
     assert db[schema.APPROVALS].find_one({"ref": 4})["decided_via"] == "dashboard"
     for text, expected in [("don't approve 1", "nothing was done"), ("tell me a joke", "nothing was done"), ("", "Type a question"),
-                           ("what's waiting?", "3 waiting for your yes:\n#1 Shoreditch Design Studio · £288.00"),
-                           ("brief", "Reply “approve 1”"), ("approve 99", "no #99"), ("approve 4", "already")]:
+                           ("what's waiting?", "*3 waiting for your yes*\n\n*#1 Shoreditch Design Studio*\nReminder · £288.00"),
+                           ("brief", "Reply *approve 1*"), ("approve 99", "no #99"), ("approve 4", "already")]:
         assert expected in _flash(web.post("/ask", data={"text": text, "back": "/"}, follow_redirects=False)), text
     assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "pending"  # the negated message changed nothing
 
@@ -992,7 +992,7 @@ def test_assistant_tools_return_the_shapes_gemini_is_told_about(db, ask):
 def test_assistant_falls_back_to_plain_data_when_gemini_is_down(db, gemini_down, sent):
     overdue.run()
     r = assistant.answer("what's waiting?")
-    assert r.by == "fallback" and r.text.startswith("4 waiting for your yes:\n#1")
+    assert r.by == "fallback" and r.text.startswith("*4 waiting for your yes*\n\n*#1")
     assert "nothing was done" in assistant.answer("tell me a joke").text
     assert db[schema.AGENT_LOG].find_one({"kind": "assistant_answered", "detail.by": "fallback"})
 
@@ -1112,7 +1112,7 @@ def test_whatsapp_question_goes_to_the_assistant(db, ask, twilio):
 def test_whatsapp_question_with_gemini_down_still_gets_a_plain_answer(db, gemini_down, sent, twilio):
     overdue.run()
     _whatsapp("what's waiting?")
-    assert twilio[-1]["Body"].startswith("4 waiting for your yes")
+    assert twilio[-1]["Body"].startswith("*4 waiting for your yes*")
 
 
 def test_whatsapp_photo_becomes_an_invoice_and_is_not_announced_twice(db, fake_extraction, twilio, monkeypatch):
@@ -1173,3 +1173,9 @@ def test_whatsapp_outside_the_24h_window_says_why(monkeypatch, twilio):
     monkeypatch.setattr(wa_out, "_post", refuse)
     result = wa_out.send("hi")
     assert not result.ok and "trial" in result.error and "last 24 h" in result.error and TWILIO_TOKEN not in result.error
+
+
+def test_dashboard_shows_whatsapp_bold_as_bold_and_still_escapes(db):
+    page = web.get("/", params={"msg": "*4 waiting* <script>x</script> *#1 <b>Evil</b>*"})
+    assert "<strong>4 waiting</strong>" in page.text and "<script>x</script>" not in page.text
+    assert "<strong>#1 &lt;b&gt;Evil&lt;/b&gt;</strong>" in page.text

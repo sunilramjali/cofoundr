@@ -7,6 +7,7 @@ Pages are plain server-rendered HTML (no JS needed).
 Endpoints are sync `def` so blocking PyMongo / Gemini calls run in FastAPI's thread pool.
 """
 import html
+import re
 import os
 import secrets
 import threading
@@ -20,6 +21,7 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException,
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from backend import approvals, payments
 from backend.ai import board, fees, overdue, review
@@ -68,6 +70,7 @@ async def same_site_posts_only(request: Request, call_next):
     return await call_next(request)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+templates.env.filters["bold"] = lambda t: Markup(re.sub(r"\*([^*\n]+)\*", r"<strong>\1</strong>", str(escape(t))))  # WhatsApp *bold*
 templates.env.filters["money"] = lambda v: f"£{v:,.2f}" if v is not None else "–"
 templates.env.filters["day"] = lambda d: d.strftime("%d %b") if d else "–"
 templates.env.filters["stamp"] = lambda d: d.strftime("%d %b %H:%M") if d else "–"

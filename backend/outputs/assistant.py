@@ -41,12 +41,23 @@ you something in the dashboard chat. All data is synthetic demo data.
   If the tools don't have it, say so.
 - Quote money exactly as the tools give it, written with pence and commas (£2,442.40, £176.70). Only give a total
   if a tool returned it. Write dates the British way (Sat 24 Oct), never as 2026-10-24.
-- Reply like a WhatsApp message from a sharp business partner: British English, short, plain text, no markdown.
-  Lead with the answer in one short line. Several items (invoices, approvals, products): one line each, at most 5,
-  like "#1 Shoreditch Design Studio · £288.00 · 21 days overdue" or "Sat 24 Oct · £617.20 · 73 orders", then "+2 more"
-  if there are others. "#N" means approval N (the owner replies "approve N"): never number anything else. No
-  explanations the owner didn't ask for. At most one closing line with the single next step, e.g. "Reply “approve 1”
-  to send the first." Otherwise at most 2 short sentences.
+- Reply like a WhatsApp message from a sharp business partner: British English, short and easy to scan. The only
+  formatting is WhatsApp bold, *like this*; no other markdown, no headings, no bullet symbols.
+  Start with one bold summary line. For several items (approvals, invoices, products, days), at most 5, each one is
+  a bold title line with one detail line under it, and a blank line between items. Then "+2 more" if there are others.
+  Example:
+    *4 approvals waiting* · £1,377.00 in total
+
+    *#1 Shoreditch Design Studio*
+    Reminder · £288.00 · 21 days overdue
+
+    *#3 Cup & Lid Supplies*
+    Payment · £184.00 · 5 days overdue
+
+    Would you like to approve any now? Reply *approve 1* (or another number).
+  "#N" means approval N (the owner replies "approve N"): never put # on anything else, e.g. *Sat 24 Oct* not *#1 Sat*.
+  When approvals are listed, end with that question and the exact reply. No explanations the owner didn't ask for.
+  A simple answer with no list: at most 2 short sentences.
 - For "what if I change a price", "what do I need for Saturday" or "is Sunday worth it", call what_if_price,
   stock_needed or day_conditions and use their numbers. Never do your own sums: if a tool didn't return a figure,
   don't give it. A price what-if assumes customers keep buying the same amount: always say so, with the break-even.
@@ -329,11 +340,14 @@ def fallback(text: str) -> str:
         todo = approvals.pending()
         if not todo:
             return "Nothing is waiting for your yes. I'll tell you the moment something is."
-        lines = [f"#{a['ref']} {a.get('counterparty') or a['title']} · £{a['amount']:,.2f}" for a in todo[:5]]
+        kind = {"invoice_reminder": "Reminder", "supplier_payment": "Payment"}
+        blocks = [f"*{len(todo)} waiting for your yes*"]
+        blocks += [f"*#{a['ref']} {a.get('counterparty') or a['title']}*\n{kind.get(a.get('action_type'), 'Action')} · £{a['amount']:,.2f}"
+                   for a in todo[:5]]
         if len(todo) > 5:
-            lines.append(f"+{len(todo) - 5} more")
-        return "\n".join([f"{len(todo)} waiting for your yes:", *lines,
-                          f"Reply “approve {todo[0]['ref']}” or “reject {todo[0]['ref']}”."])
+            blocks.append(f"+{len(todo) - 5} more")
+        blocks.append(f"Would you like to approve any now? Reply *approve {todo[0]['ref']}* (or another number).")
+        return "\n\n".join(blocks)
     return ("I can't think that through right now (Gemini is unavailable), so nothing was done. "
             "Try “what's waiting?”, or decide with “approve 1” / “reject 1”.")
 
