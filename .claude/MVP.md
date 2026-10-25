@@ -18,7 +18,7 @@ This is the smallest slice that proves the core story: *an agent that does a rea
 ### Must have (done criteria)
 - [x] **Data:** MongoDB Atlas cluster live; `businesses`, `invoices`, `approvals` collections seeded with synthetic GAIA Coffee data (incl. 2–3 overdue invoices), labelled synthetic
 - [ ] **Contract:** `backend/db/schema.py` shapes for `Business`, `Invoice`, `Approval` agreed and used by all code
-- [ ] **Autonomous intake (Gmail):** a dedicated demo Gmail inbox is checked automatically (about every minute, running on Fly.io). Each new email's invoice attachments (PDF/image) are extracted, verified and saved, then the overdue check runs, with no clicks. Each email is processed once (by Message-ID) and every step is logged in `agent_log`. A "Check inbox now" button exists for the live demo. Dashboard upload remains as the fallback.
+- [x] **Autonomous intake (Gmail):** a dedicated demo Gmail inbox is checked automatically (about every minute, running on Fly.io). Each new email's invoice attachments (PDF/image) are extracted, verified and saved, then the overdue check runs, with no clicks. Each email is processed once (by Message-ID) and every step is logged in `agent_log`. A "Check inbox now" button exists for the live demo. Dashboard upload remains as the fallback. ✓ **live**: polled every minute on Fly; email-body invoices read and saved (Sat 16:53), own reminder emails skipped
 - [x] **Extraction:** an invoice photo/PDF (from email or upload) → `gemini-4-argon` returns supplier, amount, due date, line items as JSON
 - [x] **Verification loop:** line items sum to total and due date is valid; otherwise `extraction_confidence` is low and the invoice is flagged for owner review (not guessed)
 - [x] **Overdue + draft:** overdue invoices get a drafted reminder saved as a `pending` approval
@@ -81,7 +81,7 @@ Each morning the owner gets a WhatsApp brief **without asking**: what's coming i
 - [x] **Released:** all of the above live on Fly since release #43 (Sat 24 Oct). Demo-DB runs (backtest, forecast, board, fee upload, prioritise) still to do Sunday morning
 
 **Outputs (Jade)**
-- [ ] **Real reminder emails:** `outputs/email.py` sends approved reminders (Gmail SMTP from the demo inbox); `effect` shows "sent", never sends without approval. ✓ built + tested (Sun 03:00): always to `REMINDER_INBOX` (default the demo inbox), never the customer's address; CoFoundr's own emails skipped by the inbox check; SMTP login verified with a test send. Tick once released
+- [x] **Real reminder emails:** `outputs/email.py` sends approved reminders (Gmail SMTP from the demo inbox); `effect` shows "sent", never sends without approval. ✓ built + tested (Sun 03:00): always to `REMINDER_INBOX` (default the demo inbox), never the customer's address; CoFoundr's own emails skipped by the inbox check; SMTP login verified with a test send. Tick once released ✓ **live** Sun 03:01: #1 approved on the dashboard → reminder emailed to the demo inbox
 - [ ] **Morning brief pushed automatically** at ~08:00 on WhatsApp (Twilio): forecast + top 3 priorities + pending approvals (extends `brief.py`)
 - [ ] **Dashboard:** forecast chart with Gemini's reasons, ranked priorities, invoice search box
 
