@@ -42,6 +42,14 @@ def _flash(r):
     return unquote(r.headers.get("location", "").split("msg=")[-1])
 
 
+def _chat(r):
+    """The chat bar's answer: the redirect opens the chat panel, whose newest bubble is the reply ("" if it didn't)."""
+    from bridge.main import chat_log
+    if not r.headers.get("location", "").endswith("?chat=1#chat"):
+        return _flash(r)  # e.g. an empty message: a short notice, no chat
+    return chat_log()[-1]["a"]
+
+
 # --- WhatsApp reply parsing: only an unambiguous single command can move money
 @pytest.mark.parametrize("text,expected", [
     ("approve 1", ("approve", 1)), ("Approve #2!", ("approve", 2)), ("  yes 3. ", ("approve", 3)), ("OK 4", ("approve", 4)),
@@ -751,12 +759,12 @@ def test_ago(secs, expected):
 def test_chat_bar_decides_like_whatsapp_and_never_guesses(db, gemini_down, sent):
     overdue.run()
     r = web.post("/ask", data={"text": "approve 4", "back": "/"}, follow_redirects=False)
-    assert r.headers["location"].startswith("/?msg=") and "#4 approved" in _flash(r)
+    assert r.headers["location"] == "/?chat=1#chat" and "#4 approved" in _chat(r)
     assert db[schema.APPROVALS].find_one({"ref": 4})["decided_via"] == "dashboard"
     for text, expected in [("don't approve 1", "I haven't done anything"), ("tell me a joke", "I haven't done anything"), ("", "Type a question"),
                            ("what's waiting?", "You've got *3 waiting for your yes*.\n\n*#1 Shoreditch Design Studio*\nReminder · £288.00"),
                            ("brief", "reply *approve 1*"), ("approve 99", "no #99"), ("approve 4", "already")]:
-        assert expected in _flash(web.post("/ask", data={"text": text, "back": "/"}, follow_redirects=False)), text
+        assert expected in _chat(web.post("/ask", data={"text": text, "back": "/"}, follow_redirects=False)), text
     assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "pending"  # the negated message changed nothing
 
 
@@ -813,7 +821,7 @@ def test_cross_site_posts_are_blocked(db, path, data, headers):
 def test_same_site_and_server_to_server_posts_still_work(db, gemini_down, sent, twilio):
     overdue.run()
     same = web.post("/ask", data={"text": "approve 4"}, headers={"Origin": "http://testserver"}, follow_redirects=False)
-    assert same.status_code == 303 and "#4 approved" in _flash(same)
+    assert same.status_code == 303 and "#4 approved" in _chat(same)
     referer = web.post("/run-check", headers={"Referer": "http://testserver/approvals"}, follow_redirects=False)
     assert referer.status_code == 303
     assert _whatsapp("reject 1").status_code == 200  # Twilio's server: no Origin, signed instead
@@ -1002,12 +1010,12 @@ def test_assistant_falls_back_to_plain_data_when_gemini_is_down(db, gemini_down,
 def test_chat_bar_decisions_never_reach_gemini(db, ask):
     ask(lambda tools: pytest.fail("a decision must not go to Gemini"))
     r = web.post("/ask", data={"text": "approve 4", "back": "/"}, follow_redirects=False)
-    assert "#4 approved" in _flash(r)
+    assert "#4 approved" in _chat(r)
 
 
 def test_chat_bar_shows_geminis_answer(db, ask):
     ask(lambda tools: f"#{tools['pending_approvals']()['approvals'][0]['ref']} is the oldest.")
-    assert _flash(web.post("/ask", data={"text": "which is oldest?", "back": "/whatsapp"}, follow_redirects=False)) == "#1 is the oldest."
+    assert _chat(web.post("/ask", data={"text": "which is oldest?", "back": "/whatsapp"}, follow_redirects=False)) == "#1 is the oldest."
 
 
 # ---------------------------------------------------------------- WhatsApp via Twilio (fake Twilio, fake Gemini)
@@ -1240,3 +1248,25 @@ def test_hard_whatsapp_question_says_give_me_a_moment_first(ask, twilio):
     ask(lambda t: "Probably worth it.")
     _whatsapp("should I trade on Sunday?")
     assert [m["Body"] for m in twilio][-2:] == ["Good question, give me a moment to think it through ☕", "Probably worth it."]
+
+
+
+def test_chat_panel_keeps_the_conversation_until_closed(db, ask):
+    ask(lambda tools: "You've got *4 things* waiting.\n\n*#1 <b>Shoreditch</b>*")
+    web.post("/ask", data={"text": "what needs doing?", "back": "/"})
+    web.post("/ask", data={"text": "and <script>x</script>?", "back": "/"})
+    page = web.get("/", params={"chat": "1"}).text
+    assert page.count('class="chat__me"') == 2 and "what needs doing?" in page  # earlier messages stay
+    assert "<strong>4 things</strong>" in page and "<script>x</script>" not in page and "&lt;b&gt;Shoreditch" in page
+    assert 'class="chat__close" href="/"' in page and 'id="chat-msg"' in page  # × closes it; reply from inside it
+    assert 'class="chat glass"' not in web.get("/").text  # closed: no panel
+
+
+def test_chat_panel_shows_only_this_conversation(db, ask, monkeypatch):
+    from bridge import main
+    ask(lambda tools: "Old answer.")
+    web.post("/ask", data={"text": "old question", "back": "/"})
+    db[schema.AGENT_LOG].update_many({"kind": main.CHAT_KIND}, {"$set": {"at": datetime.now(timezone.utc) - main.CHAT_WINDOW * 2}})
+    ask(lambda tools: "New answer.")
+    web.post("/ask", data={"text": "new question", "back": "/"})
+    assert [m["q"] for m in main.chat_log()] == ["new question"]

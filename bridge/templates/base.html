@@ -52,6 +52,25 @@
   <symbol id="i-yes" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="m8 12.5 3 3 5-6"/></symbol>
 </svg>
 
+{% if chat %}
+<section class="chat glass" id="chat" aria-label="Chat with CoFoundr">
+  <header class="chat__head"><span class="chatbar__who" aria-hidden="true">C</span><div><b>CoFoundr</b><small>powered by Gemini · reads your data, never moves money</small></div>
+    <a class="chat__close" href="{{ path }}" aria-label="Close the chat">×</a></header>
+  <div class="chat__log" role="log" aria-live="polite">
+    {% for m in chat %}
+    <p class="chat__me">{{ m.q }}</p>
+    <p class="chat__them">{{ m.a | bold }}</p>
+    {% endfor %}
+  </div>
+  <form class="chat__form" method="post" action="/ask">
+    <input type="hidden" name="back" value="{{ path }}">
+    <label class="sr" for="chat-msg">Reply to CoFoundr</label>
+    <input id="chat-msg" name="text" autocomplete="off" placeholder="Reply…" autofocus>
+    <button class="btn send" aria-label="Send" data-busy="…"><svg class="ico"><use href="#i-up"/></svg></button>
+  </form>
+</section>
+{% endif %}
+
 {% if msg %}
 <div class="toast" role="status"><svg class="ico"><use href="#i-check"/></svg><p>{{ msg | bold }}</p><button type="button" aria-label="Dismiss">×</button></div>
 {% endif %}

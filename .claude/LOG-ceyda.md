@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 03:15 — Dashboard chat panel (answers stay until closed)
+- **Did:** `/ask` answers now open a chat panel (`base.html`, `?chat=1`) instead of a toast that vanished after 6.5 s: question/answer bubbles (WhatsApp *bold* shown as bold), the last 2 h of the conversation, a reply box, × to close. Each exchange logged as `chat_message` in `agent_log`. Checked in the browser on the sandbox. 482 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **Next:** live check
+- **Blockers / notes for partner:** new `agent_log` kind `chat_message` (owner's dashboard chat); no schema change
+
 ## Sun 25 Oct, 02:30 — Assistant: friendlier voice, heads-up tips, deeper thinking on hard questions
 - **Did:** `assistant.py`: coffee-chat tone (warm British English, one friendly opener, same clean layout); `heads_up()` (code finds stock running low, wind in the next 3 days, invoices to check, top priority; skips anything said in the last 2 h) sent with the question, Gemini may end with one "💡 Heads-up"; questions needing judgement (what if / should / why / plan…) get Argon HIGH thinking, lookups MEDIUM; WhatsApp sends "give me a moment ☕" first for those. Previewed with real Gemini: lookups ~8 s, HIGH 38–62 s. 440 tests pass
 - **Status:** done, PR into `stage` + release PR
