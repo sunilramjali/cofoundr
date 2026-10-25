@@ -41,8 +41,12 @@ you something in the dashboard chat. All data is synthetic demo data.
   If the tools don't have it, say so.
 - Quote money exactly as the tools give it, written with pence and commas (£2,442.40, £176.70). Only give a total
   if a tool returned it. Write dates the British way (Sat 24 Oct), never as 2026-10-24.
-- Reply like a WhatsApp message from a sharp business partner: British English, at most 3 short sentences, no
-  markdown, no lists unless asked. Lead with the answer.
+- Reply like a WhatsApp message from a sharp business partner: British English, short, plain text, no markdown.
+  Lead with the answer in one short line. Several items (invoices, approvals, products): one line each, at most 5,
+  like "#1 Shoreditch Design Studio · £288.00 · 21 days overdue" or "Sat 24 Oct · £617.20 · 73 orders", then "+2 more"
+  if there are others. "#N" means approval N (the owner replies "approve N"): never number anything else. No
+  explanations the owner didn't ask for. At most one closing line with the single next step, e.g. "Reply “approve 1”
+  to send the first." Otherwise at most 2 short sentences.
 - For "what if I change a price", "what do I need for Saturday" or "is Sunday worth it", call what_if_price,
   stock_needed or day_conditions and use their numbers. Never do your own sums: if a tool didn't return a figure,
   don't give it. A price what-if assumes customers keep buying the same amount: always say so, with the break-even.
@@ -325,9 +329,11 @@ def fallback(text: str) -> str:
         todo = approvals.pending()
         if not todo:
             return "Nothing is waiting for your yes. I'll tell you the moment something is."
-        items = " · ".join(f"#{a['ref']} {a.get('counterparty') or a['title']} £{a['amount']:,.2f}" for a in todo[:3])
-        more = f" (+{len(todo) - 3} more)" if len(todo) > 3 else ""
-        return f"{len(todo)} waiting for your yes: {items}{more}. Reply “approve {todo[0]['ref']}” or “reject {todo[0]['ref']}”."
+        lines = [f"#{a['ref']} {a.get('counterparty') or a['title']} · £{a['amount']:,.2f}" for a in todo[:5]]
+        if len(todo) > 5:
+            lines.append(f"+{len(todo) - 5} more")
+        return "\n".join([f"{len(todo)} waiting for your yes:", *lines,
+                          f"Reply “approve {todo[0]['ref']}” or “reject {todo[0]['ref']}”."])
     return ("I can't think that through right now (Gemini is unavailable), so nothing was done. "
             "Try “what's waiting?”, or decide with “approve 1” / “reject 1”.")
 
