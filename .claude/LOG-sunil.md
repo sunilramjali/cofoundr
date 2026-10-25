@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, ~02:15 — Assistant gets 4 new tools (function calling), one of them drafts (in Jade's area)
+- **Did:** `backend/outputs/assistant.py`: `what_if_price(product, change_pence)` (last 4 weeks of till lines → extra per week / 4 weeks, break-even volume %, "same number sold" caveat), `stock_needed(date)` (dashboard's `view.stock_estimate`, scaled by that day's forecast vs the week's average; only shortfalls returned), `day_conditions(date)` (weather + events + TfL + forecast via `conditions.conditions_for`), `propose_reminder(invoice_number)`, **the first writing tool**: only a `pending` approval via `overdue.run(only=…)` (new: one-invoice check, touches nothing else), refuses paid / needs review / not overdue / supplier bill / max 3 reminders / reminded < 3 days / already pending (returns its ref). Prompt: code does every sum, say "drafted" never "sent". `tests/test_assistant_tools.py` (17); Jade's read-only test now skips `propose_reminder`. 410 pass. Live check on the demo DB (Gemini, writes disabled): all three what-if/stock/conditions answers verified ✓
+- **Status:** done, PR into `stage`
+- **Next:** shared docs still say the assistant is "read-only" (`CLAUDE.md`, `project-plan.md`, `winning-criteria.md`: tick "function calling"): update with Jade's OK. Demo line: "What if I put flat whites up 20p?" / "Chase Shoreditch"
+- **Blockers / notes for partner:** Jade, **edits in your area**: `backend/outputs/assistant.py` (4 tools, prompt rules, docstrings), `tests/test_edges.py` (`test_assistant_can_never_change_anything` calls every read tool and excludes `WRITES = {"propose_reminder"}`). A chat/WhatsApp "chase X" can now create a pending draft (logged `overdue_check`, so the pusher announces it); deciding is still only "approve N"
+
 ## Sun 25 Oct, ~01:00 — Priorities re-ranked for demo day; new UI waiting for release #54
 - **Did:** `python -m backend.ai.prioritise` on the demo DB (only `tasks` replaced + 1 log entry): #1 "Prep for Monday (Mon 26 Oct): ~£599 expected" (new date format), then Pay Cup & Lid £184, chase Shoreditch £288, Victoria Park £455, Hackney Hub £450, Meadowfield milk match, £0.60 fee refund. Release #51 (board £ fix, docs, demo script) is live on Fly; #53 (dashboard proof UI) merged into `stage` after it, so opened **release #54** for it
 - **Status:** #54 waiting for Jade's approval. WhatsApp still not reaching the app: nothing in `agent_log` since the 22:23 `whatsapp_rejected` (bad signature)
