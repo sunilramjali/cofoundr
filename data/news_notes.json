@@ -1,0 +1,41 @@
+[
+  {
+    "kind": "market",
+    "headline": "Broadway Market: not taking new trader applications, waiting list open",
+    "summary": "Hackney Council keeps a waiting list for Broadway Market pitches and contacts traders when a space opens for their type of goods.",
+    "url": "https://hackney.gov.uk/broadway-market",
+    "lat": 51.5367,
+    "lon": -0.0614,
+    "published_at": "2026-10-25T02:00:00+00:00"
+  },
+  {
+    "kind": "market",
+    "headline": "Broadway Market's Sunday food market started with a cap of 20 traders",
+    "summary": "A smaller Sunday market for food traders and florists at our pitch: fewer stalls than Saturday's 150+.",
+    "url": "https://news.hackney.gov.uk/news/broadway-market-opens-for-trade-on-sunday",
+    "lat": 51.5367,
+    "lon": -0.0614,
+    "published_at": "2026-10-25T02:00:00+00:00"
+  },
+  {
+    "kind": "venue",
+    "headline": "Hackney Church Brew Co welcomes outside suppliers for wedding treat carts",
+    "summary": "An E8 wedding venue whose listing says outside suppliers are welcome for treat carts; coffee carts aren't mentioned, so it's one to ask about.",
+    "url": "https://bridebook.com/uk/wedding-venues/hackney-church-brew-co-london-greater-london-csqgnpRAz8",
+    "published_at": "2026-10-25T02:00:00+00:00"
+  },
+  {
+    "kind": "opportunity",
+    "headline": "London coffee carts get event quote requests through AddToEvent",
+    "summary": "Event clients post a request and get quotes from several suppliers within hours; London coffee carts already list there.",
+    "url": "https://www.addtoevent.co.uk/suppliers/milk-bar",
+    "published_at": "2026-10-25T02:00:00+00:00"
+  },
+  {
+    "kind": "opportunity",
+    "headline": "Film and TV shoots in London hire craft baristas",
+    "summary": "Productions look for coffee at the unit base early in the morning; craft barista roles are advertised for London shoots.",
+    "url": "https://www.productionbase.co.uk/film-tv-jobs/craft-barista--film-catering-company-london-and-the-south-east-06.25.0242637",
+    "published_at": "2026-10-25T02:00:00+00:00"
+  }
+]

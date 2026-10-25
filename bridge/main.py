@@ -96,7 +96,7 @@ def _public_url(request: Request) -> str:
     return os.environ.get("PUBLIC_URL") or str(request.base_url).rstrip("/")
 
 
-PAGES = {"/", "/board", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings"}
+PAGES = {"/", "/board", "/approvals", "/sales", "/invoices", "/inbox", "/activity", "/whatsapp", "/inventory", "/settings", "/news"}
 
 
 def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
@@ -108,7 +108,7 @@ def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
 
 NAV = [  # sidebar: (label, path, icon); pages not listed here are reached from the home feed
     ("Home", "/", "home"), ("Board", "/board", "bulb"), ("Insights", "/sales", "chart"), ("Finances", "/invoices", "pound"), ("Inventory", "/inventory", "box"),
-    ("Ask", "/whatsapp", "chat"), ("Tasks", "/approvals", "yes"),
+    ("Ask", "/whatsapp", "chat"), ("Tasks", "/approvals", "yes"), ("News", "/news", "spark"),
 ]
 
 
@@ -154,6 +154,7 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "fee_audit": fee_audit,
         "away": view.while_away(extracted, review, fee_audit, memo, record),
         "tasks": list(db[schema.TASKS].find({"business_id": BUSINESS_ID}).sort("rank", 1).limit(3)),
+        "news": search.news_feed(db, limit=3).hits,  # read-only local news, ranked by Atlas Search (soon + near)
         "board_fixes": view.board_fixes,
         "checks": view.payment_checks(pending, invoices),
         "sandbox": bool(os.environ.get("COFOUNDR_SANDBOX")),
@@ -182,13 +183,17 @@ def _page(name: str):
                 ctx["found"] = search.search_invoices(get_db(), ctx["q"])
         if name == "activity" and ctx["q"]:  # Atlas Search over the agent's own record
             ctx["found"] = search.search_activity(get_db(), ctx["q"], limit=30)
+        if name == "news":  # awareness only: ranked by how soon and how close, searchable, faceted by kind
+            kind = show if show in ("event", "market", "venue", "opportunity", "news") else None
+            ctx.update(kind=kind, feed=search.news_feed(get_db(), ctx["q"], kind=kind, limit=30),
+                       news_facets=search.news_facets(get_db()))
         return templates.TemplateResponse(request, f"{name}.html", ctx)
     return render
 
 
 for _path, _name in [("/", "home"), ("/board", "board"), ("/approvals", "approvals"), ("/sales", "sales"), ("/invoices", "invoices"),
                      ("/inbox", "inbox"), ("/activity", "activity"), ("/whatsapp", "whatsapp"), ("/inventory", "inventory"),
-                     ("/settings", "settings")]:
+                     ("/settings", "settings"), ("/news", "news")]:
     app.add_api_route(_path, _page(_name), methods=["GET"], response_class=HTMLResponse, name=f"page_{_name}")
 
 
