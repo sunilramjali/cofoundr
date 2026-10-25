@@ -40,6 +40,8 @@ A big company would hire an ops manager, a bookkeeper and an analyst. A one-truc
 
 ## Architecture
 
+**Technical diagram:** [`docs/cofoundr-architecture.html`](docs/cofoundr-architecture.html) (the system, and one invoice's path up to the money gate; open the file in a browser).
+
 Invoices and requests come in from **Gmail, the dashboard, WhatsApp (via Twilio) and external APIs**. The CoFoundr app on **Fly.io** uses **Gemini** to think and **MongoDB Atlas** to remember. Results go out to the **dashboard** and to **WhatsApp via Twilio**, and nothing involving money happens without the owner's approval.
 
 ```
