@@ -622,3 +622,66 @@ mark { background: var(--amber-bg); color: inherit; border-radius: 3px; padding:
 .feed--urgent .card h3 { font-weight: 700; }
 .feed:not(.feed--urgent) .card { box-shadow: var(--edge), 0 1px 2px rgba(70, 45, 25, .05), 0 10px 24px -18px rgba(70, 45, 25, .3); }
 .section-label { color: var(--ink); }
+
+/* ---------- Accent pair: navy (main) + mustard (highlight), replacing the leaf green ----------
+   navy #1f3a5f: buttons, selected nav, chart line, "Drafted by Gemini" (white on it 11.5:1)
+   mustard: #c9962b for lines and fills; #a8781a for big highlighted text (3.6:1 on cream, ≥3:1 needed for large text) */
+:root {
+  --navy: #1f3a5f; --navy-2: #3c5a82; --navy-bg: #e3e8ef; --mustard: #c9962b; --mustard-text: #a8781a; --mustard-bg: #f6ecd2;
+  --accent: var(--navy); --accent-bg: var(--navy-bg);
+  --sage: var(--navy); --sage-bg: var(--navy-bg);   /* "fine / done" states follow the main accent, not green */
+  --ochre: var(--mustard-text); --amber: var(--mustard-text); --amber-bg: var(--mustard-bg);
+}
+.hello h1 em { background-image: linear-gradient(100deg, var(--mustard-text) 0%, var(--mustard) 38%, var(--navy-2) 72%, var(--mustard-text) 100%); }
+.hero h2 b { color: var(--mustard-text); }
+.nav a.is-on .nav__ico { background: linear-gradient(150deg, #f3dfa8, var(--navy)); }
+.chart { color: var(--navy); }
+.chart .fc { stroke: var(--mustard); }
+.chart__legend i.fc { background: repeating-linear-gradient(90deg, var(--mustard) 0 4px, transparent 4px 7px); }
+.btn--accent { --bg: var(--navy); }
+.chip--ai { background: linear-gradient(120deg, var(--mustard-bg), var(--navy-bg)); color: var(--navy); }
+.gem--sage { --c1: #dde4ee; --c2: rgba(31, 58, 95, .82); --c3: var(--navy); }
+.gem--lilac, .gem:not([class*="gem--"]) { --c1: #f4e6bf; --c2: rgba(201, 150, 43, .8); --c3: var(--mustard-text); }
+/* mustard into navy turns olive where they blend: keep the greeting all gold */
+.hello h1 em { background-image: linear-gradient(100deg, var(--mustard-text) 0%, #c08d24 40%, #b07d1d 70%, var(--mustard-text) 100%); }
+/* Page switch: the main panel morphs between pages, but the browser's snapshots can't include the frosted blur, so for a
+   moment the panel was see-through tint over the sharp photo (a brown-orange flash). A solid cream backing under the
+   morphing snapshots keeps it looking frosted all the way through. */
+::view-transition-group(*.morph) { background: rgba(250, 246, 236, .97); }
+
+/* ---------- Page switch: a focus pull, like a camera refocusing on the next page ----------
+   The old panel softens out of focus as it fades; the new one comes into focus with a small settle. Its direction follows
+   the sidebar (html[data-vt], set on pagereveal in base.html): down the list → rises from below, up → drops from above. */
+::view-transition-old(*.morph) { animation: vt-focus-out .26s cubic-bezier(.4, 0, .2, 1) both; }
+::view-transition-new(*.morph) { animation: vt-focus-in .44s .08s cubic-bezier(.2, .8, .2, 1) both; }
+html[data-vt="down"]::view-transition-old(*.morph) { animation-name: vt-focus-out-up; }
+html[data-vt="down"]::view-transition-new(*.morph) { animation-name: vt-focus-in-from-below; }
+html[data-vt="up"]::view-transition-old(*.morph) { animation-name: vt-focus-out-down; }
+html[data-vt="up"]::view-transition-new(*.morph) { animation-name: vt-focus-in-from-above; }
+@keyframes vt-focus-out { to { opacity: 0; filter: blur(10px); transform: scale(.99); } }
+@keyframes vt-focus-in { from { opacity: 0; filter: blur(14px); transform: scale(1.012); } }
+@keyframes vt-focus-out-up { to { opacity: 0; filter: blur(10px); transform: translateY(-12px) scale(.99); } }
+@keyframes vt-focus-out-down { to { opacity: 0; filter: blur(10px); transform: translateY(12px) scale(.99); } }
+@keyframes vt-focus-in-from-below { from { opacity: 0; filter: blur(14px); transform: translateY(22px) scale(1.01); } }
+@keyframes vt-focus-in-from-above { from { opacity: 0; filter: blur(14px); transform: translateY(-22px) scale(1.01); } }
+
+/* Home greeting typed out (cofoundr.js): a thin blinking caret that fades once the greeting is complete */
+.hello h1 .caret { display: inline-block; width: .06em; height: .82em; margin-left: .06em; vertical-align: -.04em; border-radius: 2px;
+  background: var(--mustard-text); animation: caret-blink 1s steps(1) infinite; transition: opacity .6s var(--ease); }
+.hello h1 .caret.is-done { opacity: 0; }
+@keyframes caret-blink { 50% { background: transparent; } }
+
+/* ---------- Loading screen, light: the van photo frosted with cream, then a focus pull into the dashboard ----------
+   (replaces the dark liquid-light screen above; same markup classes) */
+.splash-on .splash { background: #f3ece0; color: var(--ink); }
+.splash__photo { position: absolute; inset: -6%; background: #ece6db url("/static/gaia-van.webp?v=2") 51% 55% / cover no-repeat;
+  filter: blur(26px) saturate(1.05); transform: scale(1.06); transition: filter 1.1s var(--ease), transform 1.3s var(--ease); }
+.splash__photo::after { content: ""; position: absolute; inset: 0; background: rgba(250, 246, 236, .58); transition: opacity 1s var(--ease); }
+.splash__mark { color: var(--charcoal, #2e2f31); }
+.splash__mark i { color: var(--mustard, #c9962b); }
+.splash__tag { color: var(--ink-2); }
+.splash__bar { background: rgba(28, 29, 27, .12); height: 2px; border-radius: 2px; }
+.splash__bar i { background: linear-gradient(90deg, var(--navy, #1f3a5f), var(--mustard, #c9962b)); }
+.splash.is-leaving .splash__photo { filter: blur(0) saturate(1); transform: scale(1); }   /* the focus pull */
+.splash.is-leaving .splash__photo::after { opacity: 0; }
+.splash.is-gone { transition: opacity .75s var(--ease), visibility 0s .75s; }

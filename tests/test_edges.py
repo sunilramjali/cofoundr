@@ -1446,3 +1446,11 @@ def test_backdrop_is_the_van_photo_centred_on_the_van(db):
     assert 'url("/static/gaia-van.webp?v=2") 51% 55% / cover' in css  # anchored on the van's centre in the photo
     photo = web.get("/static/gaia-van.webp")
     assert photo.status_code == 200 and photo.headers["content-type"] == "image/webp" and len(photo.content) < 400_000
+
+
+def test_page_switch_is_a_focus_pull_that_follows_the_sidebar(db):
+    page = web.get("/sales").text
+    assert 'addEventListener("pagereveal"' in page and "navigation.activation" in page and 'dataset.vt = b > a ? "down" : "up"' in page
+    css = web.get("/static/cofoundr.css").text
+    assert "vt-focus-in-from-below" in css and "vt-focus-in-from-above" in css and "blur(14px)" in css
+    assert "::view-transition-group(*.morph) { background: rgba(250, 246, 236, .97); }" in css  # no see-through flash

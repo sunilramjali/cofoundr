@@ -12,6 +12,18 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 09:30 — Navy + mustard, focus-pull page switch, typed greeting, light loading screen
+- **Did:** (all in `cofoundr.css` / `cofoundr.js` / `base.html`)
+  1. Accent pair **navy #1f3a5f** (buttons, selected nav, chart line, "fine" states) + **mustard** (#c9962b lines/fills, #a8781a for big text: 3.6:1); greeting all gold (mustard→navy blended olive). Replaces the leaf green
+  2. Page-switch flash fixed: view-transition snapshots can't include the frosted blur, so the morphing panel showed the sharp photo (brown-orange). Solid cream backing on `::view-transition-group(*.morph)`
+  3. Page switch = **focus pull** (old panel blurs out, new one sharpens in, ~0.45 s), direction from the sidebar order (`pagereveal` sets `html[data-vt]`: down the list rises from below, up drops from above)
+  4. "Good morning, GAIA." typed out once per session (after the loading screen), gold caret; panel keeps its size; screen readers get the full text
+  5. Loading screen now light: the van photo frosted with cream, charcoal wordmark + mustard dot, navy→mustard progress line, then a focus pull into the dashboard. Dark WebGL scene removed
+- Checked in the browser (loading screen + typing frames, direction logic). 567 tests pass
+- **Status:** done, PR into `stage` + release PR (needs Sunil)
+- **Next:** see the 04:40 handover list
+- **Blockers / notes for partner:** none in your area. Merge the release well before the demo
+
 ## Sun 25 Oct, 09:00 — Contrast: readable text + "Needs you" cards on top of the hierarchy
 - **Did:** measured contrast against the photo: grey labels were 2.8–3.1:1 (1.4:1 over the dark road). Darker text tokens (`--muted` #5f5b52, `--ink-2` #3a3b36, `--ink` #151613) and glass ≥ .8 opaque at its lower edge → ~6:1 on light areas, ≥4.5:1 over the road. "Needs you" cards most solid + lifted with bolder titles; other cards' shadows softer. Checked in the browser. 566 tests pass
 - **Status:** done, PR into `stage`; live with the next release

@@ -6,67 +6,50 @@
 
   /* Loading screen: liquid light on black (WebGL), then the light swells to the dashboard's cream and dissolves. */
   (function splash() {
+    /* Loading screen: the van photo, frosted and washed with cream, comes into focus as the dashboard appears on top of it
+       (the same photo is the page background, so it reads as one shot). CSS does the motion; this only times the exit. */
     const el = $(".splash"); if (!el || !document.documentElement.classList.contains("splash-on")) return;
-    const canvas = $("canvas", el);
-    const gl = canvas.getContext("webgl", { antialias: false, alpha: false, powerPreference: "high-performance" });
-    let raf = 0, start = performance.now(), leaving = 0, done = false;
-    if (gl) {
-      const vs = "attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}";
-      const fs = `precision highp float;uniform vec2 r;uniform float t;uniform float a;
-        float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-        float n(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
-          return mix(mix(h(i),h(i+vec2(1,0)),u.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),u.x),u.y);}
-        float fbm(vec2 p){float v=0.,s=.5;for(int i=0;i<6;i++){v+=s*n(p);p=p*2.03+vec2(1.7,9.2);s*=.5;}return v;}
-        void main(){
-          vec2 uv=gl_FragCoord.xy/r; vec2 p=(gl_FragCoord.xy-.5*r)/r.y;
-          float s=t*.11;
-          vec2 q=vec2(fbm(p*1.6+vec2(0.,s)),fbm(p*1.6+vec2(5.2,1.3)-s));
-          vec2 w=vec2(fbm(p*1.6+3.*q+vec2(1.7,9.2)+s*.8),fbm(p*1.6+3.*q+vec2(8.3,2.8)-s*.6));
-          float f=fbm(p*1.6+2.4*w);
-          float ribbon=pow(smoothstep(.35,.95,f),2.2);              /* bright folds of the liquid */
-          float core=exp(-3.2*dot(p,p));                            /* light pooled behind the wordmark */
-          vec3 ember=vec3(1.,.55,.24), peach=vec3(1.,.8,.62), dusk=vec3(.45,.55,1.), deep=vec3(.035,.025,.02);
-          vec3 c=deep;
-          c+=ember*ribbon*1.35*(.55+.45*w.x);
-          c+=peach*pow(ribbon,3.)*1.2;
-          c+=dusk*smoothstep(.55,1.,w.y*f*1.8)*.55;
-          c+=peach*core*(.18+.5*ribbon);
-          c*=1.-.55*length(uv-.5);                                  /* vignette */
-          c+=(h(gl_FragCoord.xy+t)-.5)*.035;                        /* film grain */
-          vec3 cream=vec3(.957,.945,.922);
-          gl_FragColor=vec4(mix(c,cream,smoothstep(0.,1.,a)),1.);}`;
-      const sh = (type, src) => { const x = gl.createShader(type); gl.shaderSource(x, src); gl.compileShader(x); return x; };
-      const prog = gl.createProgram();
-      gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(prog);
-      if (gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-        gl.useProgram(prog);
-        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-        const loc = gl.getAttribLocation(prog, "p"); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-        const uR = gl.getUniformLocation(prog, "r"), uT = gl.getUniformLocation(prog, "t"), uA = gl.getUniformLocation(prog, "a");
-        const k = Math.min(devicePixelRatio || 1, 2) * .6;
-        canvas.width = Math.round(innerWidth * k); canvas.height = Math.round(innerHeight * k);
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        const draw = (now) => {
-          const tt = (now - start) / 1000;
-          const a = leaving ? Math.min(1, (now - leaving) / 650) : 0;
-          gl.uniform2f(uR, canvas.width, canvas.height); gl.uniform1f(uT, tt + 2.); gl.uniform1f(uA, a);
-          gl.drawArrays(gl.TRIANGLES, 0, 3);
-          if (!done) raf = requestAnimationFrame(draw);
-        };
-        raf = requestAnimationFrame(draw); canvas.classList.add("is-live");
-      }
-    }
+    let leaving = false;
     const finish = () => {
       if (leaving) return;
-      leaving = performance.now();
+      leaving = true;
       el.classList.add("is-leaving");
-      setTimeout(() => el.classList.add("is-gone"), 520);
-      setTimeout(() => { done = true; cancelAnimationFrame(raf); el.remove(); document.documentElement.classList.remove("splash-on"); }, 1300);
+      dispatchEvent(new Event("cf:splash-done"));
+      setTimeout(() => el.classList.add("is-gone"), 650);
+      setTimeout(() => { el.remove(); document.documentElement.classList.remove("splash-on"); }, 1400);
     };
     el.addEventListener("click", finish);
     addEventListener("keydown", finish, { once: true });
-    setTimeout(finish, 2300);
+    setTimeout(finish, 2200);
+  })();
+
+  /* Home greeting typed out letter by letter, once per browser session (or with ?splash=1), after the loading screen.
+     The panel keeps its final size while typing; screen readers get the whole greeting at once. */
+  (function typeGreeting() {
+    const h = $(".hello h1"); if (!h || calm) return;
+    let first = true;
+    try { first = /[?&]splash=1/.test(location.search) || !sessionStorage.getItem("cf-typed"); sessionStorage.setItem("cf-typed", "1"); } catch (e) {}
+    if (!first) return;
+    const parts = [...h.childNodes].map((node) => ({ node, text: node.textContent }));
+    const full = parts.map((p) => p.text).join("");
+    const box = h.getBoundingClientRect();
+    h.style.minWidth = `${Math.ceil(box.width)}px`; h.style.minHeight = `${Math.ceil(box.height)}px`;
+    h.setAttribute("aria-label", full);
+    parts.forEach((p) => { p.node.textContent = ""; });
+    const caret = document.createElement("span");
+    caret.className = "caret"; caret.setAttribute("aria-hidden", "true"); h.append(caret);
+    let part = 0, ch = 0;
+    const step = () => {
+      const p = parts[part];
+      if (!p) { setTimeout(() => caret.classList.add("is-done"), 1400); return; }
+      p.node.textContent = p.text.slice(0, ++ch);
+      if (ch >= p.text.length) { part += 1; ch = 0; }
+      const typed = p.node.textContent.slice(-1);
+      setTimeout(step, typed === "," ? 220 : 42 + Math.random() * 38);  // a beat after the comma, like real typing
+    };
+    const start = () => setTimeout(step, 260);
+    if (document.documentElement.classList.contains("splash-on")) addEventListener("cf:splash-done", start, { once: true });
+    else start();
   })();
 
   /* Living backdrop: a slow, light gradient flow (WebGL). Clock = wall time, so it continues across pages. */
