@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 00:50 — WhatsApp live on a real phone (MVP1)
+- **Did:** "what's waiting?" on WhatsApp → `/whatsapp/twilio` (signature ✓, owner ✓) → Gemini answer delivered in 9 s. Getting there: Twilio upgraded; the newer trial sandbox (+44 7723 317807) only allows templates, so we use the **legacy sandbox +1 415 523 8886**; `OWNER_WHATSAPP` set to the demo phone; Twilio's identity check (Individual profile in Trust Hub) approved, before that every send was refused ("Primary compliance profile is not approved")
+- **Status:** replies live; unprompted push not yet seen live
+- **Next:** test "approve N" and an invoice photo on WhatsApp; see an unprompted update arrive
+- **Blockers / notes for partner:** none in your area. Fly secrets `TWILIO_WHATSAPP_FROM` + `OWNER_WHATSAPP` changed (machine restarted twice)
+
 ## Sat 24 Oct, 23:40 — Twilio sandbox number corrected
 - **Did:** our sandbox number is **+44 7723 317807** (join code `join twilio-trial`), not the US +1 415 523 8886 I'd assumed earlier. Fixed `.env`, `.env.example`, `project-plan.md`. Release #47 is live with the Twilio secrets
 - **Status:** `TWILIO_WHATSAPP_FROM` Fly secret needs resetting to the +44 number
