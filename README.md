@@ -144,7 +144,7 @@ CoFoundr isn't a chatbot or a bookkeeping tool. It's an agent that does the work
 2. **Add an invoice:** send a photo or PDF. CoFoundr replies with what it read ("Added … checked ✓"), or asks you to check it if it doesn't add up.
 3. **Get told, unprompted:** new invoices, drafted reminders and bills to pay arrive as messages, each with its number.
 4. **Decide:** reply `approve 4` or `reject 4`. Nothing involving money happens without that reply.
-5. **Ask anything:** "what's waiting?", "who owes me?", "what if I put flat whites up 20p?", "is Saturday worth trading?", "chase Shoreditch" (drafts a reminder for your approval). Answers come from your data, and every £ figure is checked against it.
+5. **Ask anything:** "what needs doing?", "who owes me?", "what if I put flat whites up 20p?", "is Saturday worth trading?", "chase Shoreditch" (drafts a reminder for your approval). Answers come from your data, and every £ figure is checked against it.
 
 ### For the business owner (dashboard: https://cofoundr.fly.dev)
 1. **Home:** what CoFoundr did while you were away, what to do first (ranked, with a reason each), and the chat bar (the same assistant as WhatsApp; also on **Ask**).

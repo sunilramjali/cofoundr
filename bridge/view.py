@@ -125,6 +125,28 @@ def ago(when: Optional[datetime], now: Optional[datetime] = None) -> str:
     return when.astimezone(LONDON).strftime("%d %b")
 
 
+PLURAL_UNITS = {"litre": "litres", "bag": "bags", "slice": "slices"}
+WINDY_KMH = 30  # max wind speed (Open-Meteo, 10 m) from which the awning, umbrellas and A-boards need securing
+
+
+def qty(amount, unit: str = "", up: bool = False) -> str:
+    """Stock as the owner says it: a whole number with its unit. '3 kg', '12 litres', '1 litre', '250 g', '40'.
+    up=True rounds up (an amount to order or a shortfall: rounding 0.4 down would hide it)."""
+    n = max(0, math.ceil(amount - 1e-9) if up else round(amount or 0))
+    unit = (unit or "").strip()
+    if unit in ("", "unit", "each"):
+        return f"{n}"
+    return f"{n} {PLURAL_UNITS.get(unit, unit) if n != 1 else unit}"
+
+
+def wind_warning(wx: Optional[dict]) -> Optional[str]:
+    """'Windy: up to 34 km/h, secure the awning and A-boards.' when the day's forecast wind reaches WINDY_KMH."""
+    kmh = (wx or {}).get("wind_max_kmh")
+    if kmh is None or kmh < WINDY_KMH:
+        return None
+    return f"Windy: up to {round(kmh)} km/h, secure the awning and A-boards."
+
+
 def money0(value) -> str:
     return "–" if value is None else f"£{value:,.0f}"
 

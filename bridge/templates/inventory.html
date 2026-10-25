@@ -30,8 +30,8 @@
       </div>
       <span class="row__due{% if i.low %} row__due--late{% endif %}">
         {% if i.out %}Probably out{% elif i.cover is none %}Not used recently{% else %}~{{ i.cover|round|int }} day{{ "s" if (i.cover|round|int) != 1 }} left{% endif %}</span>
-      <span class="row__amt num">{{ i.estimate|round(1) if i.unit in ("kg", "litre") else i.estimate|round|int }}<small>{{ (i.unit ~ " ") if i.unit not in ("unit", "") else "" }}left (est.)</small></span>
-      <span class="row__status">{% if i.order %}<span class="chip {{ 'chip--rust' if i.low else '' }}">Order ~{{ i.order }}{{ " " ~ i.unit if i.unit not in ("unit", "") else "" }}</span>{% else %}<span class="chip chip--sage">Fine</span>{% endif %}</span>
+      <span class="row__amt num">{{ qty(i.estimate, i.unit) }}<small> left (est.)</small></span>
+      <span class="row__status">{% if i.order %}<span class="chip {{ 'chip--rust' if i.low else '' }}">Order ~{{ qty(i.order, i.unit, up=True) }}</span>{% else %}<span class="chip chip--sage">Fine</span>{% endif %}</span>
     </li>
     {% endfor %}
   </ul>
