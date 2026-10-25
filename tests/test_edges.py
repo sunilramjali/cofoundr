@@ -1524,3 +1524,9 @@ def test_todo_list_on_every_page_puts_approvals_first_most_overdue_first(db, gem
     assert approvals and todo.index("todo__item--approve") < todo.index("todo__item--do")  # yes-needed first
     assert "Prep for Saturday" in todo and "Approve #1" not in todo  # an approval task isn't listed twice
     assert 'href="/approvals#a' in todo and "localStorage" in page  # each item links to where it's done; state kept
+
+
+def test_the_name_is_spelled_cofoundr_with_a_capital_f(db):
+    page = web.get("/").text
+    assert ">CoFoundr<i>.</i></a>" in page and "Cofoundr" not in page
+    assert "".join(__import__("re").findall(r'<b style="--i:\d+">(.)</b>', page)) == "CoFoundr"  # the loading-screen wordmark
