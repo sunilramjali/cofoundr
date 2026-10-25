@@ -27,7 +27,7 @@ from markupsafe import Markup, escape
 from backend import approvals, memory, news, payments
 from backend.ai import board, fees, overdue, review
 from backend.inputs import evo, gmail, whatsapp as whatsapp_in
-from backend.inputs.replies import parse_reply  # noqa: F401 (also imported from here by tests)
+from backend.inputs.replies import parse_rejection, parse_reply  # noqa: F401 (also imported from here by tests)
 from backend.outputs import assistant, whatsapp as whatsapp_out
 from backend.outputs.brief import build_brief
 from backend.outputs.updates import get_updates
@@ -289,7 +289,10 @@ CHAT_SHOWN = 12  # exchanges
 def _chat_reply(text: str) -> str:
     """Decisions ("approve 1", "reject 2") follow exactly the WhatsApp rules and never reach Gemini; anything else is a
     question for the Gemini assistant, which can read the data but not change it."""
-    parsed = parse_reply(text)
+    parsed, note = parse_reply(text), None
+    if not parsed and parse_rejection(text):  # "reject 2: they're regulars": a no with a reason, remembered
+        ref, note = parse_rejection(text)
+        parsed = ("reject", ref)
     if not parsed:
         return assistant.answer(text).text
     decision, ref = parsed
@@ -297,10 +300,10 @@ def _chat_reply(text: str) -> str:
     if not approval:
         return f"There's no #{ref} waiting for you."
     try:
-        result = approvals.decide(approval, decision, via="dashboard")
+        result = approvals.decide(approval, decision, via="dashboard", note=note)
     except approvals.DecisionError as e:
         return str(e)
-    return f"#{result['ref']} {result['status']}: {result['effect']}."
+    return f"#{result['ref']} {result['status']}: {result['effect']}." + (" I'll remember why." if result.get("owner_note") else "")
 
 
 def chat_log() -> list:

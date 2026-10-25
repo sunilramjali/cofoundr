@@ -319,3 +319,89 @@ def test_naive_dates_from_the_driver_still_format():
     m = {"counterparty": "X", "action_type": "supplier_payment", "decision": "approved", "amount": 2.5,
          "at": datetime(2026, 10, 21, 9), "outcome": None}
     assert memory.line(m) == "21 Oct: you approved paying X (£2.50)."
+
+
+# ---------------------------------------------------------------- limits fixed (Sun 25 Oct): reasons on WhatsApp, no leaks
+
+from backend.inputs.replies import parse_rejection, parse_reply  # noqa: E402
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("reject 2: they're regulars", (2, "they're regulars")), ("No 2 because they always pay", (2, "they always pay")),
+    ("REJECT #3 - friends", (3, "friends")), ("reject 4, busy week for them", (4, "busy week for them")),
+    ("reject 2: they pay late but they pay", (2, "they pay late but they pay")),
+])
+def test_a_no_can_carry_a_reason(text, expected):
+    assert parse_rejection(text) == expected and parse_reply(text) is None
+
+
+@pytest.mark.parametrize("text", [
+    "reject 2", "approve 2: go", "yes 2 because why not", "reject 2 and approve 3", "no 2, approve it instead",
+    "reject 2 - yes they owe but wait", "reject 2:   ", "don't reject 2: hmm", "reject two: x",
+])
+def test_anything_unclear_is_not_a_reasoned_no(text):
+    assert parse_rejection(text) is None
+
+
+def test_reject_with_a_reason_on_whatsapp_is_remembered(db, gemini_down, sent, monkeypatch):
+    from backend.inputs import whatsapp as wa_in
+    for k, v in {"TWILIO_ACCOUNT_SID": "ACtest", "TWILIO_AUTH_TOKEN": "t", "TWILIO_WHATSAPP_FROM": "whatsapp:+14155238886",
+                 "OWNER_WHATSAPP": "+44 7700 900123"}.items():
+        monkeypatch.setenv(k, v)
+    overdue.run()
+    a = _approval_for(db, "GAIA-1041")
+    reply = wa_in.handle({"From": "whatsapp:+447700900123", "Body": f"reject {a['ref']}: they always pay, just late"})
+    assert reply.startswith("❌") and "I'll remember why" in reply
+    [m] = _memories(db)
+    assert (m["via"], m["note"], m["decision"]) == ("whatsapp", "they always pay, just late", "rejected")
+    plain = wa_in.handle({"From": "whatsapp:+447700900123", "Body": f"reject {_approval_for(db, 'GAIA-1038')['ref']}"})
+    assert "remember" not in plain and _memories(db)[1]["note"] is None
+
+
+def test_reject_with_a_reason_in_the_chat_bar(db, gemini_down, sent):
+    from bridge.main import _chat_reply
+    overdue.run()
+    a = _approval_for(db, "GAIA-1041")
+    assert _chat_reply(f"no {a['ref']} because give them two weeks").endswith("I'll remember why.")
+    assert db[schema.APPROVALS].find_one({"_id": a["_id"]})["owner_note"] == "give them two weeks"
+
+
+def test_a_nickname_is_scrubbed_from_another_customers_note_too():
+    m = {"counterparty": "Dalston Desk Co", "action_type": "invoice_reminder", "decision": "rejected", "amount": 1.0,
+         "note": "the Dalston lot are friends", "at": datetime(2026, 10, 21, tzinfo=timezone.utc), "score": 0.8}
+    [text] = memory.prompt_lines([memory._recalled(m, same=False)])
+    assert "dalston" not in text.lower() and "the them lot are friends" in text
+
+
+def test_mentions_other_only_counts_distinctive_words():
+    others = ["Victoria Park Wedding Co", "Broadway Market Traders Assoc."]
+    assert memory.mentions_other("Thanks for the wedding coffee bar", "Hackney Hub Coworking", others) == "Victoria Park Wedding Co"
+    assert memory.mentions_other("Hi Hackney Hub, GAIA Coffee Co here", "Hackney Hub Coworking", others) is None
+    assert memory.mentions_other("Your market stall coffee", "Hackney Hub Coworking Market stall coffee", others) is None  # own items
+
+
+def _gemini_drafts(monkeypatch, drafts):
+    from types import SimpleNamespace
+    payload = overdue.Drafts(drafts=[overdue.Draft(**d) for d in drafts]).model_dump_json()
+    client = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **_k: SimpleNamespace(text=payload)))
+    monkeypatch.setattr(overdue, "get_client", lambda: client)
+
+
+def test_a_gemini_email_that_names_another_customer_is_replaced_by_the_template(db, monkeypatch):
+    _gemini_drafts(monkeypatch, [
+        {"invoice_number": "GAIA-1041", "subject": "Invoice GAIA-1041", "body": "Hi Hackney Hub, like Victoria Park Wedding Co we..."},
+        {"invoice_number": "GAIA-1038", "subject": "Invoice GAIA-1038", "body": "Hi Victoria Park Wedding Co, a gentle nudge."}])
+    batch = list(db[schema.INVOICES].find({"invoice_number": {"$in": ["GAIA-1041", "GAIA-1038"]}}))
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    out = overdue.draft_reminders(batch, today)
+    assert out["GAIA-1041"][1] == "template" and "Victoria" not in out["GAIA-1041"][0].body
+    assert out["GAIA-1038"][1] == "gemini"  # its own name is fine
+    assert db[schema.AGENT_LOG].find_one({"kind": "draft_check_failed", "detail.invoice_number": "GAIA-1041"})
+
+
+def test_a_gemini_email_that_names_a_recalled_customer_is_replaced(db, monkeypatch):
+    _gemini_drafts(monkeypatch, [{"invoice_number": "GAIA-1041", "subject": "x", "body": "Hi! Dalston paid late too."}])
+    inv = db[schema.INVOICES].find_one({"invoice_number": "GAIA-1041"})
+    recalled = {str(inv["_id"]): [{"line": "…", "anonymous_line": "…", "counterparty": "Dalston Desk Co", "same_counterparty": False}]}
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    assert overdue.draft_reminders([inv], today, recalled)["GAIA-1041"][1] == "template"

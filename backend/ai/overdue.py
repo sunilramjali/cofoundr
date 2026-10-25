@@ -105,7 +105,22 @@ def draft_reminders(invoices: List[dict], today: datetime, recalled: Optional[Di
     except Exception as e:  # quota, bad JSON, network: the flow must still work on stage
         print(f"Gemini unavailable ({getattr(e, 'code', None) or type(e).__name__}); using template drafts.")
         got = {}
-    # Fill any gaps (failed call or a missing invoice in the response) with a template
+    # Check: an email to one customer must never name another (from the same batch, or a similar case recalled)
+    names = {inv["counterparty"] for inv in invoices}
+    for inv in invoices:
+        number = inv["invoice_number"]
+        if number not in got:
+            continue
+        others = (names | {m.get("counterparty") or "" for m in (recalled or {}).get(str(inv["_id"]), [])}) - {inv["counterparty"]}
+        draft = got[number][0]
+        own = f"{inv['counterparty']} {memory.about(inv)}"  # its own name and line items are never a leak
+        leaked = memory.mentions_other(f"{draft.subject} {draft.body}", own, sorted(n for n in others if n))
+        if leaked:
+            from backend.db import activity
+            activity.log("draft_check_failed", f"Gemini's reminder for {number} named another business; used the template instead",
+                         invoice_number=number)
+            del got[number]
+    # Fill any gaps (failed call, a missing invoice in the response, a failed check) with a template
     return {inv["invoice_number"]: got.get(inv["invoice_number"]) or (_template(inv, (today - inv["due_date"]).days), "template")
             for inv in invoices}
 
