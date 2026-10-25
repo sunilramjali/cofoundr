@@ -40,7 +40,7 @@
     </div>
     {% endfor %}
   </div>
-  <p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>Baseline from the same weekday over recent weeks; the striped band is the usual range. Weather from Open-Meteo. Gemini adjusts each day for the weather, nearby events and transport, and says why; point at a day to see it.</span></p>
+  <p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>Baseline from the same weekday over recent weeks; the striped band is the usual range. Weather from Open-Meteo. I adjust each day for the weather, nearby events and transport, and say why; point at a day to see it.</span></p>
   {% else %}
   <div class="empty"><svg class="ico"><use href="#i-chart"/></svg><div><b>No forecast yet.</b>Once the till has a few weeks of sales, I'll plan the week here.</div></div>
   {% endif %}
@@ -69,7 +69,7 @@
 
 {% if fee_audit %}
 <section class="block" id="fees">
-  <h2>Card fees <small>your provider's fee summary, read by Gemini and checked against every payment</small></h2>
+  <h2>Card fees <small>your provider's fee summary, checked against every payment</small></h2>
   {% set a = fee_audit.audit %}
   <div class="card card--quiet" style="grid-template-columns:minmax(0,1fr);margin-top:0">
     <div>
@@ -123,7 +123,7 @@
     <h3>Check my card fees</h3>
     <p>Drop your card provider's fee summary (photo or PDF) and I'll check every payment against it</p>
     <span class="drop__file" aria-live="polite"></span>
-    <button class="btn" type="submit" data-busy="Reading with Gemini…">Check fees <svg class="ico"><use href="#i-arrow"/></svg></button>
+    <button class="btn" type="submit" data-busy="Reading…">Check fees <svg class="ico"><use href="#i-arrow"/></svg></button>
   </form>
   <p class="note"><svg class="ico"><use href="#i-spark"/></svg><span>In EVO's portal, export Transactions as CSV. I keep the date, amount, fee and card type (debit/credit) of each payment. Card numbers, auth codes and card-network references are never stored. Square and SumUp connect directly instead.</span></p>
 </section>

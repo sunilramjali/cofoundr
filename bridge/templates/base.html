@@ -147,7 +147,7 @@
 {# the chat panel last in the page: drawn above the main panel, also during the page-switch animation #}
 {% if chat is not none %}
 <section class="chat glass" id="chat" aria-label="Chat with CoFoundr"{% if not chat_open %} hidden{% endif %}>
-  <header class="chat__head"><span class="chatbar__who" aria-hidden="true">C</span><div><b>CoFoundr</b><small>powered by Gemini · reads your data, never moves money</small></div>
+  <header class="chat__head"><span class="chatbar__who" aria-hidden="true">C</span><div><b>CoFoundr</b><small>reads your data, never moves money</small></div>
     <a class="chat__close" href="{{ path }}" aria-label="Close the chat">×</a></header>
   <div class="chat__log" role="log" aria-live="polite">
     {% for m in chat %}

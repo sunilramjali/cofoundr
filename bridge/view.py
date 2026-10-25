@@ -85,8 +85,7 @@ def while_away(extracted: List[dict], review: List[dict], fee_audit: Optional[di
         out.append({"icon": "pound", "text": text, "href": "/sales#fees"})
     if memo and memo.get("insights"):
         fixed = sum(len(board_fixes(i.get("first_problems"))) for i in memo["insights"])
-        tokens = (memo.get("read") or {}).get("tokens")
-        read = f"Read the whole business in one go ({tokens:,} tokens)" if tokens else "Read the whole business in one go"
+        read = "Read the whole business in one go"  # the token count stays in board_memos, not on the owner's page
         text = (f"{read} and caught {_plural(fixed, 'wrong number')} in my own memo before showing you." if fixed
                 else f"{read}; every number in the memo checked against your records.")
         out.append({"icon": "bulb", "text": text, "href": "/board"})

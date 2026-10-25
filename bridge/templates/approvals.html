@@ -32,7 +32,7 @@
         {% if reminder and a.escalation_level is not none %}
         <span class="chip chip--amber">{{ tones[a.escalation_level] }}<span class="tone" aria-hidden="true">{% for k in range(3) %}<i class="{{ 'on' if k <= a.escalation_level }}"></i>{% endfor %}</span></span>
         {% endif %}
-        {% if a.drafted_by == "gemini" %}<span class="chip chip--ai"><svg class="ico"><use href="#i-spark"/></svg>Drafted by Gemini</span>
+        {% if a.drafted_by == "gemini" %}<span class="chip chip--ai"><svg class="ico"><use href="#i-spark"/></svg>Drafted for you</span>
         {% else %}<span class="chip">Drafted by {{ a.drafted_by }}</span>{% endif %}
         {% if a.invoice_number %}<span class="chip">{{ a.invoice_number }}</span>{% endif %}
       </div>
@@ -44,7 +44,7 @@
       {% if c.needs_review %}<p class="warn"><svg class="ico"><use href="#i-alert"/></svg><span>The numbers on this invoice didn't fully check out. Look at it before paying.</span></p>{% endif %}
       {% if a.memories %}
       <div class="recall">
-        <p class="recall__head"><svg class="ico"><use href="#i-bulb"/></svg>What I remember <small>your past decisions, recalled with MongoDB Atlas Vector Search</small></p>
+        <p class="recall__head"><svg class="ico"><use href="#i-bulb"/></svg>What I remember <small>your past decisions</small></p>
         <ul>{% for m in a.memories %}<li><span class="chip{{ ' chip--sage' if m.same_counterparty else '' }}">{{ "This " ~ ("customer" if reminder else "supplier") if m.same_counterparty else "Similar case" }}</span> {{ m.line }}</li>{% endfor %}</ul>
       </div>
       {% endif %}

@@ -3,24 +3,12 @@
 {% block vt %}m-board{% endblock %}
 {% block eyebrow %}<svg class="ico"><use href="#i-bulb"/></svg>Board meeting{% endblock %}
 {% block heading %}{% if memo %}<span class="heading__lead">Our latest board meeting:</span> {{ memo.headline }}{% else %}Our latest board meeting{% endif %}{% endblock %}
-{% block lede %}I read everything the business has recorded in one go, then a separate check recomputes every number I quote from the database. Anything that doesn't add up is shown, not hidden.{% endblock %}
-{% block stats %}
-<div class="stats">
-  {% if memo %}
-  {% if memo.read.tokens %}<div class="stat"><b class="num">{{ "{:,}".format(memo.read.tokens) }}</b><span>tokens read in one Gemini call</span></div>{% endif %}
-  <div class="stat"><b class="num">{{ "{:,}".format(memo.read.sales_lines) }}</b><span>till lines + {{ memo.read.invoices }} invoices</span></div>
-  {%- set ns = namespace(fixed=0) -%}{%- for i in memo.insights %}{% set ns.fixed = ns.fixed + board_fixes(i.first_problems)|length %}{% endfor -%}
-  <div class="stat"><b class="num">{{ memo.insights|selectattr("status", "in", ["verified", "corrected"])|list|length }}/{{ memo.insights|length }}</b><span>insights that checked out</span></div>
-  {% if ns.fixed %}<div class="stat"><b class="num">{{ ns.fixed }}</b><span>wrong numbers caught before you saw them</span></div>{% endif %}
-  {% endif %}
-</div>
-{% endblock %}
 {% block body %}
 <section class="block">
   <form method="post" action="/board/run" style="margin:0 0 18px">
     <input type="hidden" name="back" value="/board">
     <button class="btn" type="submit" data-busy="Starting…"{% if memo_running %} disabled{% endif %}>{{ "Reading everything…" if memo_running else "Hold a board meeting" }} <svg class="ico ico--go"><use href="#i-arrow"/></svg></button>
-    {% if memo %}<span class="muted" style="margin-left:12px">Last memo {{ memo.generated_at|stamp }} · {{ memo.model }}{% if memo.synthetic %} · synthetic demo data{% endif %}</span>{% endif %}
+    {% if memo %}<span class="muted" style="margin-left:12px">Last memo {{ memo.generated_at|stamp }}{% if memo.synthetic %} · demo data{% endif %}</span>{% endif %}
   </form>
   {% if memo %}
   {% for i in memo.insights %}
