@@ -2,7 +2,7 @@
 {% block title %}Board meeting{% endblock %}
 {% block vt %}m-board{% endblock %}
 {% block eyebrow %}<svg class="ico"><use href="#i-bulb"/></svg>Board meeting{% endblock %}
-{% block heading %}{{ memo.headline if memo else "This week's board memo" }}{% endblock %}
+{% block heading %}{% if memo %}<span class="heading__lead">Our latest board meeting:</span> {{ memo.headline }}{% else %}Our latest board meeting{% endif %}{% endblock %}
 {% block lede %}I read everything the business has recorded in one go, then a separate check recomputes every number I quote from the database. Anything that doesn't add up is shown, not hidden.{% endblock %}
 {% block stats %}
 <div class="stats">

@@ -1425,7 +1425,7 @@ def test_send_brief_button_when_twilio_fails_says_why(db, twilio, monkeypatch):
 
 def test_sidebar_follows_the_owners_day_with_a_quieter_more_group(db):
     page = web.get("/activity").text
-    labels = ["Home", "Approvals", "Inbox", "Finances", "Insights", "Board", "Activity", "More", "Inventory", "News", "Chat", "Settings"]
+    labels = ["Home", "Board", "Approvals", "Inbox", "Finances", "Insights", "Activity", "More", "Inventory", "News", "Chat", "Settings"]
     side = page[page.index('class="side glass"'):page.index('class="side__foot"') + 400]
     positions = [side.index(f">{label}<") for label in labels]
     assert positions == sorted(positions) and ">Tasks<" not in side
@@ -1528,5 +1528,22 @@ def test_todo_list_on_every_page_puts_approvals_first_most_overdue_first(db, gem
 
 def test_the_name_is_spelled_cofoundr_with_a_capital_f(db):
     page = web.get("/").text
-    assert ">CoFoundr<i>.</i></a>" in page and "Cofoundr" not in page
+    assert '<span class="logo__co">Co</span>Foundr<i>.</i></a>' in page and "Cofoundr" not in page
     assert "".join(__import__("re").findall(r'<b style="--i:\d+">(.)</b>', page)) == "CoFoundr"  # the loading-screen wordmark
+
+
+
+def test_todo_pill_has_its_own_row_so_it_never_covers_a_module(db, gemini_down):
+    overdue.run()
+    page = web.get("/board").text
+    main = page[page.index('<main class="main">'):]
+    assert main.index('class="topbar"') < main.index('id="todo"') < main.index('class="sheet')  # its own row, before the content
+    css = web.get("/static/cofoundr.css").text
+    assert ".todo { position: relative; top: auto; right: auto;" in css and ".todo__drop { position: absolute;" in css
+
+
+def test_board_page_title_starts_with_our_latest_board_meeting(db):
+    db[schema.BOARD_MEMOS].insert_one({"business_id": "gaia-coffee", "headline": "Cash is fine", "insights": [],
+                                       "read": {"tokens": 1, "sales_lines": 1, "invoices": 1}, "generated_at": datetime.now(timezone.utc)})
+    page = web.get("/board").text
+    assert '<span class="heading__lead">Our latest board meeting:</span> Cash is fine' in page

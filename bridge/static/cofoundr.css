@@ -756,3 +756,16 @@ mark.hl { background: linear-gradient(transparent 58%, rgba(201, 150, 43, .32) 5
 ::view-transition-group(todo), ::view-transition-new(todo) { animation: none; }
 ::view-transition-old(todo) { display: none; }
 @media (max-width: 900px) { .todo { top: 10px; right: 10px; } }
+
+/* To-do pill in its own row (base.html .topbar): never on top of a module when minimised; open = a dropdown */
+.topbar { display: flex; justify-content: flex-end; min-height: 42px; margin: 0 0 12px; position: relative; z-index: 35; }
+.todo { position: relative; top: auto; right: auto; width: auto; border-radius: 99px; }
+.todo[open] { border-radius: 99px; }
+.todo[open] summary { border-bottom: 0; margin-bottom: 0; }
+.todo__drop { position: absolute; right: 0; top: calc(100% + 8px); width: min(360px, calc(100vw - 32px)); border-radius: 22px; padding-top: 10px; }
+@media (max-width: 900px) { .todo { top: auto; right: auto; } }
+/* Logo: "Co" in mustard gold, "Foundr" charcoal, the dot navy */
+.logo { color: var(--charcoal, var(--ink)); }
+.logo .logo__co { color: var(--mustard-text, #a8781a); }
+.logo i { color: var(--navy, var(--accent)); }
+.heading__lead { color: var(--mustard-text, #a8781a); }  /* Board page: "Our latest board meeting:" before the memo headline */
