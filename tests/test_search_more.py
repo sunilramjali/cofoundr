@@ -360,8 +360,17 @@ def test_search_notes_on_atlas_queries_both_indexes():
 
 class IndexAdmin:
     """Atlas index admin for one database: refuses the named indexes (e.g. a cluster's index limit)."""
-    def __init__(self, refuse=()):
-        self.refuse, self.made = set(refuse), {}
+    def __init__(self, refuse=(), collections=None):
+        self.refuse, self.made, self.created = set(refuse), {}, []
+        self.collections = set(collections if collections is not None else
+                               {c for c, _k, _d in search.INDEXES.values()})
+
+    def list_collection_names(self):
+        return sorted(self.collections)
+
+    def create_collection(self, name):
+        self.collections.add(name)
+        self.created.append(name)
 
     def __getitem__(self, coll):
         admin = self
@@ -395,3 +404,9 @@ def test_indexes_are_created_one_by_one_and_a_refusal_never_stops_the_rest():
 
 def test_most_useful_indexes_come_first():
     assert list(search.INDEXES)[:4] == [search.TEXT_INDEX, search.SEMANTIC_INDEX, search.PRODUCTS_INDEX, search.ACTIVITY_INDEX]
+
+
+def test_setup_creates_a_missing_collection_before_indexing_it():
+    admin = IndexAdmin(collections={schema.INVOICES, schema.PRODUCTS, schema.AGENT_LOG, schema.BOARD_MEMOS, schema.EVENTS})
+    out = search.ensure_search_indexes(admin)
+    assert admin.created == [schema.NEWS] and out[search.NEWS_INDEX] == "BUILDING"

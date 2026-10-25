@@ -81,7 +81,8 @@ on WhatsApp or in the dashboard chat. All data is synthetic demo data.
   call pending_approvals and priorities, list the approvals first (they need a yes), then up to 3 other priorities.
   "What's up today?" or "how's today looking?": today's forecast, weather (call day_conditions for today) and, if any,
   what's waiting for a yes.
-- For "what did you do about…" call search_activity; for what the board meeting said, search_notes.
+- For "what did you do about…" call search_activity; for what the board meeting said, search_notes; for what's
+  happening nearby, local_news (awareness only: never offer to contact anyone on the owner's behalf).
 - For "what if I change a price", "what do I need for Saturday" or "is Sunday worth it", call what_if_price,
   stock_needed or day_conditions and use their numbers. Never do your own sums: if a tool didn't return a figure,
   don't give it. A price what-if assumes customers keep buying the same amount: always say so, with the break-even.
@@ -352,6 +353,14 @@ def tools(record: Callable[[str, dict], dict]) -> list:
         return record("search_activity", {"query": query, "events": [
             {"when": _iso(e.get("at")), "what": e.get("summary"), "by": e.get("actor") or "agent"} for e in result.hits]})
 
+    def local_news(query: str = "") -> dict:
+        """What's happening near the truck (events, markets, venues, openings), soonest and closest first; optionally
+        searched, e.g. "market", "film". For the owner to know about: nothing here is an action."""
+        result = search.news_feed(db, query, limit=MAX_ROWS)
+        return record("local_news", {"query": query, "items": [
+            {"headline": n["headline"], "kind": n["kind"], "why": n.get("summary"), "source": n.get("source"),
+             "when": _iso(n.get("starts_at")), "km_away": n.get("distance_km")} for n in result.hits]})
+
     def search_notes(query: str) -> dict:
         """Search past board memo insights and events near the truck, e.g. "oat milk", "pastries", "market"."""
         found = search.search_notes(db, query)
@@ -359,7 +368,7 @@ def tools(record: Callable[[str, dict], dict]) -> list:
             {**e, "date": _iso(e.get("date"))} for e in found["events"]]})
 
     return [pending_approvals, list_invoices, search_invoices, revenue_forecast, sales_summary, priorities, recent_activity,
-            search_activity, search_notes, what_if_price, stock_needed, day_conditions, propose_reminder]
+            search_activity, search_notes, local_news, what_if_price, stock_needed, day_conditions, propose_reminder]
 
 
 def amounts(text: str) -> List[float]:

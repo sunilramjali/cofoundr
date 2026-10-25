@@ -89,6 +89,16 @@
   </section>
   {% endif %}
 
+  {% if news %}
+  <section class="card card--list glass" style="view-transition-name: m-news; --i:4">
+    <span class="gem"><svg class="ico"><use href="#i-spark"/></svg></span>
+    <div><h3>Around your pitches</h3>
+      <ul class="proof">{% for n in news %}<li><a href="/news"><svg class="ico"><use href="#i-spark"/></svg><span><b>{{ n.headline }}</b>{% if n.get("starts_at") %} · {{ n.get("starts_at")|day }}{% endif %}{% if n.get("distance_km") is not none %} · {{ "%.1f"|format(n.get("distance_km")) }} km{% endif %}<br><span class="muted">{{ n.get("summary") }}</span></span></a></li>{% endfor %}</ul>
+      <p class="muted" style="margin:6px 0 0">For you to know about · I don't contact anyone</p></div>
+    <a class="btn btn--text" href="/news">All news <svg class="ico ico--go"><use href="#i-arrow"/></svg></a>
+  </section>
+  {% endif %}
+
   {% if not (pending or review or away or tasks) %}
   <div class="empty"><svg class="ico"><use href="#i-check"/></svg><div><b>All clear.</b>Nothing needs you right now. I'll tell you the moment something does.</div></div>
   {% endif %}
