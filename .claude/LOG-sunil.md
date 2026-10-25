@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, ~02:00 — README judging + user guide filled; demo script updated
+- **Did:** `README.md`: every judging section filled with evidence (file / endpoint / demo step), user guide rewritten for what's built (WhatsApp, 8 dashboard pages), unbuilt voice-order section and the Treg stack claim removed. `docs/demo-script.md`: legacy sandbox number, 1:25 = "What if I put flat whites up 20p?" (fallback "what's waiting?" until released), optional "Chase Shoreditch", don't ask stock live, Finances search box for the MongoDB video, 2 Q&A answers. Fly `TWILIO_WHATSAPP_FROM` re-set to +14155238886 (digest unchanged: it already was). Post-mortem of the assistant tools: 2 bugs fixed in #57 (no-forecast day assumed trading; "nothing was changed" after a draft); I'd pushed onto the already-merged #55 → moved to #57
+- **Status:** done, PR into `stage`; release PR → `main` opened for Jade
+- **Next:** shared docs ("read-only assistant" → "drafts, never acts"; tick function calling) once Jade has pulled. Morning: WhatsApp checks (join legacy sandbox, webhook URL, auth token), rehearsal, backup video, timestamps into README, submit by ~11:30
+- **Blockers / notes for partner:** Jade, please approve the release PR (assistant tools + README) and pull `stage`. README now describes the assistant as "can draft, never approve/pay/send"
+
 ## Sun 25 Oct, ~02:15 — Assistant gets 4 new tools (function calling), one of them drafts (in Jade's area)
 - **Did:** `backend/outputs/assistant.py`: `what_if_price(product, change_pence)` (last 4 weeks of till lines → extra per week / 4 weeks, break-even volume %, "same number sold" caveat), `stock_needed(date)` (dashboard's `view.stock_estimate`, scaled by that day's forecast vs the week's average; only shortfalls returned), `day_conditions(date)` (weather + events + TfL + forecast via `conditions.conditions_for`), `propose_reminder(invoice_number)`, **the first writing tool**: only a `pending` approval via `overdue.run(only=…)` (new: one-invoice check, touches nothing else), refuses paid / needs review / not overdue / supplier bill / max 3 reminders / reminded < 3 days / already pending (returns its ref). Prompt: code does every sum, say "drafted" never "sent". `tests/test_assistant_tools.py` (17); Jade's read-only test now skips `propose_reminder`. 410 pass. Live check on the demo DB (Gemini, writes disabled): all three what-if/stock/conditions answers verified ✓
 - **Status:** done, PR into `stage`
