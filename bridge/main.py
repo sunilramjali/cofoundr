@@ -181,7 +181,7 @@ def _page(name: str):
     def render(request: Request, msg: Optional[str] = None, show: Optional[str] = None, q: Optional[str] = None,
                chat: Optional[str] = None, like: Optional[str] = None):
         ctx = _context(request, msg)
-        ctx.update(path=request.url.path, show=show, q=(q or "").strip(), found=None, chat=chat_log() if chat else None)
+        ctx.update(path=request.url.path, show=show, q=(q or "").strip(), found=None, chat=chat_log(), chat_open=bool(chat))
         if name == "invoices":
             ctx["facets"] = search.invoice_facets(get_db())  # Atlas $searchMeta: invoices per supplier/customer
             if ctx["q"]:  # Atlas hybrid search (keyword + meaning, matched words highlighted); falls back to a plain match
@@ -307,13 +307,19 @@ def chat_log() -> list:
 
 
 @app.post("/ask")
-def ask(text: str = Form(""), back: str = Form("/")):
-    """The chat bar: the answer opens in the chat panel, which stays until the owner closes it."""
+def ask(request: Request, text: str = Form(""), back: str = Form("/")):
+    """The chat bar. With JavaScript the page asks for JSON and shows the answer in the chat panel without reloading;
+    without it, the answer opens in the chat panel after a normal page load. Either way it stays until closed."""
+    wants_json = "application/json" in request.headers.get("accept", "")
     text = text.strip()
     if not text:
+        if wants_json:
+            return JSONResponse({"error": "Type a question first, e.g. “what needs doing?”."}, status_code=400)
         return _back("Type a question first, e.g. “what needs doing?”.", back)
     reply = _chat_reply(text)
     activity.log(CHAT_KIND, f"Chat: “{text[:60]}”", actor="owner", question=text[:500], answer=reply[:3000])
+    if wants_json:
+        return JSONResponse({"question": text, "answer": reply})
     return RedirectResponse(f"{back if back in PAGES else '/'}?chat=1#chat", status_code=303)
 
 

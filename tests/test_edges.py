@@ -1259,7 +1259,7 @@ def test_chat_panel_keeps_the_conversation_until_closed(db, ask):
     assert page.count('class="chat__me"') == 2 and "what needs doing?" in page  # earlier messages stay
     assert "<strong>4 things</strong>" in page and "<script>x</script>" not in page and "&lt;b&gt;Shoreditch" in page
     assert 'class="chat__close" href="/"' in page and 'id="chat-msg"' in page  # × closes it; reply from inside it
-    assert 'class="chat glass"' not in web.get("/").text  # closed: no panel
+    assert 'aria-label="Chat with CoFoundr" hidden>' in web.get("/").text  # closed: there but hidden, ready to open in place
 
 
 def test_chat_panel_shows_only_this_conversation(db, ask, monkeypatch):
@@ -1454,3 +1454,25 @@ def test_page_switch_is_a_focus_pull_that_follows_the_sidebar(db):
     css = web.get("/static/cofoundr.css").text
     assert "vt-focus-in-from-below" in css and "vt-focus-in-from-above" in css and "blur(14px)" in css
     assert "::view-transition-group(*.morph) { background: rgba(250, 246, 236, .97); }" in css  # no see-through flash
+
+
+
+def test_chat_answers_in_the_background_without_a_page_load(db, ask):
+    ask(lambda tools: "You've got *4 things* waiting.")
+    r = web.post("/ask", data={"text": "anything for me?", "back": "/"}, headers={"Accept": "application/json"})
+    assert r.status_code == 200 and r.json() == {"question": "anything for me?", "answer": "You've got *4 things* waiting."}
+    assert db[schema.AGENT_LOG].find_one({"kind": "chat_message"})["detail"]["question"] == "anything for me?"  # kept in the log
+    empty = web.post("/ask", data={"text": "  ", "back": "/"}, headers={"Accept": "application/json"})
+    assert empty.status_code == 400 and "Type a question" in empty.json()["error"]
+
+
+def test_chat_decisions_in_the_background_follow_the_same_rules(db, ask, sent):
+    ask(lambda tools: pytest.fail("a decision must not go to Gemini"))
+    r = web.post("/ask", data={"text": "approve 4", "back": "/"}, headers={"Accept": "application/json"}).json()
+    assert "#4 approved" in r["answer"] and db[schema.APPROVALS].find_one({"ref": 4})["decided_via"] == "dashboard"
+
+
+def test_every_chat_box_says_ask_me_anything(db):
+    for path in ("/", "/whatsapp"):
+        page = web.get(path).text
+        assert page.count('placeholder="Ask me anything…"') == 2, path  # the page's bar + the panel's reply box

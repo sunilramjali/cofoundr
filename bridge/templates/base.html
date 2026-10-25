@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <link rel="preload" href="/static/gaia-van.webp?v=2" as="image" type="image/webp">
-<link rel="stylesheet" href="/static/cofoundr.css?v=31">
+<link rel="stylesheet" href="/static/cofoundr.css?v=32">
 <script>
   document.documentElement.classList.add("js");
   /* Loading screen: once per browser session (or ?splash=1), never for reduced motion. Decided before first paint. */
@@ -82,8 +82,8 @@
   <symbol id="i-yes" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="m8 12.5 3 3 5-6"/></symbol>
 </svg>
 
-{% if chat %}
-<section class="chat glass" id="chat" aria-label="Chat with CoFoundr">
+{% if chat is not none %}
+<section class="chat glass" id="chat" aria-label="Chat with CoFoundr"{% if not chat_open %} hidden{% endif %}>
   <header class="chat__head"><span class="chatbar__who" aria-hidden="true">C</span><div><b>CoFoundr</b><small>powered by Gemini · reads your data, never moves money</small></div>
     <a class="chat__close" href="{{ path }}" aria-label="Close the chat">×</a></header>
   <div class="chat__log" role="log" aria-live="polite">
@@ -95,7 +95,7 @@
   <form class="chat__form" method="post" action="/ask">
     <input type="hidden" name="back" value="{{ path }}">
     <label class="sr" for="chat-msg">Reply to CoFoundr</label>
-    <input id="chat-msg" name="text" autocomplete="off" placeholder="Reply…" autofocus>
+    <input id="chat-msg" name="text" autocomplete="off" placeholder="Ask me anything…"{% if chat_open %} autofocus{% endif %}>
     <button class="btn send" aria-label="Send" data-busy="…"><svg class="ico"><use href="#i-up"/></svg></button>
   </form>
 </section>
@@ -132,6 +132,6 @@
     {% block content %}{% endblock %}
   </main>
 </div>
-<script src="/static/cofoundr.js?v=19" defer></script>
+<script src="/static/cofoundr.js?v=22" defer></script>
 </body>
 </html>
