@@ -1,7 +1,7 @@
 """Revenue forecast (MVP2): a baseline from till history, then Gemini adjusts it for weather, events and transport.
 
 Baseline, per day ahead:
-- GAIA only trades on some weekdays (Mon/Wed/Fri/Sat). Trading days are learned from the history:
+- GAIA only trades on some weekdays (Thu-Sun). Trading days are learned from the history:
   a weekday counts as trading if GAIA sold on it in at least half of the recent weeks. Other days are "closed".
 - Expected revenue / orders = the average of the last LOOKBACK_WEEKS same weekdays it traded,
   with the range (lowest..highest of those days) so nobody mistakes a guess for a promise.

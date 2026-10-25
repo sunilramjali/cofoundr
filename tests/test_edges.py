@@ -182,7 +182,7 @@ def test_pos_reads_every_synthetic_order_and_count():
     assert len({o["order_id"] for o in orders}) == len(orders)
     assert [o["placed_at"] for o in orders] == sorted(o["placed_at"] for o in orders)
     assert len(ALL_DATA.list_stock_counts()) == 6
-    assert ALL_DATA.list_stock()["count_id"] == "GAIA-COUNT-CLOSING-20261130"
+    assert ALL_DATA.list_stock()["count_id"] == "GAIA-COUNT-CLOSING-20261203"
 
 
 def test_pos_never_returns_the_future():
@@ -190,14 +190,14 @@ def test_pos_never_returns_the_future():
     orders = list(till.iter_sales())
     assert orders and max(o["placed_at"] for o in orders) < "2026-10-24T12:00"
     assert list(till.iter_sales(since="2026-11-01")) == []
-    assert till.list_stock()["count_id"] == "GAIA-COUNT-OPENING-20261002"  # not the 31 Oct or November counts
+    assert till.list_stock()["count_id"] == "GAIA-COUNT-OPENING-20261003"  # not the 1 Nov or November counts
     assert PosClient(now="2026-09-01").list_stock() is None
 
 
 def test_pos_date_filter_uses_london_days_and_until_is_exclusive():
     day = list(ALL_DATA.iter_sales(since="2026-10-03", until="2026-10-04"))
     assert day and all(o["placed_at"].startswith("2026-10-03") for o in day)
-    assert list(ALL_DATA.iter_sales(since="2026-10-04", until="2026-10-05")) == []  # Sunday: not a trading day
+    assert list(ALL_DATA.iter_sales(since="2026-10-06", until="2026-10-07")) == []  # Tuesday: not a trading day
 
 
 def test_pos_cursor_pages_cover_everything_once():
@@ -209,7 +209,7 @@ def test_pos_cursor_pages_cover_everything_once():
         cursor = page["cursor"]
         if cursor is None:
             break
-    assert len(seen) == len(set(seen)) == 1319
+    assert len(seen) == len(set(seen)) == 1169  # September (the file's last Wednesday orders moved to Fri 2 Oct)
 
 
 @pytest.mark.parametrize("kwargs", [{"limit": 0}, {"limit": 201}, {"cursor": "abc"}, {"cursor": "-5"}])

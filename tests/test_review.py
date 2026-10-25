@@ -104,7 +104,7 @@ def test_accepted_lessons_replace_the_old_ones_and_reach_the_next_forecast(db, l
 
 
 def test_gemini_down_keeps_the_grades_and_logs_why(db, gemini_down):
-    sales.record_orders(PosClient(now="2026-12-01").iter_sales(until="2026-10-24"), origin="test", now=NOW)
+    sales.record_orders(PosClient(now="2026-12-04").iter_sales(until="2026-10-24"), origin="test", now=NOW)
     db[schema.FORECASTS].insert_one({"_id": "gaia-coffee:2026-10-17", "business_id": "gaia-coffee", **_fc(pct=-20), "trading": True})
     result = review.run(now=NOW)
     assert result["graded"] == 1 and result["error"] == "429" and db[schema.FORECAST_REVIEWS].count_documents({}) == 1
@@ -113,10 +113,10 @@ def test_gemini_down_keeps_the_grades_and_logs_why(db, gemini_down):
 
 def test_grading_stored_forecasts_is_idempotent_and_skips_days_without_takings(db, lessons_from):
     lessons_from()
-    sales.record_orders(PosClient(now="2026-12-01").iter_sales(until="2026-10-24"), origin="test", now=NOW)
+    sales.record_orders(PosClient(now="2026-12-04").iter_sales(until="2026-10-24"), origin="test", now=NOW)
     db[schema.FORECASTS].insert_many([
         {"_id": "gaia-coffee:2026-10-17", "business_id": "gaia-coffee", **_fc(), "trading": True},
-        {"_id": "gaia-coffee:2026-10-18", "business_id": "gaia-coffee", **_fc(day="2026-10-18"), "trading": True},  # Sunday: no sales
+        {"_id": "gaia-coffee:2026-10-20", "business_id": "gaia-coffee", **_fc(day="2026-10-20"), "trading": True},  # Tuesday: no sales
         {"_id": "gaia-coffee:2026-10-25", "business_id": "gaia-coffee", **_fc(day="2026-10-25"), "trading": True}])  # future
     review.run(now=NOW)
     review.run(now=NOW)
@@ -127,24 +127,24 @@ def test_grading_stored_forecasts_is_idempotent_and_skips_days_without_takings(d
 
 def test_backtest_replays_with_observed_weather_and_never_shows_gemini_the_answers(db, monkeypatch, lessons_from):
     lessons_from()
-    sales.record_orders(PosClient(now="2026-12-01").iter_sales(until="2026-10-24"), origin="test", now=NOW)
+    sales.record_orders(PosClient(now="2026-12-04").iter_sales(until="2026-10-24"), origin="test", now=NOW)
     monkeypatch.setattr(weather, "history", lambda start, end: [
         {"date": d, "summary": "Light rain", "weather_code": 61, "precip_mm": 5.0, "trading_rain_mm": 4.0}
-        for d in ("2026-10-16", "2026-10-17", "2026-10-19", "2026-10-21", "2026-10-23")])
+        for d in ("2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18", "2026-10-22", "2026-10-23")])
     prompts = []
 
     def fake_adjust(prompt):
         prompts.append(prompt)
         return [DayAdjustment(date=d, pct=-10, reason="-10%: rain", confidence="low",
                               factors=[Factor(kind="weather", ref=f"weather:{d}", effect_pct=-10, why="rain")])
-                for d in ("2026-10-16", "2026-10-17", "2026-10-19", "2026-10-21", "2026-10-23")]
+                for d in ("2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18", "2026-10-22", "2026-10-23")]
     monkeypatch.setattr(forecast, "ask_gemini", fake_adjust)
     result = review.run(now=NOW, backtest_days=9)
     graded = {r["date"]: r for r in result["reviews"]}
-    assert set(graded) == {"2026-10-16", "2026-10-17", "2026-10-19", "2026-10-21", "2026-10-23"}
+    assert set(graded) == {"2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18", "2026-10-22", "2026-10-23"}
     assert all(r["mode"] == "backtest" and r["adjustment_pct"] == -10 for r in graded.values())
     history_part = prompts[0].split("GAIA's daily takings so far")[1]
-    assert '"2026-10-14"' in history_part and not any(f'"{d}"' in history_part for d in graded)  # answers never shown
+    assert '"2026-10-11"' in history_part and not any(f'"{d}"' in history_part for d in graded)  # answers never shown
     assert "trading_rain_mm" in prompts[0]
 
 

@@ -1,9 +1,9 @@
 {
   "record_type": "physical_inventory_count",
   "data_type": "synthetic_mock_data",
-  "count_id": "GAIA-COUNT-CLOSING-20260930",
+  "count_id": "GAIA-COUNT-CLOSING-20261002",
   "location_id": "GAIA-TRUCK-01",
-  "counted_at": "2026-09-30T16:05:00+01:00",
+  "counted_at": "2026-10-02T16:05:00+01:00",
   "count_method": "manual_physical_count",
   "recorded_by": "Mock GAIA team member",
   "items": [

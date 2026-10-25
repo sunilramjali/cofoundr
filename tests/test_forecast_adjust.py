@@ -134,20 +134,20 @@ def test_gemini_down_keeps_the_baseline(gemini_down):
 
 
 def test_run_adjusts_from_stored_conditions_and_logs_it(db, gemini):
-    sales.record_orders(PosClient(now="2026-12-01").iter_sales(until=SAT), now="2026-12-01")
+    sales.record_orders(PosClient(now="2026-12-04").iter_sales(until=SAT), now="2026-12-01")
     conditions.record_weather([{"pitch_id": "broadway-market", "date": SAT, "source": "open-meteo",
                                 "fetched_at": "2026-10-24T07:00:00Z", **RAIN}])
     gemini.answers = [[_day(SAT, -18, "-18% Sat: heavy rain all day", ("weather", f"weather:{SAT}", -18), confidence="high")]]
     out = forecast.run(now=datetime(2026, 10, 24, 7, 0, tzinfo=timezone.utc))
     stored = db[schema.FORECASTS].find_one({"date": SAT})
     assert stored["adjustment"]["reason"] == "-18% Sat: heavy rain all day" and stored["final_revenue"] == out[0]["final_revenue"]
-    assert stored["final_revenue"] == round(stored["expected_revenue"] * 0.82, 2)
+    assert stored["final_revenue"] == round(stored["expected_revenue"] * (1 + -18 / 100), 2)
     log = db[schema.AGENT_LOG].find_one({"kind": "forecast_adjusted"})
     assert "heavy rain" in log["summary"] and db[schema.AGENT_LOG].count_documents({"kind": "gemini_fallback"}) == 0
 
 
 def test_run_with_gemini_down_still_stores_the_baseline_and_logs_the_fallback(db, gemini_down):
-    sales.record_orders(PosClient(now="2026-12-01").iter_sales(until=SAT), now="2026-12-01")
+    sales.record_orders(PosClient(now="2026-12-04").iter_sales(until=SAT), now="2026-12-01")
     conditions.record_weather([{"pitch_id": "broadway-market", "date": SAT, "source": "open-meteo",
                                 "fetched_at": "2026-10-24T07:00:00Z", **RAIN}])
     forecast.run(now=datetime(2026, 10, 24, 7, 0, tzinfo=timezone.utc))
