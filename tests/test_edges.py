@@ -1219,8 +1219,8 @@ def test_hard_questions_think_harder_and_lookups_stay_quick(ask):
     fake = ask(lambda t: "Done.")
     assistant.answer("what's on today?")
     assistant.answer("should I trade on Sunday?")
-    assistant.answer("what if I put flat whites up 20p?")
-    assert fake.levels == [assistant.MEDIUM, assistant.HIGH, assistant.HIGH]
+    assistant.answer("what if I put flat whites up 20p?")  # code does the maths: no need to wait for deep thinking
+    assert fake.levels == [assistant.MEDIUM, assistant.HIGH, assistant.MEDIUM]
 
 
 def test_heads_up_only_flags_what_code_found_and_never_repeats(ask, db, monkeypatch):

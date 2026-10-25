@@ -12,6 +12,19 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 04:40 — Demo script updated; HANDOVER for the morning
+- **Did:** `docs/demo-script.md` updated for tonight's work: open on `/?splash=1`, "Send me today's brief" as the opener, approve → show the reminder email in the demo Gmail, Tasks → Approvals, what-if now ~10 s, don't ask "should/why/worth" live (40–60 s), no releases or Fly secret changes from 30 min before. Flagged that **GAIA-1050 is used up** (my 02:44 live test → approval #5). Code: "what if" no longer gets HIGH thinking (`assistant.HARD`): code does the maths, answer in 10 s (measured with real Gemini). 565 tests pass
+- **Status:** done, PR into `stage` + release PR (needs Sunil)
+- **Live now (`main` d717301):** WhatsApp in/out on the legacy sandbox (+1 415 523 8886), unprompted updates, approvals by reply, friendly Gemini answers with 💡 heads-ups, real reminder emails to gaiacoffeedemo@gmail.com, 08:00 morning brief + button, chat panel, Apple-style UI + loading screen, "Needs you" first, new sidebar
+- **Next (in order):**
+  1. Merge the release with the what-if speed fix (if Sunil hasn't)
+  2. Before 08:00: send "hi" from the demo phone to the sandbox (24 h window) → the 08:00 brief should arrive; check `/activity` for "Sent your morning brief"
+  3. Choose a fresh overdue invoice for the live demo (GAIA-1050 is used); rehearse with the sandbox (`COFOUNDR_SANDBOX=1`), then one full live run with the phone (tell Sunil first)
+  4. README: fill the _TBD_ judging + user-guide sections with evidence (files, endpoints, demo timestamps)
+  5. Record the 3-min video (also MongoDB's submission): script's "Backup video" section; upload unlisted, link in README
+  6. Submit before **12:00**: all tracks + MongoDB + Gemini
+- **Blockers / notes for partner:** Sunil, I edited `docs/demo-script.md` (yours): see the changes above, especially the GAIA-1050 note. Don't release during the demo
+
 ## Sun 25 Oct, 04:10 — Sidebar follows the owner's day; Activity labels
 - **Did:** sidebar = Home · Approvals (was Tasks) · Inbox (new) · Finances · Insights · Board · Activity (new), then "More": Inventory · News · Chat (was Ask) · Settings. Activity: friendly labels for WhatsApp/brief/assistant events; the dashboard chat's own `chat_message` copies hidden (the "Answered your question" entry covers it). Checked in the browser. Live record shows #1 approved on the dashboard at 03:01 and its reminder really emailed to the demo inbox. 565 tests pass
 - **Status:** done, PR into `stage` + release PR
