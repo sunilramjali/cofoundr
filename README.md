@@ -177,7 +177,6 @@ Deploy: `fly deploy` (from the repo root).
 ## What's next
 
 - **Staff scheduling:** baristas at £16/hour, rostered from the forecast (e.g. two on days over ~£600), with the day's wage cost next to its takings. Shift offers are drafted as approvals and sent on WhatsApp only after "approve N", because wages are money.
-- **The real trading week:** the synthetic till trades Mon/Wed/Fri/Sat; GAIA's real pattern is Thursday–Sunday.
 - **Stock that stays right:** weekly counts, plus deliveries read from supplier invoices ("Oat milk, 1L × 36"), so stock = last count + deliveries − usage.
 - **Real data, kept apart:** a business's real card and till exports go into its own database (never the demo one), and the forecast's error is measured on its real days.
 - **Atlas Stream Processing:** react to new invoices and orders as they land instead of polling. **Gemini background mode** for the board meeting's long read.

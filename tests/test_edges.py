@@ -182,7 +182,7 @@ def test_pos_reads_every_synthetic_order_and_count():
     assert len({o["order_id"] for o in orders}) == len(orders)
     assert [o["placed_at"] for o in orders] == sorted(o["placed_at"] for o in orders)
     assert len(ALL_DATA.list_stock_counts()) == 6
-    assert ALL_DATA.list_stock()["count_id"] == "GAIA-COUNT-CLOSING-20261130"
+    assert ALL_DATA.list_stock()["count_id"] == "GAIA-COUNT-CLOSING-20261203"
 
 
 def test_pos_never_returns_the_future():
@@ -190,14 +190,14 @@ def test_pos_never_returns_the_future():
     orders = list(till.iter_sales())
     assert orders and max(o["placed_at"] for o in orders) < "2026-10-24T12:00"
     assert list(till.iter_sales(since="2026-11-01")) == []
-    assert till.list_stock()["count_id"] == "GAIA-COUNT-OPENING-20261002"  # not the 31 Oct or November counts
+    assert till.list_stock()["count_id"] == "GAIA-COUNT-OPENING-20261003"  # not the 1 Nov or November counts
     assert PosClient(now="2026-09-01").list_stock() is None
 
 
 def test_pos_date_filter_uses_london_days_and_until_is_exclusive():
     day = list(ALL_DATA.iter_sales(since="2026-10-03", until="2026-10-04"))
     assert day and all(o["placed_at"].startswith("2026-10-03") for o in day)
-    assert list(ALL_DATA.iter_sales(since="2026-10-04", until="2026-10-05")) == []  # Sunday: not a trading day
+    assert list(ALL_DATA.iter_sales(since="2026-10-06", until="2026-10-07")) == []  # Tuesday: not a trading day
 
 
 def test_pos_cursor_pages_cover_everything_once():
@@ -209,7 +209,7 @@ def test_pos_cursor_pages_cover_everything_once():
         cursor = page["cursor"]
         if cursor is None:
             break
-    assert len(seen) == len(set(seen)) == 1319
+    assert len(seen) == len(set(seen)) == 1169  # September (the file's last Wednesday orders moved to Fri 2 Oct)
 
 
 @pytest.mark.parametrize("kwargs", [{"limit": 0}, {"limit": 201}, {"cursor": "abc"}, {"cursor": "-5"}])
@@ -1485,3 +1485,48 @@ def test_chat_is_on_every_page_and_tucks_the_bar_away_when_open(db, gemini_down,
     assert page.count('class="chatbar"') == 1 and f'name="back" value="{path}"' in page, path  # answers come back to this page
     assert 'id="chat"' in page and 'class="chat-is-open"' not in page
     assert '<body class="chat-is-open">' in web.get(path, params={"chat": "1"}).text
+
+
+def test_chat_latest_lets_the_next_page_pick_up_an_answer(db, ask):
+    ask(lambda tools: "Nice week.")
+    web.post("/ask", data={"text": "how did we do?", "back": "/"}, headers={"Accept": "application/json"})
+    msgs = web.get("/chat/latest").json()["messages"]
+    assert msgs[-1]["q"] == "how did we do?" and msgs[-1]["a"] == "Nice week." and isinstance(msgs[-1]["at"], int)
+
+
+def test_chat_panel_stays_open_across_pages_until_closed(db):
+    page = web.get("/board").text
+    assert 'sessionStorage.getItem("cf-chat-open")' in page and 'classList.add("chat-restore")' in page
+    css = web.get("/static/cofoundr.css").text
+    assert ".chat-restore .chat[hidden] { display: flex; }" in css and ".chat { view-transition-name: chat; }" in css
+    js = web.get("/static/cofoundr.js").text
+    assert 'store("cf-chat-open", null)' in js and "cf-chat-pending" in js and "/chat/latest" in js
+
+
+def test_highlight_marks_key_facts_and_never_lets_markup_through():
+    out = str(view.highlight("Owe £1,130.00, 21 days overdue, +20% on Mon 26 Oct; napkins probably out <script>x</script>"))
+    for fact in ("£1,130.00", "21 days overdue", "+20%", "Mon 26 Oct", "probably out"):
+        assert f'<mark class="hl">{fact}</mark>' in out, fact
+    assert "<script>" not in out and "&lt;script&gt;" in out
+
+
+def test_todo_list_on_every_page_puts_approvals_first_most_overdue_first(db, gemini_down):
+    overdue.run()
+    db[schema.TASKS].insert_many([{"business_id": "gaia-coffee", "rank": 1, "kind": "approval", "title": "Approve #1"},
+                                  {"business_id": "gaia-coffee", "rank": 2, "kind": "prep_day", "title": "Prep for Saturday",
+                                   "reason": "about £600 expected"}])
+    for path in ("/", "/board", "/activity", "/settings"):
+        page = web.get(path).text
+        assert 'id="todo"' in page and "todo__count" in page, path
+    page = web.get("/activity").text
+    todo = page[page.index('id="todo"'):page.index("</details>", page.index('id="todo"'))]
+    approvals = [i for i in range(len(todo)) if todo.startswith("todo__item--approve", i)]
+    assert approvals and todo.index("todo__item--approve") < todo.index("todo__item--do")  # yes-needed first
+    assert "Prep for Saturday" in todo and "Approve #1" not in todo  # an approval task isn't listed twice
+    assert 'href="/approvals#a' in todo and "localStorage" in page  # each item links to where it's done; state kept
+
+
+def test_the_name_is_spelled_cofoundr_with_a_capital_f(db):
+    page = web.get("/").text
+    assert ">CoFoundr<i>.</i></a>" in page and "Cofoundr" not in page
+    assert "".join(__import__("re").findall(r'<b style="--i:\d+">(.)</b>', page)) == "CoFoundr"  # the loading-screen wordmark

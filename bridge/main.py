@@ -81,6 +81,7 @@ templates.env.filters["money0"] = view.money0
 templates.env.filters["ago"] = view.ago
 templates.env.globals["due_label"] = view.due_label
 templates.env.globals["qty"] = view.qty
+templates.env.filters["highlight"] = view.highlight
 templates.env.globals["wind_warning"] = view.wind_warning
 
 BUSINESS_ID = "gaia-coffee"
@@ -137,6 +138,8 @@ def _context(request: Request, msg: Optional[str]) -> dict:
     memo = db[schema.BOARD_MEMOS].find_one({"business_id": BUSINESS_ID}, sort=[("generated_at", -1)])
     record = _forecast_record(db)
     fee_audit = db[schema.FEE_AUDITS].find_one({"business_id": BUSINESS_ID}, sort=[("created_at", -1)])
+    stock = view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now)
+    all_tasks = list(db[schema.TASKS].find({"business_id": BUSINESS_ID}).sort("rank", 1).limit(8))
     return {
         "msg": msg,
         "now": now,
@@ -151,7 +154,8 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "week": week,
         "sales": sales,
         "trend": view.trend(sales, week),
-        "stock": view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now),
+        "stock": stock,
+        "todo": view.todo_list(pending, review, all_tasks, stock),
         "opportunities": view.opportunities(gmail_logs),
         "nav": NAV, "nav_more": NAV_MORE,
         "memo": memo,
@@ -159,7 +163,7 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "record": record,
         "fee_audit": fee_audit,
         "away": view.while_away(extracted, review, fee_audit, memo, record),
-        "tasks": list(db[schema.TASKS].find({"business_id": BUSINESS_ID}).sort("rank", 1).limit(3)),
+        "tasks": all_tasks[:3],
         "news": search.news_feed(db, limit=3).hits,  # read-only local news, ranked by Atlas Search (soon + near)
         "board_fixes": view.board_fixes,
         "checks": view.payment_checks(pending, invoices),
@@ -312,6 +316,13 @@ def chat_log() -> list:
     found = get_db()[schema.AGENT_LOG].find({"business_id": BUSINESS_ID, "kind": CHAT_KIND, "at": {"$gte": since}})
     return [{"q": e["detail"].get("question", ""), "a": e["detail"].get("answer", ""), "at": e["at"]}
             for e in reversed(list(found.sort("at", -1).limit(CHAT_SHOWN)))]
+
+
+@app.get("/chat/latest")
+def chat_latest():
+    """The chat panel asks this after a page change while an answer was still being worked on (read-only)."""
+    return JSONResponse({"messages": [{"q": m["q"], "a": m["a"], "at": int(m["at"].replace(tzinfo=timezone.utc).timestamp() * 1000)}
+                                      for m in chat_log()]})
 
 
 @app.post("/ask")

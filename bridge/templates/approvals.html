@@ -36,7 +36,7 @@
         {% else %}<span class="chip">Drafted by {{ a.drafted_by }}</span>{% endif %}
         {% if a.invoice_number %}<span class="chip">{{ a.invoice_number }}</span>{% endif %}
       </div>
-      <p class="ask__why">{{ a.reason }}</p>
+      <p class="ask__why">{{ a.reason|highlight }}</p>
       {% if c.new_sender %}
       <p class="warn"><svg class="ico"><use href="#i-alert"/></svg><span><b>First invoice we've ever had from {{ a.counterparty }}.</b>
         It came in by {{ "email" ~ (" from " ~ c.from_email if c.from_email else "") if c.source == "email" else "upload" }}. Anyone can send an invoice, so check it's genuine before you pay.</span></p>

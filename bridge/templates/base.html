@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <link rel="preload" href="/static/gaia-van.webp?v=2" as="image" type="image/webp">
-<link rel="stylesheet" href="/static/cofoundr.css?v=33">
+<link rel="stylesheet" href="/static/cofoundr.css?v=36">
 <script>
   document.documentElement.classList.add("js");
   /* Loading screen: once per browser session (or ?splash=1), never for reduced motion. Decided before first paint. */
@@ -21,6 +21,14 @@
       document.documentElement.classList.add("splash-on"); sessionStorage.setItem("cf-splash", "1");
     }
   } catch (e) {}
+  /* To-do list: open or minimised as the owner left it, on every page */
+  document.addEventListener("DOMContentLoaded", () => {
+    const t = document.getElementById("todo"); if (!t) return;
+    try { if (localStorage.getItem("cf-todo-open") === "1") t.open = true; } catch (e) {}
+    t.addEventListener("toggle", () => { try { localStorage.setItem("cf-todo-open", t.open ? "1" : "0"); } catch (e) {} });
+  });
+  /* Chat panel left open on the last page: show it again before the first frame, so it never flickers closed */
+  try { if (sessionStorage.getItem("cf-chat-open")) document.documentElement.classList.add("chat-restore"); } catch (e) {}
   /* Page switch direction: going down the sidebar the new page rises from below, going back up it drops in from above.
      Set on the new page just before its first frame (pagereveal), cleared when the animation ends. */
   addEventListener("pagereveal", (e) => {
@@ -39,7 +47,7 @@
 <div class="splash" aria-hidden="true">
   <div class="splash__photo"></div>
   <div class="splash__inner">
-    <span class="splash__mark">{% for ch in "Cofoundr" %}<b style="--i:{{ loop.index0 }}">{{ ch }}</b>{% endfor %}<i>.</i></span>
+    <span class="splash__mark">{% for ch in "CoFoundr" %}<b style="--i:{{ loop.index0 }}">{{ ch }}</b>{% endfor %}<i>.</i></span>
     <span class="splash__tag">Your AI co-founder</span>
     <span class="splash__bar"><i></i></span>
   </div>
@@ -82,32 +90,13 @@
   <symbol id="i-yes" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="m8 12.5 3 3 5-6"/></symbol>
 </svg>
 
-{% if chat is not none %}
-<section class="chat glass" id="chat" aria-label="Chat with CoFoundr"{% if not chat_open %} hidden{% endif %}>
-  <header class="chat__head"><span class="chatbar__who" aria-hidden="true">C</span><div><b>CoFoundr</b><small>powered by Gemini · reads your data, never moves money</small></div>
-    <a class="chat__close" href="{{ path }}" aria-label="Close the chat">×</a></header>
-  <div class="chat__log" role="log" aria-live="polite">
-    {% for m in chat %}
-    <p class="chat__me">{{ m.q }}</p>
-    <p class="chat__them">{{ m.a | bold }}</p>
-    {% endfor %}
-  </div>
-  <form class="chat__form" method="post" action="/ask">
-    <input type="hidden" name="back" value="{{ path }}">
-    <label class="sr" for="chat-msg">Reply to CoFoundr</label>
-    <input id="chat-msg" name="text" autocomplete="off" placeholder="Ask me anything…"{% if chat_open %} autofocus{% endif %}>
-    <button class="btn send" aria-label="Send" data-busy="…"><svg class="ico"><use href="#i-up"/></svg></button>
-  </form>
-</section>
-{% endif %}
-
 {% if msg %}
 <div class="toast" role="status"><svg class="ico"><use href="#i-check"/></svg><p>{{ msg | bold }}</p><button type="button" aria-label="Dismiss">×</button></div>
 {% endif %}
 
 <div class="app">
   <aside class="side glass" aria-label="CoFoundr">
-    <a class="logo" href="/">Cofoundr<i>.</i></a>
+    <a class="logo" href="/">CoFoundr<i>.</i></a>
     {% for group in [nav, nav_more] %}
     {% if not loop.first %}<p class="nav__group">More</p>{% endif %}
     <nav class="nav"{% if not loop.first %} aria-label="More"{% endif %}>
@@ -128,6 +117,15 @@
       <div class="me"><span class="me__avatar">G</span><span><b>GAIA Coffee</b><small>Owner · synthetic demo</small></span></div>
     </div>
   </aside>
+  {% if todo and todo.count %}
+  <details class="todo glass" id="todo">
+    <summary><svg class="ico"><use href="#i-yes"/></svg><b>To do</b><span class="todo__count">{{ todo.count }}</span><svg class="ico todo__chev"><use href="#i-chev"/></svg></summary>
+    <ol class="todo__list">
+      {% for t in todo["items"] %}<li class="todo__item todo__item--{{ t.kind }}"><a href="{{ t.href }}"><b>{{ t.text }}</b>{% if t.detail %}<small>{{ t.detail|highlight }}</small>{% endif %}</a></li>{% endfor %}
+    </ol>
+    {% if todo.more %}<a class="todo__more" href="/approvals">+{{ todo.more }} more</a>{% endif %}
+  </details>
+  {% endif %}
   <main class="main">
     {% block content %}{% endblock %}
     {% if path != "/whatsapp" %}{# the Chat page has its own box at the top #}
@@ -141,6 +139,25 @@
     {% endif %}
   </main>
 </div>
-<script src="/static/cofoundr.js?v=23" defer></script>
+{# the chat panel last in the page: drawn above the main panel, also during the page-switch animation #}
+{% if chat is not none %}
+<section class="chat glass" id="chat" aria-label="Chat with CoFoundr"{% if not chat_open %} hidden{% endif %}>
+  <header class="chat__head"><span class="chatbar__who" aria-hidden="true">C</span><div><b>CoFoundr</b><small>powered by Gemini · reads your data, never moves money</small></div>
+    <a class="chat__close" href="{{ path }}" aria-label="Close the chat">×</a></header>
+  <div class="chat__log" role="log" aria-live="polite">
+    {% for m in chat %}
+    <p class="chat__me">{{ m.q }}</p>
+    <p class="chat__them">{{ m.a | bold }}</p>
+    {% endfor %}
+  </div>
+  <form class="chat__form" method="post" action="/ask">
+    <input type="hidden" name="back" value="{{ path }}">
+    <label class="sr" for="chat-msg">Reply to CoFoundr</label>
+    <input id="chat-msg" name="text" autocomplete="off" placeholder="Ask me anything…"{% if chat_open %} autofocus{% endif %}>
+    <button class="btn send" aria-label="Send" data-busy="…"><svg class="ico"><use href="#i-up"/></svg></button>
+  </form>
+</section>
+{% endif %}
+<script src="/static/cofoundr.js?v=24" defer></script>
 </body>
 </html>

@@ -721,3 +721,38 @@ html[data-vt="up"]::view-transition-new(*.morph) { animation-name: vt-focus-in-f
 .chatbar { transition: opacity .3s var(--ease), transform .35s var(--ease); }
 .chat-is-open .chatbar { opacity: 0; transform: translateY(24px) scale(.98); pointer-events: none; }
 .chat-is-open .chatbar:focus-within { opacity: 0; }
+
+/* The chat panel stays open across pages until ×: restored before the first frame (html.chat-restore, base.html) and held
+   still during the page switch, like the sidebar */
+.chat-restore .chat[hidden] { display: flex; }
+.chat-restore .chatbar { opacity: 0; transform: translateY(24px) scale(.98); pointer-events: none; }
+.chat { view-transition-name: chat; }
+::view-transition-group(chat), ::view-transition-new(chat) { animation: none; }
+::view-transition-old(chat) { display: none; }
+::view-transition-group(chat) { z-index: 50; }  /* above the morphing main panel while pages switch */
+
+/* ---------- Key facts marked in long text (view.highlight): money, %, deadlines, dates ---------- */
+mark.hl { background: linear-gradient(transparent 58%, rgba(201, 150, 43, .32) 58%); color: inherit; font-weight: 600; padding: 0 1px; border-radius: 2px; }
+.muted mark.hl { color: var(--ink-2); }
+
+/* ---------- To-do list on every page: a frosted pill top-right that expands into the list ---------- */
+.todo { position: fixed; top: 18px; right: 22px; z-index: 30; width: min(360px, calc(100vw - 32px)); border-radius: 22px; view-transition-name: todo; }
+.todo summary { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; list-style: none; font-size: 14.5px; }
+.todo summary::-webkit-details-marker { display: none; }
+.todo:not([open]) { width: auto; border-radius: 99px; }
+.todo__count { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 99px; display: grid; place-items: center; background: var(--navy, var(--ink)); color: #fff; font-size: 12px; font-weight: 600; }
+.todo__chev { margin-left: auto; transform: rotate(90deg); transition: transform .3s var(--ease); }
+.todo[open] .todo__chev { transform: rotate(-90deg); }
+.todo__list { margin: 0; padding: 0 10px 10px 10px; list-style: none; display: grid; gap: 4px; counter-reset: todo; max-height: min(60vh, 520px); overflow-y: auto; }
+.todo__item a { display: grid; gap: 2px; padding: 9px 12px 9px 38px; border-radius: 14px; position: relative; color: var(--ink); transition: background .2s; }
+.todo__item a:hover { background: rgba(255, 255, 255, .7); }
+.todo__item a::before { counter-increment: todo; content: counter(todo); position: absolute; left: 10px; top: 10px; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 11.5px; font-weight: 700; background: var(--mustard-bg, #f4ead2); color: var(--mustard-text, var(--ochre)); }
+.todo__item--approve a::before { background: var(--navy, var(--ink)); color: #fff; }
+.todo__item b { font-size: 14px; font-weight: 600; line-height: 1.3; }
+.todo__item small { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+.todo__more { display: block; padding: 0 14px 12px 48px; font-size: 13px; color: var(--ink-2); }
+.todo[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+::view-transition-group(todo), ::view-transition-new(todo) { animation: none; }
+::view-transition-old(todo) { display: none; }
+@media (max-width: 900px) { .todo { top: 10px; right: 10px; } }
