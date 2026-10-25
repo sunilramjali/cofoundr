@@ -108,9 +108,12 @@ def _back(msg: str, to: Optional[str] = "/") -> RedirectResponse:
 
 # ---------- Owner dashboard: a home of modules, each opening into its own page ----------
 
-NAV = [  # sidebar: (label, path, icon); pages not listed here are reached from the home feed
-    ("Home", "/", "home"), ("Board", "/board", "bulb"), ("Insights", "/sales", "chart"), ("Finances", "/invoices", "pound"), ("Inventory", "/inventory", "box"),
-    ("Ask", "/whatsapp", "chat"), ("Tasks", "/approvals", "yes"), ("News", "/news", "spark"),
+NAV = [  # sidebar, in the order of the owner's day (and the demo): (label, path, icon)
+    ("Home", "/", "home"), ("Approvals", "/approvals", "yes"), ("Inbox", "/inbox", "in"), ("Finances", "/invoices", "pound"),
+    ("Insights", "/sales", "chart"), ("Board", "/board", "bulb"), ("Activity", "/activity", "clock"),
+]
+NAV_MORE = [  # a quieter second group: useful, not daily
+    ("Inventory", "/inventory", "box"), ("News", "/news", "spark"), ("Chat", "/whatsapp", "chat"),
 ]
 
 
@@ -149,7 +152,7 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "trend": view.trend(sales, week),
         "stock": view.stock_estimate(list(db[schema.STOCK_COUNTS].find({"business_id": BUSINESS_ID})), now),
         "opportunities": view.opportunities(gmail_logs),
-        "nav": NAV,
+        "nav": NAV, "nav_more": NAV_MORE,
         "memo": memo,
         "memo_running": _board_running.locked(),
         "record": record,

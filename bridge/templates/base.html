@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="/static/cofoundr.css?v=19">
+<link rel="stylesheet" href="/static/cofoundr.css?v=20">
 <script>
   document.documentElement.classList.add("js");
   /* Loading screen: once per browser session (or ?splash=1), never for reduced motion. Decided before first paint. */
@@ -95,15 +95,18 @@
 <div class="app">
   <aside class="side glass" aria-label="CoFoundr">
     <a class="logo" href="/">Cofoundr<i>.</i></a>
-    <nav class="nav">
-      {% for label, href, icon in nav %}
-      {%- set on = (path == href) or (href == "/whatsapp" and path == "/whatsapp") -%}
+    {% for group in [nav, nav_more] %}
+    {% if not loop.first %}<p class="nav__group">More</p>{% endif %}
+    <nav class="nav"{% if not loop.first %} aria-label="More"{% endif %}>
+      {% for label, href, icon in group %}
+      {%- set on = path == href -%}
       <a href="{{ href }}" class="{{ 'is-on' if on }}"{% if on %} aria-current="page"{% endif %}>
         <span class="nav__ico"><svg class="ico"><use href="#i-{{ icon }}"/></svg></span><span class="label">{{ label }}</span>
         {% if href == "/approvals" and n %}<span class="count">{{ n }}</span>{% endif %}
       </a>
       {% endfor %}
     </nav>
+    {% endfor %}
     <div class="side__foot">
       <nav class="nav"><a href="/settings" class="{{ 'is-on' if path == '/settings' }}"><span class="nav__ico"><svg class="ico"><use href="#i-gear"/></svg></span><span class="label">Settings</span></a></nav>
       <span class="status"><i class="dot {{ 'dot--warn' if inbox.last and not inbox.last.ok else ('dot--live' if inbox.configured and inbox.polling else '') }}"></i>
