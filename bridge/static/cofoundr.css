@@ -554,9 +554,9 @@ mark { background: var(--amber-bg); color: inherit; border-radius: 3px; padding:
 .nav__group { margin: 14px 10px 4px; font: 600 11px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 
 /* ---------- Backdrop: the owner's own photo of the GAIA van, colours untouched ----------
-   Anchored at the van's centre (it sits at 50% / 50% of the photo), so "cover" crops around it and the van stays in the
+   Anchored at the van's centre (51% across, 55% down in the photo), so "cover" crops around it and the van stays in the
    middle of the screen at any size. Fixed, so it doesn't jump between pages; the glass panes blur it. */
-.backdrop { background: #ece6db url("/static/gaia-van.webp") 50% 50% / cover no-repeat; }
+.backdrop { background: #ece6db url("/static/gaia-van.webp?v=2") 51% 55% / cover no-repeat; }
 /* Readable over a real photo without tinting it: slightly more solid panes, and the text that sat straight on the photo
    (greeting, section label) gets its own frosted panel */
 .glass { background: linear-gradient(155deg, rgba(255, 255, 255, .74), rgba(255, 255, 255, .62) 42%, rgba(255, 255, 255, .54)); }
