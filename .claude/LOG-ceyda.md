@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 03:00 — Unprompted WhatsApp seen live; approved reminders really emailed
+- **Did:** uploaded the synthetic `gaia_overdue.png` live → GAIA-1050 (Hackney Hub, £225) read ✓ + #5 drafted → 25 s later both WhatsApp updates **delivered** unprompted. `outputs/email.py`: approved reminders sent via Gmail SMTP from the demo inbox, always to `REMINDER_INBOX` (default the demo inbox), never the customer's address; header `X-CoFoundr: reminder`; `inputs/gmail.py` skips CoFoundr's own emails; failed send → back in the queue (existing rule). No credentials → still simulated. SMTP verified with one test email to the demo inbox. 526 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **Next:** live "approve 5" → email lands; then fix the intermittent Fly health-check failures (01:12, 01:29, 01:56, 02:27)
+- **Blockers / notes for partner:** Sunil, demo DB now has GAIA-1050 + approval #5 (my live test). Fly health check failed 4× tonight: app briefly unresponsive, worth a look before the demo
+
 ## Sun 25 Oct, 04:00 — UI: Apple type, glassmorphism, WebGL loading screen
 - **Did:** fonts → SF Pro (system) with Inter fallback, Instrument Serif dropped, headings semibold/bold with tight tracking; glass panes more see-through (gradient fill, stronger blur + saturation, hairline rim); chat panel frosted. New loading screen (`base.html` + `cofoundr.js`): WebGL liquid light on black, wordmark blurs in letter by letter, progress line, then the light swells to cream and dissolves (~2.3 s). Once per session, skip on click/key, never with reduced motion, CSS failsafe hides it at 4.5 s; `?splash=1` forces it for the demo. Checked in the browser. 482 tests pass
 - **Status:** done, PR into `stage` + release PR

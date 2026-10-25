@@ -120,9 +120,9 @@ CoFoundr isn't a chatbot or a bookkeeping tool. It's an agent that does the work
 | Atlas feature | Used? | Where |
 |---|---|---|
 | Atlas Search | ✓ | `backend/db/search.py`, 5 indexes. `invoices_text`: typo-tolerant keyword search, **highlighting** of the matched words, **facets** (`$searchMeta`: invoices per supplier on Finances), **autocomplete** in the search box (`GET /search/suggest`), and the **duplicate-invoice check** on intake ("EDC 7781" = "EDC-7781", held for review). `products_text`: typo-tolerant product names for the assistant's price what-ifs ("capuccino" → Cappuccino). `agent_log_text`: search the agent's own record (Activity page + the assistant's `search_activity` tool). `board_memos_text` + `events_text`: the assistant's `search_notes` tool. `news_text`: **local news ranked by how soon and how close** (`near` on dates + a **geo** point from the pitch), the same story from two sources merged with **`moreLikeThis`**, facets by kind (`/news`). Live self-test: `python -m backend.db.search --check` |
-| Atlas Vector Search | ✓ | `similar_invoices()`, index `invoices_semantic`: similar past invoices for the cross-supplier price check |
-| Hybrid Search | ✓ | `search_invoices()`: keyword + meaning merged with `$rankFusion` |
-| Automated Embedding | ✓ | `autoEmbed` on invoices' `search_text`: Atlas embeds on insert, no embedding code of ours |
+| Atlas Vector Search | ✓ | `similar_invoices()`, index `invoices_semantic`: similar past invoices for the cross-supplier price check. `news_semantic`: local news by meaning ("catering work for a coffee van" finds "London coffee carts get event quote requests") and **More like this** on `/news` (`similar_news`) |
+| Hybrid Search | ✓ | `search_invoices()` and `news_search()`: keyword + meaning merged with `$rankFusion` (Finances and News search boxes, the assistant's tools) |
+| Automated Embedding | ✓ | `autoEmbed` on invoices' and news items' `search_text`: Atlas embeds on insert and update, no embedding code of ours. MongoDB labels this feature **Preview**: fine for a demo, not yet for production |
 | Atlas Stream Processing | ✗ not built | |
 | Voyage AI | ✓ | `voyage-4`, behind Automated Embedding |
 
@@ -156,7 +156,7 @@ CoFoundr isn't a chatbot or a bookkeeping tool. It's an agent that does the work
 6. **Inventory:** what's probably on the truck, from the last stock count (an estimate: deliveries aren't recorded yet).
 7. **Board:** the board memo, with every number checked against your records.
 8. **Activity:** everything the agent did, step by step.
-9. **News:** what's happening near the truck (recent news and upcoming events), soonest and closest first. Read-only.
+9. **News:** what's happening near the truck (recent news, upcoming events, Tube disruptions), soonest and closest first; search by words or meaning; **More like this** on any item; **Add something you found**: a web or event page, a TikTok video (TikTok's official oEmbed) or an Instagram post with your note. Read-only: CoFoundr never contacts anyone. Sources are only read where allowed (RSS, official APIs, robots.txt); social media is never scraped.
 
 ### Running it locally (for judges)
 **Live demo:** https://cofoundr.fly.dev

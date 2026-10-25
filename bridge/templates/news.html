@@ -8,7 +8,7 @@
 <form class="search" method="get" action="/news" role="search">
   <svg class="ico"><use href="#i-spark"/></svg>
   <label class="sr" for="news-q">Search local news</label>
-  <input id="news-q" name="q" value="{{ q }}" autocomplete="off" placeholder="Search local news… try “market” or “film”">
+  <input id="news-q" name="q" value="{{ q }}" autocomplete="off" placeholder="Search by words or meaning… try “catering work” or “road closures”">
   {% if kind %}<input type="hidden" name="show" value="{{ kind }}">{% endif %}
   <button class="btn btn--soft" type="submit">Search</button>
 </form>
@@ -20,22 +20,34 @@
 </nav>
 {% endif %}
 <section class="block search__results">
-  <h2>{% if q %}{{ feed.hits|length }} match{{ "es" if feed.hits|length != 1 }} for “{{ q }}”{% else %}Soonest and closest first{% endif %}
-    <small>{{ "MongoDB Atlas Search: ranked by date and distance from the pitch (near), duplicates merged (moreLikeThis)" if feed.mode == "atlas" else "ranked here (Atlas Search unavailable)" }}</small></h2>
+  <h2>{% if liked %}More like “{{ liked.headline }}”{% elif q %}{{ feed.hits|length }} match{{ "es" if feed.hits|length != 1 }} for “{{ q }}”{% else %}Soonest and closest first{% endif %}
+    <small>{% if liked %}{{ "MongoDB Atlas Vector Search: closest in meaning (Voyage embeddings, made by Atlas)" if feed.mode == "atlas" else "sharing the most words (Vector Search unavailable here)" }}{% elif feed.mode == "hybrid" %}MongoDB Atlas hybrid search: words + meaning, merged with $rankFusion{% elif feed.mode == "atlas" %}MongoDB Atlas Search: ranked by date and distance from the pitch (near), duplicates merged (moreLikeThis){% else %}ranked here (Atlas Search unavailable){% endif %}</small></h2>
   <ul class="rows">
     {% for n in feed.hits %}
     <li class="row row--news">
-      <span class="avatar" aria-hidden="true">{{ {"event": "🎪", "market": "🏪", "venue": "📍", "opportunity": "💡"}.get(n.kind, "📰") }}</span>
+      <span class="avatar" aria-hidden="true">{{ {"event": "🎪", "market": "🏪", "venue": "📍", "opportunity": "💡", "transport": "🚇"}.get(n.kind, "📰") }}</span>
       <div style="min-width:0">
         <div class="row__who"><a href="{{ n.url }}" target="_blank" rel="noopener noreferrer nofollow">{% if n.get("highlights") %}{% for part in n.get("highlights")[0] %}{% if part.hit %}<mark>{{ part.value }}</mark>{% else %}{{ part.value }}{% endif %}{% endfor %}{% else %}{{ n.headline }}{% endif %}</a></div>
-        <div class="row__sub"><span>{{ n.source }}</span><span class="chip chip--sky">{{ n.kind }}</span>{% if n.get("starts_at") %}<span>on {{ n.get("starts_at")|day }}</span>{% endif %}{% if n.get("distance_km") is not none %}<span>{{ "%.1f"|format(n.get("distance_km")) }} km away</span>{% endif %}</div>
+        <div class="row__sub"><span>{{ n.source }}</span><span class="chip chip--sky">{{ n.kind }}</span>{% for m in n.get("matched_by") or [] %}<span class="chip chip--{{ 'sky' if m == 'meaning' else 'sage' }}">{{ "by meaning" if m == "meaning" else "by keyword" }}</span>{% endfor %}{% if n.get("starts_at") %}<span>on {{ n.get("starts_at")|day }}</span>{% endif %}{% if n.get("distance_km") is not none %}<span>{{ "%.1f"|format(n.get("distance_km")) }} km away</span>{% endif %}</div>
         {% if n.get("summary") %}<div class="row__hl">{{ n.get("summary") }}</div>{% endif %}
+        {% if not liked %}<a class="btn btn--text btn--small" href="/news?like={{ n._id|urlencode }}">More like this</a>{% endif %}
       </div>
     </li>
     {% else %}
     <li class="empty"><svg class="ico"><use href="#i-spark"/></svg><div><b>Nothing{{ " matched" if q else " yet" }}.</b>{{ "Try another word, like “market”." if q else "I'll fill this from local news, nearby events and your notes." }}</div></li>
     {% endfor %}
   </ul>
-  {% if q or kind %}<p><a class="btn btn--text" href="/news">Back to everything</a></p>{% endif %}
+  {% if q or kind or liked %}<p><a class="btn btn--text" href="/news">Back to everything</a></p>{% endif %}
+  {% if feed.hits|selectattr("kind", "equalto", "transport")|list %}<p class="muted"><small>Transport: Powered by TfL Open Data.</small></p>{% endif %}
+</section>
+<section class="block">
+  <h2>Add something you found <small>a web page, an event page, a TikTok video or an Instagram post (with a note). I read it once; I don't contact anyone.</small></h2>
+  <form class="addlink" method="post" action="/news/add">
+    <label class="sr" for="add-url">Link</label><input id="add-url" name="url" type="url" required placeholder="https://…" maxlength="2000">
+    <label class="sr" for="add-kind">Kind</label><select id="add-kind" name="kind">{% for k in kinds if k != "transport" %}<option value="{{ k }}"{% if k == "opportunity" %} selected{% endif %}>{{ k|capitalize }}</option>{% endfor %}</select>
+    <label class="sr" for="add-when">Date (if it's an event)</label><input id="add-when" name="when" type="date">
+    <label class="sr" for="add-note">Note</label><input id="add-note" name="note" maxlength="500" placeholder="Your note (needed for Instagram)">
+    <button class="btn btn--soft" type="submit">Add</button>
+  </form>
 </section>
 {% endblock %}

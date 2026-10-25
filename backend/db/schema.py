@@ -51,11 +51,11 @@ class NewsItem(TypedDict):
     """One thing worth knowing about near the truck. Awareness only: nothing here contacts anyone."""
     _id: str  # "<business_id>:<sha1 of the url>": one item per link, however often it's fetched
     business_id: str
-    kind: Literal["event", "market", "venue", "opportunity", "news"]
+    kind: Literal["event", "market", "venue", "opportunity", "transport", "news"]
     headline: str  # always the source's own headline (never written by Gemini)
     summary: str  # ≤ 200 chars: why it matters to a coffee truck (Gemini, checked) or the source's own description
     url: str  # http(s) link to the source
-    source: str  # "Hackney Gazette", "Ticketmaster", "Owner's notes"
+    source: str  # "Hackney Gazette", "Ticketmaster", "TfL (Powered by TfL Open Data)", "Owner's notes", "Owner's link · TikTok"
     published_at: datetime
     starts_at: NotRequired[datetime]  # when the event happens, if it's an event
     location: NotRequired[dict]  # GeoJSON Point [lon, lat], when known: ranks by distance from the pitch

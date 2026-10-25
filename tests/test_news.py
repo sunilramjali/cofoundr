@@ -152,6 +152,9 @@ def test_record_news_is_idempotent_and_merges_the_same_story(db):
     ({"headline": "Hackney Half road closures", "published_at": NOW}, {"headline": "Road closures for Hackney Half", "published_at": NOW - timedelta(days=1)}, True),
     ({"headline": "Hackney Half road closures", "published_at": NOW}, {"headline": "Road closures for Hackney Half", "published_at": NOW - timedelta(days=5)}, False),
     ({"headline": "Film shoot on Mare Street", "published_at": NOW}, {"headline": "New bakery on Mare Street", "published_at": NOW}, False),
+    ({"headline": "Coffee carts at weddings", "published_at": NOW}, {"headline": "Coffee carts at film shoots", "published_at": NOW}, False),
+    ({"headline": "50 free places and coaching offered for sold-out Hackney Half", "published_at": NOW},
+     {"headline": "50 east Londoners offered free places in sold-out Hackney Half marathon", "published_at": NOW}, True),
 ])
 def test_is_same_story(a, b, same):
     assert search.is_same_story({"_id": "a", **a}, {"_id": "b", **b}) is same
