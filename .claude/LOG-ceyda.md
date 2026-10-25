@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 02:30 — Assistant: friendlier voice, heads-up tips, deeper thinking on hard questions
+- **Did:** `assistant.py`: coffee-chat tone (warm British English, one friendly opener, same clean layout); `heads_up()` (code finds stock running low, wind in the next 3 days, invoices to check, top priority; skips anything said in the last 2 h) sent with the question, Gemini may end with one "💡 Heads-up"; questions needing judgement (what if / should / why / plan…) get Argon HIGH thinking, lookups MEDIUM; WhatsApp sends "give me a moment ☕" first for those. Previewed with real Gemini: lookups ~8 s, HIGH 38–62 s. 440 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **Next:** live check; if HIGH is too slow in the demo, narrow `HARD` or set it to MEDIUM
+- **Blockers / notes for partner:** none in your area
+
 ## Sun 25 Oct, 01:40 — Stock in whole units, wind warning, natural to-do questions
 - **Did:** `view.qty()` = whole numbers with units ("3 kg", "12 litres", "40"; needs/orders rounded up) on `/inventory` and in the assistant's `stock_needed`; `view.wind_warning()` (≥ 30 km/h max wind) on the home card and in `day_conditions` (Gemini passes it on with 💨). "What needs to be done?", "what's our to-do list?", "what's up today?" now get the list (Gemini prompt + the no-Gemini fallback). WhatsApp answers: bold titles, gaps, "Would you like to approve any now?". 435 tests pass
 - **Status:** done, PR into `stage` + release PR
