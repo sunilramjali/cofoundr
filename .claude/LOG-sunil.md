@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, ~01:00 — Priorities re-ranked for demo day; new UI waiting for release #54
+- **Did:** `python -m backend.ai.prioritise` on the demo DB (only `tasks` replaced + 1 log entry): #1 "Prep for Monday (Mon 26 Oct): ~£599 expected" (new date format), then Pay Cup & Lid £184, chase Shoreditch £288, Victoria Park £455, Hackney Hub £450, Meadowfield milk match, £0.60 fee refund. Release #51 (board £ fix, docs, demo script) is live on Fly; #53 (dashboard proof UI) merged into `stage` after it, so opened **release #54** for it
+- **Status:** #54 waiting for Jade's approval. WhatsApp still not reaching the app: nothing in `agent_log` since the 22:23 `whatsapp_rejected` (bad signature)
+- **Next:** after #54 deploys, check Finances search on Fly is hybrid ("by meaning" chips). Dry run on the new UI (sandbox), sleep, then live rehearsal + backup video in the morning. If WhatsApp isn't fixed by ~09:00, rehearse the dashboard fallback (`/inbox` upload → approve in Tasks) as the main path
+- **Blockers / notes for partner:** Jade, please approve #54 (the UI we rehearse and record on). Where are you with WhatsApp (sandbox webhook URL + `TWILIO_AUTH_TOKEN`)?
+
 ## Sun 25 Oct, ~00:30 — Dashboard shows the proof, not the data (in Jade's area, she's on WhatsApp)
 - **Did:** Home: "While you were away, I…" (`view.while_away`: invoices read + flagged, fee overcharges, board tokens + wrong numbers caught, forecast self-grade, each links to its page) + "Do first" (top 3 `tasks` with Gemini's reason); opportunity + low stock folded into "More from me". Board: "The database check caught: ~~10 Fresh Pastries~~ → 8" chips up front (`view.board_fixes`), "tokens read in one Gemini call", "wrong numbers caught" stat. Insights: forecast grades + fee audit (`#record`, `#fees`) moved above the history. Finances: search box → `search.search_invoices` (Atlas hybrid, `by keyword`/`by meaning` chips; plain match when no Atlas). `prioritise.py`: prep task title "Prep for today (Sat 24 Oct)" not ISO. Bill cards, scam warning and Pay-now link kept as they were. `tests/test_dashboard_proof.py` (6) → 393 pass
 - **Status:** done, PR into `stage`
