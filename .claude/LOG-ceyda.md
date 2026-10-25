@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 11:30 — Owner-facing only: technical metrics removed from the pages
+- **Did:** Board page: intro sentence + stats (tokens read, till lines + invoices, insights checked, wrong numbers caught) and the model name removed (all still stored in `board_memos`). Home "While you were away": no token count; "Ranked by Gemini…" line removed. Chat panel/Chat page/Settings/Inbox/Insights: no "powered by Gemini"/"read by Gemini" (now "I read it…"); search results, facets, news and the memory note: no "MongoDB Atlas …" labels; "Drafted by Gemini" → "Drafted for you". Kept: the demo-data labels (project rule), the Board "Checked ✓" chips and corrections, the Under the hood page (Sunil's, for the MongoDB video). Merged `stage` (Sunil's to-dos; CSS conflict kept both). 657 tests pass
+- **Status:** done, on PR #107 (into `stage`)
+- **Next:** merge #108 first, then #107 (avoid stacking), new release
+- **Blockers / notes for partner:** Sunil, edits in your tests `test_board.py`, `test_dashboard_proof.py`, `test_search_more.py`: they now check the metrics are NOT shown
+
 ## Sun 25 Oct, 11:15 — CoFoundr spelling, logo colours, to-do pill row, Board higher in the sidebar
 - **Did:** "CoFoundr" with a capital F in the sidebar logo + loading screen (#105); logo "Co" mustard, "Foundr" charcoal, dot navy; to-do pill moved into its own row at the top of `main` (`.topbar`), so minimised it covers nothing, open it drops down; sidebar: Board second, below Home; Board title starts "Our latest board meeting:". 633 tests pass
 - **Status:** done, PR into `stage`; in release #104
