@@ -406,7 +406,7 @@ TASK_LINKS = {"prep_day": "/sales", "price_rise": "/invoices", "price_match": "/
               "review_invoice": "/invoices"}
 
 
-def todo_list(pending: List[dict], review: List[dict], tasks: List[dict], stock: dict) -> dict:
+def todo_list(pending: List[dict], review: List[dict], tasks: List[dict], stock: dict, mine: List[dict] = ()) -> dict:
     """The owner's to-do list on every page: what needs a yes first (most overdue first), then invoices to check, the top
     priorities and stock running out. Each item links to where it's done. Display only: nothing here changes data."""
     items = []
@@ -418,8 +418,11 @@ def todo_list(pending: List[dict], review: List[dict], tasks: List[dict], stock:
     for inv in review:
         items.append({"kind": "check", "text": f"Check {inv.get('invoice_number')} from {inv.get('counterparty')}",
                       "detail": (inv.get("verification_issues") or ["didn't add up when I read it"])[0], "href": "/invoices"})
+    for t in mine:  # the owner's own to-dos (backend/todos.py), ticked off on Home
+        items.append({"kind": "do", "text": f"T{t['ref']} {t['text']}", "detail": f"by {t['due']} · reply “done T{t['ref']}”"
+                      if t.get("due") else f"reply “done T{t['ref']}”", "href": "/#todos"})
     for t in tasks:
-        if t.get("kind") in ("approval", "review_invoice"):
+        if t.get("kind") in ("approval", "review_invoice", "owner_todo"):
             continue  # already listed above
         items.append({"kind": "do", "text": t["title"], "detail": t.get("reason") or "", "href": TASK_LINKS.get(t.get("kind"), "/")})
     for s in stock.get("low", [])[:2]:

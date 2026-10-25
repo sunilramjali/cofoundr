@@ -769,3 +769,13 @@ mark.hl { background: linear-gradient(transparent 58%, rgba(201, 150, 43, .32) 5
 .logo .logo__co { color: var(--mustard-text, #a8781a); }
 .logo i { color: var(--navy, var(--accent)); }
 .heading__lead { color: var(--mustard-text, #a8781a); }  /* Board page: "Our latest board meeting:" before the memo headline */
+/* The owner's to-do list on Home (backend/todos.py) */
+.mine { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.mine li { display: flex; align-items: center; gap: 10px; font-size: 14.5px; }
+.mine form { margin: 0; }
+.mine__tick { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--sage); background: transparent; color: var(--sage);
+  display: grid; place-items: center; cursor: pointer; padding: 0; }
+.mine__tick .ico { width: 14px; height: 14px; opacity: 0; transition: opacity .15s; }
+.mine__tick:hover .ico, .mine__tick:focus-visible .ico { opacity: 1; }
+.mine__add { display: flex; gap: 8px; margin-top: 10px; }
+.mine__add input { flex: 1; min-width: 0; font: inherit; padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(28, 29, 27, .14); background: rgba(255, 255, 255, .7); }

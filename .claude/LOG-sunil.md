@@ -12,6 +12,13 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, ~11:15 — The chat acts: the owner's to-do list (WhatsApp, chat bar, Gemini, dashboard)
+- **Did:** `backend/todos.py` + collection `todos` (T-numbers, dedupe, ≤ 200 chars, 50 open max, every add/tick logged). Exact commands, never Gemini: "todo: …", "add to my list: …", "remind me to …", "done T3" (`replies.parse_todo/parse_done`, questions like "todo list?" excluded) on WhatsApp + chat bar. Gemini tools `add_todo` (with due date), `complete_todo`, `list_todos` (16 tools). Home card "Your to-dos" (add box, tick buttons, `POST /todos/add`, `/todos/{ref}/done`). Open to-dos ranked in priorities as `owner_todo` and never wiped by the ranking. `tests/test_todos.py` → 651 pass
+- **Live (demo DB):** "put ordering more napkins on my list for Friday" → Gemini `add_todo` T1 due Fri 30 Oct; "what's on my list?" → `list_todos`; "tick that off" → `complete_todo`. All verified. T1 left done; list empty
+- **Not built (on purpose, too close to the deadline):** free-form email drafts as a new approval type
+- **Status:** done, PR into `stage`
+- **Blockers / notes for partner:** Jade, **your area**: `assistant.py` (3 tools + prompt), `inputs/whatsapp.py` (`todo_reply`), `inputs/replies.py`, `bridge/main.py` (routes, `_context`, `_chat_reply`), `home.html` card, CSS v=35, `test_edges.py` `WRITES` (+2 writers). Schema: `TODOS`, `Todo`, `Task.kind` + `owner_todo`
+
 ## Sun 25 Oct, ~10:40 — Synthetic till moved to GAIA's real week (Thu–Sun), demo DB rebuilt
 - **Why:** the till export traded Mon/Wed/Fri/Sat while the card payments (EVO sample) and real GAIA trade Thu–Sun, so the forecast showed Mon/Wed open
 - **Did:** `data/shift_trading_week.py` (one-off, refuses to run twice): every order + stock count moves within its own week (Mon→Thu, Wed→Fri, Fri→Sat, Sat→Sun), same London wall-clock time, ids follow the date, items/amounts unchanged → 3,969 orders, all Thu–Sun, ids unique. Text: `forecast.py` docstring, `settings.html` ("trades Thu–Sun"), README roadmap line dropped. 10 tests pinned old dates → updated (incl. 4 in `test_edges.py`) → 626 pass
