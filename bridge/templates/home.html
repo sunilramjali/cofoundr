@@ -96,6 +96,18 @@
   </section>
   {% endif %}
 
+  <section class="card card--list glass" id="todos" style="--i:3">
+    <span class="gem gem--sage"><svg class="ico"><use href="#i-check"/></svg></span>
+    <div><h3>Your to-dos</h3>
+      {% if todos %}<ul class="todo">{% for t in todos %}<li><form method="post" action="/todos/{{ t.ref }}/done">
+        <button class="todo__tick" aria-label="Done: {{ t.text }}" data-busy="…"><svg class="ico"><use href="#i-check"/></svg></button></form>
+        <span><b>T{{ t.ref }}</b> {{ t.text }}{% if t.due %} <span class="chip">by {{ t.due }}</span>{% endif %}</span></li>{% endfor %}</ul>
+      {% else %}<p class="muted" style="margin:4px 0 0">Nothing on your list. Text me “todo: order cups” on WhatsApp, or add it here.</p>{% endif %}
+      <form class="todo__add" method="post" action="/todos/add"><label class="sr" for="todo-new">New to-do</label>
+        <input id="todo-new" name="text" maxlength="200" autocomplete="off" placeholder="Add a to-do… e.g. buy 6L oat milk by Saturday">
+        <button class="btn btn--soft" data-busy="Adding…">Add</button></form></div>
+  </section>
+
   {% if news %}
   <section class="card card--list glass" style="view-transition-name: m-news; --i:4">
     <span class="gem"><svg class="ico"><use href="#i-spark"/></svg></span>

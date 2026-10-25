@@ -80,6 +80,13 @@ def candidates(db, now: datetime) -> List[dict]:
                      f"({day['basis']}); top sellers {top}",
             "score": revenue * (1.5 if when == "today" else 1.0),
         })
+    for t in db[schema.TODOS].find({"business_id": BUSINESS_ID, "status": "open"}).sort("ref", 1):
+        tasks.append({  # the owner's own list: ranked with the rest, but never dropped or rewritten
+            "_id": f"{BUSINESS_ID}:owner_todo:{t['ref']}", "kind": "owner_todo", "title": f"T{t['ref']}: {t['text']}",
+            "target_id": str(t["_id"]), "approval_ref": None, "amount": None,
+            "facts": "on the owner's own to-do list" + (f", wanted by {t['due']}" if t.get("due") else ""),
+            "score": 150 if t.get("due") and t["due"] <= (now.date().isoformat()) else 80,
+        })
     return tasks
 
 

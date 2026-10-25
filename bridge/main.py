@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from backend import approvals, memory, news, payments
+from backend import approvals, memory, news, payments, todos
 from backend.ai import board, fees, overdue, review
 from backend.inputs import evo, gmail, whatsapp as whatsapp_in
 from backend.inputs.replies import parse_rejection, parse_reply  # noqa: F401 (also imported from here by tests)
@@ -160,6 +160,7 @@ def _context(request: Request, msg: Optional[str]) -> dict:
         "fee_audit": fee_audit,
         "away": view.while_away(extracted, review, fee_audit, memo, record),
         "tasks": list(db[schema.TASKS].find({"business_id": BUSINESS_ID}).sort("rank", 1).limit(3)),
+        "todos": todos.open_todos(),  # the owner's own list (backend/todos.py)
         "news": search.news_feed(db, limit=3).hits,  # read-only local news, ranked by Atlas Search (soon + near)
         "board_fixes": view.board_fixes,
         "checks": view.payment_checks(pending, invoices),
@@ -268,6 +269,24 @@ def import_fees(file: UploadFile = File(...), back: str = Form("/sales")):
                  f"(£{a['extra_total']:.2f}).", back)
 
 
+@app.post("/todos/add")
+def todo_add(text: str = Form(""), back: str = Form("/")):
+    try:
+        t = todos.add(text, via="dashboard")
+    except todos.TodoError as e:
+        return _back(str(e), back)
+    return _back(f"Already on your list: T{t['ref']}." if t.get("duplicate") else f"Added T{t['ref']} to your to-dos.", back)
+
+
+@app.post("/todos/{ref}/done")
+def todo_done(ref: int, back: str = Form("/")):
+    try:
+        t = todos.complete("dashboard", ref=ref)
+    except todos.TodoError as e:
+        return _back(str(e), back)
+    return _back(f"Done: T{t['ref']} {t['text']}.", back)
+
+
 @app.post("/approvals/{approval_id}/decide")
 def decide_from_dashboard(approval_id: str, decision: str = Form(...), draft: Optional[str] = Form(None),
                           note: Optional[str] = Form(None), back: str = Form("/approvals")):
@@ -289,6 +308,9 @@ CHAT_SHOWN = 12  # exchanges
 def _chat_reply(text: str) -> str:
     """Decisions ("approve 1", "reject 2") follow exactly the WhatsApp rules and never reach Gemini; anything else is a
     question for the Gemini assistant, which can read the data but not change it."""
+    todo = whatsapp_in.todo_reply(text, via="dashboard")  # "todo: …" / "done T3": same exact rules as WhatsApp
+    if todo:
+        return todo
     parsed, note = parse_reply(text), None
     if not parsed and parse_rejection(text):  # "reject 2: they're regulars": a no with a reason, remembered
         ref, note = parse_rejection(text)

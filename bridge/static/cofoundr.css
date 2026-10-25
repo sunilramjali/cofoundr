@@ -729,3 +729,14 @@ html[data-vt="up"]::view-transition-new(*.morph) { animation-name: vt-focus-in-f
 .chat { view-transition-name: chat; }
 ::view-transition-group(chat), ::view-transition-new(chat) { animation: none; }
 ::view-transition-old(chat) { display: none; }
+
+/* The owner's to-do list on Home (backend/todos.py) */
+.todo { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.todo li { display: flex; align-items: center; gap: 10px; font-size: 14.5px; }
+.todo form { margin: 0; }
+.todo__tick { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--sage); background: transparent; color: var(--sage);
+  display: grid; place-items: center; cursor: pointer; padding: 0; }
+.todo__tick .ico { width: 14px; height: 14px; opacity: 0; transition: opacity .15s; }
+.todo__tick:hover .ico, .todo__tick:focus-visible .ico { opacity: 1; }
+.todo__add { display: flex; gap: 8px; margin-top: 10px; }
+.todo__add input { flex: 1; min-width: 0; font: inherit; padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(28, 29, 27, .14); background: rgba(255, 255, 255, .7); }
