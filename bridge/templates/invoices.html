@@ -15,9 +15,16 @@
 <form class="search" method="get" action="/invoices" role="search">
   <svg class="ico"><use href="#i-doc"/></svg>
   <label class="sr" for="inv-q">Search invoices</label>
-  <input id="inv-q" name="q" value="{{ q }}" autocomplete="off" placeholder="Search by meaning or words… try “milk supplier” or “wedding”">
+  <input id="inv-q" name="q" value="{{ q }}" autocomplete="off" list="inv-suggest" data-suggest="/search/suggest" placeholder="Search by meaning or words… try “milk supplier” or “wedding”">
+  <datalist id="inv-suggest"></datalist>
   <button class="btn btn--soft" type="submit">Search</button>
 </form>
+{% if facets and facets.counterparty %}
+<nav class="facets" aria-label="Who you deal with most">
+  <span class="facets__label">Most invoices <small>{{ "Atlas Search facets" if facets.mode == "atlas" else "counted here" }}</small></span>
+  {% for name, n in facets.counterparty %}<a class="chip chip--facet" href="/invoices?q={{ name|urlencode }}">{{ name }} <b>{{ n }}</b></a>{% endfor %}
+</nav>
+{% endif %}
 {% if found is not none %}
 <section class="block search__results">
   <h2>{{ found.hits|length }} match{{ "es" if found.hits|length != 1 }} for “{{ q }}” <small>{{ "MongoDB Atlas hybrid search: keyword + meaning, merged with $rankFusion" if found.mode == "hybrid" else "plain word match (Atlas Search unavailable here)" }}</small></h2>
@@ -26,7 +33,8 @@
     <li class="row{% if h.direction == 'receivable' %} row--in{% endif %}">
       <span class="avatar" aria-hidden="true">{{ (h.counterparty or "?")[:1] }}</span>
       <div style="min-width:0"><div class="row__who">{{ h.counterparty }}</div>
-        <div class="row__sub"><span>{{ h.invoice_number }}</span>{% for m in h.matched_by or [] %}<span class="chip chip--{{ 'sky' if m == 'meaning' else 'sage' }}">{{ "by meaning" if m == "meaning" else "by keyword" }}</span>{% endfor %}</div></div>
+        <div class="row__sub"><span>{{ h.invoice_number }}</span>{% for m in h.matched_by or [] %}<span class="chip chip--{{ 'sky' if m == 'meaning' else 'sage' }}">{{ "by meaning" if m == "meaning" else "by keyword" }}</span>{% endfor %}</div>
+        {% for snip in h.highlights or [] %}<div class="row__hl">{% for part in snip %}{% if part.hit %}<mark>{{ part.value }}</mark>{% else %}{{ part.value }}{% endif %}{% endfor %}</div>{% endfor %}</div>
       <span class="row__due{% if h.status == 'overdue' %} row__due--late{% endif %}">{{ due_label(h, now.date()) }}</span>
       <span class="row__amt num">{{ h.amount|money }}<small>{{ "owed to you" if h.direction == "receivable" else "you owe" }}</small></span>
     </li>

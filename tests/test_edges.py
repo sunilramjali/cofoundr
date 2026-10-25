@@ -959,7 +959,8 @@ def test_assistant_rounded_pounds_and_counts_are_fine(db, ask):
 
 
 WRITES = {"propose_reminder"}  # its one writing tool: a pending draft (tests/test_assistant_tools.py)
-READ_ARGS = {"search_invoices": {"query": "dairy"}, "what_if_price": {"product": "Flat White", "change_pence": 20},
+READ_ARGS = {"search_invoices": {"query": "dairy"}, "search_activity": {"query": "Hackney"}, "search_notes": {"query": "milk"},
+             "what_if_price": {"product": "Flat White", "change_pence": 20},
              "stock_needed": {"date": "2099-01-01"}, "day_conditions": {"date": "2026-10-31"}}
 
 
