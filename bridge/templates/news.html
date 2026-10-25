@@ -1,0 +1,41 @@
+{% extends "page.html" %}
+{% block title %}News{% endblock %}
+{% block vt %}m-news{% endblock %}
+{% block eyebrow %}<svg class="ico"><use href="#i-spark"/></svg>Around your pitches{% endblock %}
+{% block heading %}What's happening nearby{% endblock %}
+{% block lede %}Events, markets, venues and openings near the truck, for you to know about. I only read and rank these: nothing here contacts anyone.{% endblock %}
+{% block body %}
+<form class="search" method="get" action="/news" role="search">
+  <svg class="ico"><use href="#i-spark"/></svg>
+  <label class="sr" for="news-q">Search local news</label>
+  <input id="news-q" name="q" value="{{ q }}" autocomplete="off" placeholder="Search local news… try “market” or “film”">
+  {% if kind %}<input type="hidden" name="show" value="{{ kind }}">{% endif %}
+  <button class="btn btn--soft" type="submit">Search</button>
+</form>
+{% if news_facets.kind %}
+<nav class="facets" aria-label="Filter by kind">
+  <span class="facets__label">Show <small>{{ "Atlas Search facets" if news_facets.mode == "atlas" else "counted here" }}</small></span>
+  <a class="chip chip--facet{% if not kind %} chip--on{% endif %}" href="/news{% if q %}?q={{ q|urlencode }}{% endif %}">All <b>{{ news_facets.total }}</b></a>
+  {% for k, n in news_facets.kind %}<a class="chip chip--facet{% if kind == k %} chip--on{% endif %}" href="/news?show={{ k }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ k|capitalize }} <b>{{ n }}</b></a>{% endfor %}
+</nav>
+{% endif %}
+<section class="block search__results">
+  <h2>{% if q %}{{ feed.hits|length }} match{{ "es" if feed.hits|length != 1 }} for “{{ q }}”{% else %}Soonest and closest first{% endif %}
+    <small>{{ "MongoDB Atlas Search: ranked by date and distance from the pitch (near), duplicates merged (moreLikeThis)" if feed.mode == "atlas" else "ranked here (Atlas Search unavailable)" }}</small></h2>
+  <ul class="rows">
+    {% for n in feed.hits %}
+    <li class="row row--news">
+      <span class="avatar" aria-hidden="true">{{ {"event": "🎪", "market": "🏪", "venue": "📍", "opportunity": "💡"}.get(n.kind, "📰") }}</span>
+      <div style="min-width:0">
+        <div class="row__who"><a href="{{ n.url }}" target="_blank" rel="noopener noreferrer nofollow">{% if n.get("highlights") %}{% for part in n.get("highlights")[0] %}{% if part.hit %}<mark>{{ part.value }}</mark>{% else %}{{ part.value }}{% endif %}{% endfor %}{% else %}{{ n.headline }}{% endif %}</a></div>
+        <div class="row__sub"><span>{{ n.source }}</span><span class="chip chip--sky">{{ n.kind }}</span>{% if n.get("starts_at") %}<span>on {{ n.get("starts_at")|day }}</span>{% endif %}{% if n.get("distance_km") is not none %}<span>{{ "%.1f"|format(n.get("distance_km")) }} km away</span>{% endif %}</div>
+        {% if n.get("summary") %}<div class="row__hl">{{ n.get("summary") }}</div>{% endif %}
+      </div>
+    </li>
+    {% else %}
+    <li class="empty"><svg class="ico"><use href="#i-spark"/></svg><div><b>Nothing{{ " matched" if q else " yet" }}.</b>{{ "Try another word, like “market”." if q else "I'll fill this from local news, nearby events and your notes." }}</div></li>
+    {% endfor %}
+  </ul>
+  {% if q or kind %}<p><a class="btn btn--text" href="/news">Back to everything</a></p>{% endif %}
+</section>
+{% endblock %}

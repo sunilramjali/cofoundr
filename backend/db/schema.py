@@ -30,6 +30,7 @@ LESSONS = "lessons"  # what the forecaster learned from its grades; the active o
 FEE_AUDITS = "fee_audits"  # card provider's fee summary read by Gemini + every payment checked against it (backend/ai/fees.py)
 BOARD_MEMOS = "board_memos"  # Gemini's checked board memo, one per business per day (backend/ai/board.py)
 PAYMENTS = "payments"  # card payments from a card provider with no item detail (EVO CSV, SumUp), card data stripped
+NEWS = "news"  # read-only local news for the owner: events, markets, venues, openings near the pitches (backend/news.py)
 
 
 def counterparty_key(name: Optional[str]) -> str:
@@ -44,6 +45,25 @@ def invoice_search_text(doc: dict) -> str:
     kind = "customer invoice (owed to us)" if doc.get("direction") == "receivable" else "supplier bill (we pay)"
     items = "; ".join(li.get("description", "") for li in doc.get("line_items") or [])
     return " | ".join([doc.get("counterparty") or "", kind, doc.get("invoice_number") or "", items])
+
+
+class NewsItem(TypedDict):
+    """One thing worth knowing about near the truck. Awareness only: nothing here contacts anyone."""
+    _id: str  # "<business_id>:<sha1 of the url>": one item per link, however often it's fetched
+    business_id: str
+    kind: Literal["event", "market", "venue", "opportunity", "news"]
+    headline: str  # always the source's own headline (never written by Gemini)
+    summary: str  # ≤ 200 chars: why it matters to a coffee truck (Gemini, checked) or the source's own description
+    url: str  # http(s) link to the source
+    source: str  # "Hackney Gazette", "Ticketmaster", "Owner's notes"
+    published_at: datetime
+    starts_at: NotRequired[datetime]  # when the event happens, if it's an event
+    location: NotRequired[dict]  # GeoJSON Point [lon, lat], when known: ranks by distance from the pitch
+    distance_km: NotRequired[float]
+    expires_at: datetime  # gone from the feed after this
+    duplicate_of: NotRequired[str]  # _id of the same story from another source (Atlas moreLikeThis + a date check)
+    fetched_at: datetime
+    synthetic: bool  # False: public facts about real places, like weather; never business data
 
 
 class AgentLogEntry(TypedDict):
