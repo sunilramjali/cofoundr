@@ -34,10 +34,10 @@
         {% if i.impact_gbp_per_month %}<span class="muted" style="margin-left:8px">~{{ i.impact_gbp_per_month|money0 }}/month (estimate)</span>{% endif %}
       </p>
       <h3>{% if i.status in ["failed", "withdrawn"] %}<s>{{ i.title }}</s>{% else %}{{ i.title }}{% endif %}</h3>
-      <p>{% if i.status in ["failed", "withdrawn"] %}<s>{{ i.finding }}</s>{% else %}{{ i.finding }}{% endif %}</p>
+      <p>{% if i.status in ["failed", "withdrawn"] %}<s>{{ i.finding }}</s>{% else %}{{ i.finding|highlight }}{% endif %}</p>
       {% set fx = board_fixes(i.first_problems) %}
       {% if fx %}<p class="fixes"><span class="muted">The database check caught:</span>{% for f in fx %} <span class="fix"><s>{{ f.says }}</s> → <b>{{ f.shown }}</b></span>{% endfor %}</p>{% endif %}
-      {% if i.status not in ["failed", "withdrawn"] %}<p><b>Next:</b> {{ i.action }}</p>{% endif %}
+      {% if i.status not in ["failed", "withdrawn"] %}<p><b>Next:</b> {{ i.action|highlight }}</p>{% endif %}
       <details style="margin-top:8px"><summary class="muted">How I checked this ({{ i.claims|length }} number{{ "s" if i.claims|length != 1 }})</summary>
         <ul style="margin:8px 0 0;padding-left:18px">
           {% for c in i.claims %}<li class="muted">{{ "✓" if c.ok else "✗" }} “{{ c.says }}”: I said {{ "{:,.2f}".format(c.value).rstrip("0").rstrip(".") }}, the database says {{ ("{:,.2f}".format(c.actual).rstrip("0").rstrip(".")) if c.actual is not none else "—" }}{% if c.why %} ({{ c.why }}){% endif %}</li>{% endfor %}

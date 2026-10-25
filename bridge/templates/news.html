@@ -29,7 +29,7 @@
       <div style="min-width:0">
         <div class="row__who"><a href="{{ n.url }}" target="_blank" rel="noopener noreferrer nofollow">{% if n.get("highlights") %}{% for part in n.get("highlights")[0] %}{% if part.hit %}<mark>{{ part.value }}</mark>{% else %}{{ part.value }}{% endif %}{% endfor %}{% else %}{{ n.headline }}{% endif %}</a></div>
         <div class="row__sub"><span>{{ n.source }}</span><span class="chip chip--sky">{{ n.kind }}</span>{% for m in n.get("matched_by") or [] %}<span class="chip chip--{{ 'sky' if m == 'meaning' else 'sage' }}">{{ "by meaning" if m == "meaning" else "by keyword" }}</span>{% endfor %}{% if n.get("starts_at") %}<span>on {{ n.get("starts_at")|day }}</span>{% endif %}{% if n.get("distance_km") is not none %}<span>{{ "%.1f"|format(n.get("distance_km")) }} km away</span>{% endif %}</div>
-        {% if n.get("summary") %}<div class="row__hl">{{ n.get("summary") }}</div>{% endif %}
+        {% if n.get("summary") %}<div class="row__hl">{{ n.get("summary")|highlight }}</div>{% endif %}
         {% if not liked %}<a class="btn btn--text btn--small" href="/news?like={{ n._id|urlencode }}">More like this</a>{% endif %}
       </div>
     </li>
