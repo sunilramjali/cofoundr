@@ -686,6 +686,19 @@ html[data-vt="up"]::view-transition-new(*.morph) { animation-name: vt-focus-in-f
 .splash.is-leaving .splash__photo::after { opacity: 0; }
 .splash.is-gone { transition: opacity .75s var(--ease), visibility 0s .75s; }
 
+/* Chat without reloading: the panel slides open, "Thinking" with moving dots, then the answer fades in */
+.chat[hidden] { display: none; }
+.chat.is-opening { animation: chat-open .38s var(--ease) both; }
+.chat__them.is-thinking { color: var(--muted); font-style: normal; }
+.chat__them .dots i { display: inline-block; font-style: normal; animation: dot-bounce 1.2s ease-in-out infinite; }
+.chat__them .dots i:nth-child(2) { animation-delay: .15s; }
+.chat__them .dots i:nth-child(3) { animation-delay: .3s; }
+.chat__them.is-new { animation: chat-in .35s var(--ease) both; }
+.chat__me:last-child { animation: chat-in .25s var(--ease) both; }
+@keyframes dot-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .35; } 30% { transform: translateY(-3px); opacity: 1; } }
+@keyframes chat-in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes chat-open { from { opacity: 0; transform: translateY(14px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .chat__them .dots i, .chat.is-opening, .chat__them.is-new, .chat__me:last-child { animation: none; } }
 /* Owner-decision memory on the approval cards (backend/memory.py) + the "Under the hood" MongoDB page */
 .recall { margin: 12px 0 0; padding: 10px 14px; border-radius: 14px; background: var(--glass-soft); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7); }
 .recall__head { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
@@ -703,3 +716,8 @@ html[data-vt="up"]::view-transition-new(*.morph) { animation-name: vt-focus-in-f
 .hood__card pre { margin: 8px 0 0; padding: 12px; border-radius: 12px; overflow-x: auto; max-height: 340px; font-size: 12px; line-height: 1.45;
   background: rgba(28, 29, 27, .86); color: #f3efe6; }
 .hood__card details summary { cursor: pointer; margin-top: 10px; font-size: 13.5px; color: var(--ink-2); }
+
+/* While the chat panel is open, the long bar tucks away (the panel has its own box); it comes back when it closes */
+.chatbar { transition: opacity .3s var(--ease), transform .35s var(--ease); }
+.chat-is-open .chatbar { opacity: 0; transform: translateY(24px) scale(.98); pointer-events: none; }
+.chat-is-open .chatbar:focus-within { opacity: 0; }

@@ -12,6 +12,18 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 10:05 — Chat on every page; the long bar tucks away while the panel is open
+- **Did:** the "Ask me anything…" bar moved from `home.html` into `base.html` (every page except the Chat page, which has its own box), `back` = the page you're on; `body.chat-is-open` hides the bar while the panel is open, back when it closes. Merged `stage` (Sunil's decision memory + "Under the hood" `/mongodb`; CSS conflict, kept both). Checked on Board in the browser. 606 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **Next:** see the 04:40 handover list
+- **Blockers / notes for partner:** none in your area
+
+## Sun 25 Oct, 09:50 — Chat without page reloads, "Thinking…" bubble, "Ask me anything…"
+- **Did:** every chat box (Home bar, Chat page, the panel) now posts in the background (`POST /ask` with `Accept: application/json` → `{question, answer}`); the panel opens in place, shows the question, a "Thinking…" bubble with bouncing dots, then the answer (WhatsApp *bold* rendered, escaped first), scrolled so the question sits at the top. Panel always in the page (hidden until used), × closes without reloading. No JS → the old full-page flow. All chat boxes say "Ask me anything…". Checked in the browser with real Gemini. 570 tests pass
+- **Status:** done, PR into `stage`; goes live with release #88
+- **Next:** see the 04:40 handover list
+- **Blockers / notes for partner:** none in your area
+
 ## Sun 25 Oct, 09:30 — Navy + mustard, focus-pull page switch, typed greeting, light loading screen
 - **Did:** (all in `cofoundr.css` / `cofoundr.js` / `base.html`)
   1. Accent pair **navy #1f3a5f** (buttons, selected nav, chart line, "fine" states) + **mustard** (#c9962b lines/fills, #a8781a for big text: 3.6:1); greeting all gold (mustard→navy blended olive). Replaces the leaf green
