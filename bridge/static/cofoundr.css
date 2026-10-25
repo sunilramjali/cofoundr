@@ -685,3 +685,21 @@ html[data-vt="up"]::view-transition-new(*.morph) { animation-name: vt-focus-in-f
 .splash.is-leaving .splash__photo { filter: blur(0) saturate(1); transform: scale(1); }   /* the focus pull */
 .splash.is-leaving .splash__photo::after { opacity: 0; }
 .splash.is-gone { transition: opacity .75s var(--ease), visibility 0s .75s; }
+
+/* Owner-decision memory on the approval cards (backend/memory.py) + the "Under the hood" MongoDB page */
+.recall { margin: 12px 0 0; padding: 10px 14px; border-radius: 14px; background: var(--glass-soft); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7); }
+.recall__head { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-weight: 600; font-size: 14px; }
+.recall__head small { font-weight: 400; color: var(--muted); }
+.recall ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; color: var(--ink-2); }
+.recall__note { display: grid; gap: 4px; margin: 12px 0 0; font-size: 13.5px; color: var(--ink-2); }
+.recall__note small { color: var(--muted); }
+.recall__note input { font: inherit; padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(28, 29, 27, .14); background: rgba(255, 255, 255, .7); }
+.hood { display: grid; gap: 18px; }
+.hood__card { padding: 18px 20px; border-radius: 22px; background: var(--glass-soft); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .8); }
+.hood__card h3 { margin: 0; font: 600 22px/1.2 var(--display); }
+.hood__card p { margin: 6px 0 0; color: var(--ink-2); }
+.hood__meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.hood__card ol { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14.5px; }
+.hood__card pre { margin: 8px 0 0; padding: 12px; border-radius: 12px; overflow-x: auto; max-height: 340px; font-size: 12px; line-height: 1.45;
+  background: rgba(28, 29, 27, .86); color: #f3efe6; }
+.hood__card details summary { cursor: pointer; margin-top: 10px; font-size: 13.5px; color: var(--ink-2); }

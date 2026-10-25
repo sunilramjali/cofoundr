@@ -1,0 +1,53 @@
+{% extends "page.html" %}
+{% block title %}Under the hood{% endblock %}
+{% block vt %}m-mongodb{% endblock %}
+{% block eyebrow %}<svg class="ico"><use href="#i-gear"/></svg>Under the hood{% endblock %}
+{% block heading %}How I use MongoDB Atlas{% endblock %}
+{% block lede %}Everything I know about the business lives in MongoDB Atlas. Each card below ran live just now, through the same code the rest of the dashboard uses, and shows the exact query it sent.{% endblock %}
+{% block stats %}
+<div class="stats">
+  <div class="stat"><b class="num">{{ indexes|length }}</b><span>search indexes</span></div>
+  <div class="stat"><b class="num">{{ indexes|selectattr("status", "equalto", "READY")|list|length }}</b><span>ready</span></div>
+  <div class="stat"><b class="num">{{ sections|sum(attribute="ms") }} ms</b><span>for all {{ sections|length }} live runs</span></div>
+</div>
+{% endblock %}
+{% block body %}
+<div class="hood">
+  {% for s in sections %}
+  <section class="hood__card" style="--i:{{ loop.index0 }}">
+    <p class="ask__kind">{{ s.feature }}</p>
+    <h3>{{ s.title }}</h3>
+    <p>{{ s.why }}</p>
+    <div class="hood__meta">
+      {% if s.mode in ("atlas", "hybrid") %}<span class="chip chip--sage"><svg class="ico"><use href="#i-check"/></svg>Live on Atlas</span>
+      {% elif s.mode == "direct" %}<span class="chip">Read directly</span>
+      {% else %}<span class="chip chip--amber"><svg class="ico"><use href="#i-alert"/></svg>{{ "Fell back to a plain match" if s.mode == "basic" else "Unavailable" }}</span>{% endif %}
+      <span class="chip"><svg class="ico"><use href="#i-clock"/></svg>{{ s.ms }} ms</span>
+      <span class="chip">{{ s.pipelines|length }} quer{{ "y" if s.pipelines|length == 1 else "ies" }}</span>
+    </div>
+    {% if s.rows %}<ol>{% for r in s.rows %}<li>{{ r }}</li>{% endfor %}</ol>{% endif %}
+    {% if s.error %}<p class="warn"><svg class="ico"><use href="#i-alert"/></svg><span>{{ s.error }}</span></p>{% endif %}
+    {% if s.pipelines %}
+    <details>
+      <summary>The query it sent</summary>
+      {% for p in s.pipelines %}<pre><code>{{ p }}</code></pre>{% endfor %}
+    </details>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <section class="hood__card">
+    <p class="ask__kind">Agent memory</p>
+    <h3>Your latest decisions, as I remember them</h3>
+    <p>Each one is a document in <code>memories</code>. Atlas embeds it with Voyage (Automated Embedding) for Vector Search to recall next time. I write back what happened after a chase.</p>
+    {% if memories %}<ol>{% for m in memories %}<li>#{{ m.ref }} · {{ memory_line(m) }}</li>{% endfor %}</ol>
+    {% else %}<p class="muted">Nothing yet. Decide something on the Approvals page and give a reason.</p>{% endif %}
+  </section>
+
+  <section class="hood__card">
+    <p class="ask__kind">Indexes</p>
+    <h3>Atlas Search and Vector Search indexes</h3>
+    <ol>{% for i in indexes %}<li><code>{{ i.name }}</code> on <code>{{ i.collection }}</code>: {{ i.kind }}, {{ i.status }}{% if i.embedding %} · Automated Embedding with Voyage <code>{{ i.embedding }}</code>{% endif %}</li>{% endfor %}</ol>
+  </section>
+</div>
+{% endblock %}

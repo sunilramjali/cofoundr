@@ -6,6 +6,8 @@
      with `reminders_sent` (friendly → firm → final notice)
    - payable (GAIA owes a supplier): a payment reminder for the owner
 3. Saves each draft as a `pending` approval. Nothing is sent: the owner approves first.
+   Before drafting, the owner's past decisions on this customer and on similar cases are recalled (backend/memory.py,
+   Atlas Vector Search): they shape Gemini's draft and are shown with it, but never decide anything.
 
 Invoices flagged `needs_review` are skipped until the owner has checked them.
 If Gemini is unavailable, a template draft is used so the flow still works.
@@ -16,7 +18,7 @@ Usage (from the repo root):
 """
 import argparse
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from google.genai import types
 from pydantic import BaseModel
@@ -72,20 +74,26 @@ def _template(inv: dict, days: int) -> Draft:
     )
 
 
-def draft_reminders(invoices: List[dict], today: datetime) -> Dict[str, tuple]:
-    """One Gemini call for all receivables. Returns {invoice_number: (Draft, drafted_by)}."""
+def draft_reminders(invoices: List[dict], today: datetime, recalled: Optional[Dict[str, List[dict]]] = None) -> Dict[str, tuple]:
+    """One Gemini call for all receivables. Returns {invoice_number: (Draft, drafted_by)}.
+    `recalled` = {invoice _id: the owner's past decisions (backend/memory.py)}: Gemini follows them."""
     if not invoices:
         return {}
+    from backend import memory
+
     lines = []
     for inv in invoices:
         days = (today - inv["due_date"]).days
         lines.append(f"- {inv['invoice_number']}: customer {inv['counterparty']}, £{inv['amount']:.2f}, "
                      f"due {inv['due_date']:%d %b %Y} ({days} days overdue), reminders already sent: "
                      f"{inv['reminders_sent']}. Tone: {TONES[_level(inv['reminders_sent'])]}.")
+        lines += [f"    owner's past decision ({m})" for m in memory.prompt_lines((recalled or {}).get(str(inv["_id"]), []))]
     prompt = (
         "You write payment reminder emails for GAIA Coffee, a small mobile coffee truck in East London. "
         "Write one email per invoice below, in British English, plain text, under 120 words, signed 'GAIA Coffee'. "
-        "Warm and human, never aggressive; keep the customer relationship. Include the invoice number, amount and due date.\n\n"
+        "Warm and human, never aggressive; keep the customer relationship. Include the invoice number, amount and due date. "
+        "Where the owner's past decisions are listed, respect them (their reasons, tone and edits: e.g. softer or shorter "
+        "if they rejected or shortened a similar reminder), but never mention them, CoFoundr or any other customer in the email.\n\n"
         + "\n".join(lines)
     )
     try:
@@ -148,8 +156,18 @@ def run(dry_run: bool = False, only=None) -> List[dict]:
     todo = [inv for inv in overdue if str(inv["_id"]) not in pending_targets and due_for_action(inv, today)]
     skipped = len(overdue) - len(todo)
 
+    from backend import memory
+
+    if not dry_run:
+        memory.settle(db, now)  # write back what happened after earlier chases (paid since?) before recalling them
+    recalled = {}
+    for inv in todo:
+        kind = "invoice_reminder" if inv["direction"] == "receivable" else "supplier_payment"
+        level = _level(inv["reminders_sent"]) if kind == "invoice_reminder" else None
+        recalled[str(inv["_id"])] = memory.recall(db, memory.case(inv, kind, (today - inv["due_date"]).days, level))
+
     receivables = [inv for inv in todo if inv["direction"] == "receivable"]
-    drafts = draft_reminders(receivables, today)
+    drafts = draft_reminders(receivables, today, recalled)
 
     new = []
     for inv in todo:
@@ -165,6 +183,7 @@ def run(dry_run: bool = False, only=None) -> List[dict]:
             "decided_via": None,
             "created_at": now,
             "decided_at": None,
+            "memories": recalled[str(inv["_id"])],
             "synthetic": True,
         }
         if inv["direction"] == "receivable":
@@ -191,6 +210,11 @@ def run(dry_run: bool = False, only=None) -> List[dict]:
                         "draft": f"Pay {inv['counterparty']} £{inv['amount']:.2f} for invoice {inv['invoice_number']} "
                                  f"(due {inv['due_date']:%d %b %Y}).",
                         "drafted_by": "rule"})
+
+    for a in new:  # the owner's own words about this customer/supplier come first in the reason they read
+        said = next((m["note"] for m in a["memories"] if m["same_counterparty"] and m.get("note")), None)
+        if said:
+            a["reason"] += f" Last time you said: “{said}”."
 
     if not dry_run:
         from pymongo.errors import DuplicateKeyError

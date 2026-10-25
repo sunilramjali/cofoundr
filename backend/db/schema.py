@@ -31,6 +31,7 @@ FEE_AUDITS = "fee_audits"  # card provider's fee summary read by Gemini + every 
 BOARD_MEMOS = "board_memos"  # Gemini's checked board memo, one per business per day (backend/ai/board.py)
 PAYMENTS = "payments"  # card payments from a card provider with no item detail (EVO CSV, SumUp), card data stripped
 NEWS = "news"  # read-only local news for the owner: events, markets, venues, openings near the pitches (backend/news.py)
+MEMORIES = "memories"  # how the owner decided each approval, and why; recalled by Vector Search next time (backend/memory.py)
 
 
 def counterparty_key(name: Optional[str]) -> str:
@@ -143,7 +144,62 @@ class Approval(TypedDict):
     decided_via: Optional[Literal["dashboard", "whatsapp", "system"]]
     created_at: datetime
     decided_at: Optional[datetime]
+    owner_note: NotRequired[str]  # the owner's reason for the decision, in their words (≤ 300 chars), remembered
+    # The closest past decisions, recalled when this was drafted (backend/memory.py): shown with the draft, never decide
+    memories: NotRequired[List["RecalledMemory"]]
     synthetic: bool
+
+
+class MemoryOutcome(TypedDict):
+    result: Literal["paid", "chased_again"]  # the invoice was paid, or still unpaid when the next reminder was approved
+    days: int  # days after this decision
+    at: datetime
+
+
+class Memory(TypedDict):
+    """One owner decision on an approval, kept so CoFoundr can recall it on the next similar case."""
+    business_id: str
+    approval_id: str  # str(_id) of the approval; one memory per approval
+    ref: int
+    action_type: Literal["invoice_reminder", "supplier_payment"]
+    target_id: str  # str(_id) of the invoice
+    invoice_number: str
+    counterparty: str
+    counterparty_key: str
+    amount: float
+    about: str  # what the invoice was for (its line items, ≤ 160 chars): lets "similar case" mean similar work
+    days_overdue: Optional[int]
+    escalation_level: Optional[int]
+    decision: Literal["approved", "edited", "rejected"]
+    via: str  # "dashboard" | "whatsapp"
+    note: Optional[str]  # the owner's reason, in their words
+    edit: Optional[str]  # how the owner changed the draft, e.g. "shortened the draft from 96 to 41 words" (edits only)
+    outcome: Optional[MemoryOutcome]  # written back later; None while nothing has happened yet
+    search_text: str  # memory_search_text(doc): what Automated Embedding (Voyage) embeds for Vector Search
+    at: datetime
+    synthetic: bool
+
+
+class RecalledMemory(TypedDict):
+    line: str  # owner-facing sentence, e.g. "24 Oct: you rejected chasing Hackney Hub: “friend, give them 2 weeks”"
+    decision: str
+    note: Optional[str]
+    same_counterparty: bool  # True = this customer/supplier's own history, False = a similar case found by meaning
+    score: Optional[float]  # vector similarity for similar cases
+    at: datetime
+
+
+def memory_search_text(doc: dict) -> str:
+    """"Hackney Hub Coworking | chasing a customer | Coffee catering, 40 people | rejected | firm reminder |
+    12 days overdue | £450.00 | owner: they're a friend". With no decision it describes a new case, to recall by."""
+    kind = "chasing a customer" if doc.get("action_type") == "invoice_reminder" else "paying a supplier"
+    tone = ["friendly nudge", "firm reminder", "final notice"][doc["escalation_level"]] \
+        if doc.get("escalation_level") in (0, 1, 2) else ""
+    days = f"{doc['days_overdue']} days overdue" if doc.get("days_overdue") is not None else ""
+    parts = [doc.get("counterparty") or "", kind, doc.get("about") or "", doc.get("decision") or "", tone, days, f"£{doc.get('amount') or 0:.2f}",
+             f"owner: {doc['note']}" if doc.get("note") else "",
+             f"owner {doc['edit']}" if doc.get("edit") else ""]
+    return " | ".join(p for p in parts if p)
 
 
 # ---------------------------------------------------------------- POS: products, orders, sales, stock (MVP2)
