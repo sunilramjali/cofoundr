@@ -35,6 +35,7 @@ LABEL = "CoFoundr/processed"
 LOOKBACK_DAYS = 14  # the first check doesn't trawl years of mail
 MAX_PER_CHECK = 20  # oldest first; the rest wait for the next check
 MIN_IMAGE_BYTES = 10_000  # smaller inline images are logos and signatures, not invoice photos
+OWN_MARKER = "X-CoFoundr"  # set on every email backend/outputs/email.py sends
 INVOICE_SUBJECT = re.compile(r"\binvoice", re.IGNORECASE)
 RETRY = {"gemini_unavailable"}  # leave unlabelled so a later check tries again...
 RETRY_WAIT = 15 * 60  # ...but not every minute: one Gemini call + log line per email per 15 min during an outage
@@ -112,6 +113,8 @@ def handle(msg: EmailMessage) -> Tuple[EmailOutcome, bool]:
     """Send one email's invoice(s) to the pipeline. Returns (outcome, retry_later)."""
     subject = str(msg.get("Subject") or "").strip()
     sender = parseaddr(str(msg.get("From") or ""))[1] or "unknown sender"
+    if msg.get(OWN_MARKER) or sender.lower() == _credentials()[0].lower():
+        return EmailOutcome(subject, sender, [], "skipped: CoFoundr's own email (an approved reminder)"), False
     origin = f"email from {sender}: '{subject[:80]}'"
     docs = documents(msg)
     if not docs and INVOICE_SUBJECT.search(subject):
