@@ -314,6 +314,13 @@ def chat_log() -> list:
             for e in reversed(list(found.sort("at", -1).limit(CHAT_SHOWN)))]
 
 
+@app.get("/chat/latest")
+def chat_latest():
+    """The chat panel asks this after a page change while an answer was still being worked on (read-only)."""
+    return JSONResponse({"messages": [{"q": m["q"], "a": m["a"], "at": int(m["at"].replace(tzinfo=timezone.utc).timestamp() * 1000)}
+                                      for m in chat_log()]})
+
+
 @app.post("/ask")
 def ask(request: Request, text: str = Form(""), back: str = Form("/")):
     """The chat bar. With JavaScript the page asks for JSON and shows the answer in the chat panel without reloading;

@@ -721,3 +721,11 @@ html[data-vt="up"]::view-transition-new(*.morph) { animation-name: vt-focus-in-f
 .chatbar { transition: opacity .3s var(--ease), transform .35s var(--ease); }
 .chat-is-open .chatbar { opacity: 0; transform: translateY(24px) scale(.98); pointer-events: none; }
 .chat-is-open .chatbar:focus-within { opacity: 0; }
+
+/* The chat panel stays open across pages until ×: restored before the first frame (html.chat-restore, base.html) and held
+   still during the page switch, like the sidebar */
+.chat-restore .chat[hidden] { display: flex; }
+.chat-restore .chatbar { opacity: 0; transform: translateY(24px) scale(.98); pointer-events: none; }
+.chat { view-transition-name: chat; }
+::view-transition-group(chat), ::view-transition-new(chat) { animation: none; }
+::view-transition-old(chat) { display: none; }

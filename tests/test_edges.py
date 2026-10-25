@@ -1485,3 +1485,19 @@ def test_chat_is_on_every_page_and_tucks_the_bar_away_when_open(db, gemini_down,
     assert page.count('class="chatbar"') == 1 and f'name="back" value="{path}"' in page, path  # answers come back to this page
     assert 'id="chat"' in page and 'class="chat-is-open"' not in page
     assert '<body class="chat-is-open">' in web.get(path, params={"chat": "1"}).text
+
+
+def test_chat_latest_lets_the_next_page_pick_up_an_answer(db, ask):
+    ask(lambda tools: "Nice week.")
+    web.post("/ask", data={"text": "how did we do?", "back": "/"}, headers={"Accept": "application/json"})
+    msgs = web.get("/chat/latest").json()["messages"]
+    assert msgs[-1]["q"] == "how did we do?" and msgs[-1]["a"] == "Nice week." and isinstance(msgs[-1]["at"], int)
+
+
+def test_chat_panel_stays_open_across_pages_until_closed(db):
+    page = web.get("/board").text
+    assert 'sessionStorage.getItem("cf-chat-open")' in page and 'classList.add("chat-restore")' in page
+    css = web.get("/static/cofoundr.css").text
+    assert ".chat-restore .chat[hidden] { display: flex; }" in css and ".chat { view-transition-name: chat; }" in css
+    js = web.get("/static/cofoundr.js").text
+    assert 'store("cf-chat-open", null)' in js and "cf-chat-pending" in js and "/chat/latest" in js
