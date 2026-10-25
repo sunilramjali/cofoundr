@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 09:00 — Contrast: readable text + "Needs you" cards on top of the hierarchy
+- **Did:** measured contrast against the photo: grey labels were 2.8–3.1:1 (1.4:1 over the dark road). Darker text tokens (`--muted` #5f5b52, `--ink-2` #3a3b36, `--ink` #151613) and glass ≥ .8 opaque at its lower edge → ~6:1 on light areas, ≥4.5:1 over the road. "Needs you" cards most solid + lifted with bolder titles; other cards' shadows softer. Checked in the browser. 566 tests pass
+- **Status:** done, PR into `stage`; live with the next release
+- **Next:** see the 04:40 handover list
+- **Blockers / notes for partner:** none in your area
+
 ## Sun 25 Oct, 08:40 — Colours taken from the van photo (glass kept)
 - **Did:** new landscape van photo (1672×941) as the backdrop, anchored on the van (51%/55%). "Photo palette" block at the end of `cofoundr.css` (easy to tweak or remove): leaf green accent (buttons, selected nav, chart line), ochre highlights (greeting gradient, £ figures, forecast line), butter cream, charcoal (counts, chat bubbles, send), brick red for overdue; glass tinted warm cream; the old copper/rose/sky/lilac accents mapped onto these. Checked Home, Approvals, Board in the browser. 566 tests pass
 - **Status:** done, PR into `stage`; live with the next release
