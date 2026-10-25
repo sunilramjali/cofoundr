@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 04:00 — UI: Apple type, glassmorphism, WebGL loading screen
+- **Did:** fonts → SF Pro (system) with Inter fallback, Instrument Serif dropped, headings semibold/bold with tight tracking; glass panes more see-through (gradient fill, stronger blur + saturation, hairline rim); chat panel frosted. New loading screen (`base.html` + `cofoundr.js`): WebGL liquid light on black, wordmark blurs in letter by letter, progress line, then the light swells to cream and dissolves (~2.3 s). Once per session, skip on click/key, never with reduced motion, CSS failsafe hides it at 4.5 s; `?splash=1` forces it for the demo. Checked in the browser. 482 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **Next:** design feedback
+- **Blockers / notes for partner:** none in your area
+
 ## Sun 25 Oct, 03:15 — Dashboard chat panel (answers stay until closed)
 - **Did:** `/ask` answers now open a chat panel (`base.html`, `?chat=1`) instead of a toast that vanished after 6.5 s: question/answer bubbles (WhatsApp *bold* shown as bold), the last 2 h of the conversation, a reply box, × to close. Each exchange logged as `chat_message` in `agent_log`. Checked in the browser on the sandbox. 482 tests pass
 - **Status:** done, PR into `stage` + release PR
