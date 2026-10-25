@@ -7,6 +7,7 @@ primary_region = "lhr"
   MONGODB_DB = "cofoundr-db"
   PUBLIC_URL = "https://cofoundr.fly.dev"
   GMAIL_POLL_SECONDS = "60"  # check the demo inbox every minute (needs GMAIL_ADDRESS + GMAIL_APP_PASSWORD secrets)
+  MORNING_BRIEF_AT = "08:00"  # London time: the owner's morning brief on WhatsApp, once a day
   WHATSAPP_PUSH_SECONDS = "30"  # push new /updates to the owner on WhatsApp (needs the TWILIO_* + OWNER_WHATSAPP secrets)
 
 [http_service]

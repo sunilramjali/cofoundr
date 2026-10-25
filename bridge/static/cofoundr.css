@@ -549,3 +549,5 @@ mark { background: var(--amber-bg); color: inherit; border-radius: 3px; padding:
 .section-label { margin: 0 0 -4px 4px; font: 600 12px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .hero { min-height: 0; }
 .hero__viz { min-height: 200px; }
+.hello__brief { margin-top: 14px; }
+.hello__brief .btn { gap: 8px; }
