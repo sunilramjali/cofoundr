@@ -495,6 +495,10 @@ mark { background: var(--amber-bg); color: inherit; border-radius: 3px; padding:
 .facets__label small { display: block; font-size: 11px; }
 .chip--facet { text-decoration: none; color: var(--ink); }
 .chip--facet b { font-weight: 600; margin-left: 2px; }
+.chip--on { background: var(--sage-bg); color: var(--sage); }
+.row--news .row__who a { color: inherit; text-decoration: none; }
+.row--news .row__who a:hover { text-decoration: underline; }
+.row--news .row__sub span + span { margin-left: 8px; }
 
 /* ---------- chat panel: the conversation stays up until the owner closes it ---------- */
 .chat { position: fixed; z-index: 45; right: 22px; bottom: 22px; width: min(420px, calc(100vw - 32px)); max-height: min(72vh, 680px);

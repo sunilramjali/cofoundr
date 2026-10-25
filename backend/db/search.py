@@ -5,7 +5,9 @@ Atlas features used (each doing the job it's best at):
   The same index gives highlighting (which words matched), facets ($searchMeta: invoices per supplier), autocomplete
   ("eas" → Eastside Dairy Co) and the duplicate-invoice check on intake ("EDC 7781" vs "EDC-7781").
 - More Atlas Search indexes: "products_text" (typo-tolerant product names for price what-ifs), "agent_log_text" (search
-  what the agent did), "board_memos_text" and "events_text" (search past board memos and nearby events).
+  what the agent did), "board_memos_text" and "events_text" (search past board memos and nearby events), and
+  "news_text" (local news ranked by how soon and how close with `near` on dates + a geo point, duplicates across
+  sources found with `moreLikeThis`, facets by kind).
 - Automated Embedding + Vector Search ("invoices_semantic"): Atlas embeds `search_text` itself with a Voyage AI model on
   every insert/update (no embedding code here) so we can search by meaning: "milk supplier" finds Meadowfield Dairy.
 - Hybrid Search ($rankFusion): one search box that merges both rankings.
@@ -50,6 +52,7 @@ SIZE = re.compile(r"(\d+(?:\.\d+)?)\s*(ml|cl|litres?|liters?|l|kg|g|oz|lb)?\b", 
 UNITS = {"litre": "l", "litres": "l", "liter": "l", "liters": "l"}
 
 PRODUCTS_INDEX, ACTIVITY_INDEX, MEMOS_INDEX, EVENTS_INDEX = "products_text", "agent_log_text", "board_memos_text", "events_text"
+NEWS_INDEX = "news_text"
 AUTOCOMPLETE = {"type": "autocomplete", "tokenization": "edgeGram", "minGrams": 2, "maxGrams": 15, "foldDiacritics": True}
 
 # name → (collection, kind, definition). Each is created on its own, in this order: a cluster that allows fewer search
@@ -81,6 +84,18 @@ INDEXES = {
         "headline": {"type": "string", "analyzer": "lucene.english"},
         "insights": {"type": "document", "fields": {k: {"type": "string", "analyzer": "lucene.english"}
                                                     for k in ("title", "finding", "action")}},
+    }}}),
+    NEWS_INDEX: (schema.NEWS, "search", {"mappings": {"dynamic": False, "fields": {
+        "business_id": {"type": "token"},
+        "kind": {"type": "token"},
+        "source": {"type": "token"},
+        "duplicate_of": {"type": "token"},
+        "headline": {"type": "string", "analyzer": "lucene.english"},
+        "summary": {"type": "string", "analyzer": "lucene.english"},
+        "published_at": {"type": "date"},
+        "starts_at": {"type": "date"},
+        "expires_at": {"type": "date"},
+        "location": {"type": "geo"},
     }}}),
     EVENTS_INDEX: (schema.EVENTS, "search", {"mappings": {"dynamic": False, "fields": {
         "business_id": {"type": "token"},
@@ -150,6 +165,8 @@ def ensure_search_indexes(db: Database) -> Dict[str, str]:
     out = {}
     for name, (coll, kind, definition) in INDEXES.items():
         try:
+            if coll not in db.list_collection_names():  # Atlas only indexes a collection that exists
+                db.create_collection(coll)
             existing = {i["name"]: i for i in db[coll].list_search_indexes()}
             if name not in existing:
                 db[coll].create_search_index(SearchIndexModel(definition, name=name, type=kind))
@@ -556,6 +573,135 @@ def search_notes(db: Database, query: str, business_id: str = BUSINESS_ID, limit
                                                      for e in events], "mode": mode}
 
 
+
+# ---------------------------------------------------------------- local news: ranked by how soon and how close
+
+SOON_PIVOT_MS = 3 * 24 * 3600 * 1000  # an event 3 days away scores half as much as one today
+FRESH_PIVOT_MS = 7 * 24 * 3600 * 1000  # a story a week old scores half as much as today's
+NEAR_PIVOT_M = 1000  # a place 1 km from the pitch scores half as much as one at the pitch
+NEWS_FIELDS = {"kind": 1, "headline": 1, "summary": 1, "url": 1, "source": 1, "published_at": 1, "starts_at": 1,
+               "distance_km": 1, "expires_at": 1}
+
+
+def _news_filter(business_id: str, now: datetime, kind: Optional[str]) -> List[dict]:
+    out = [{"equals": {"path": "business_id", "value": business_id}},
+           {"range": {"path": "expires_at", "gte": now}}]
+    if kind:
+        out.append({"equals": {"path": "kind", "value": kind}})
+    return out
+
+
+def news_feed(db: Database, query: str = "", kind: Optional[str] = None, now: Optional[datetime] = None,
+              business_id: str = BUSINESS_ID, limit: int = 8) -> SearchResult:
+    """The owner's local news, best first: events coming up soon, fresh stories and places near the pitch rank highest
+    (Atlas Search `near` on starts_at, published_at and the geo location). With a query: typo-tolerant text search,
+    matched words highlighted. Expired items and duplicates of another source's story are left out."""
+    from backend.inputs.pitches import PITCHES
+
+    now = now or datetime.now(timezone.utc)
+    query = (query or "").strip()[:MAX_QUERY_LEN]
+    pitch = PITCHES[0]
+    should = [{"near": {"path": "starts_at", "origin": now, "pivot": SOON_PIVOT_MS, "score": {"boost": {"value": 2}}}},
+              {"near": {"path": "published_at", "origin": now, "pivot": FRESH_PIVOT_MS}},
+              {"near": {"path": "location", "origin": {"type": "Point", "coordinates": [pitch["lon"], pitch["lat"]]},
+                        "pivot": NEAR_PIVOT_M}}]
+    compound = {"filter": _news_filter(business_id, now, kind), "mustNot": [{"exists": {"path": "duplicate_of"}}],
+                "should": should}
+    if query:
+        compound["must"] = [{"compound": {"should": _clauses(query, ["headline", "summary"]), "minimumShouldMatch": 1}}]
+    stage = {"index": NEWS_INDEX, "compound": compound}
+    if query:
+        stage["highlight"] = {"path": ["headline", "summary"]}
+    try:
+        docs = list(db[schema.NEWS].aggregate([
+            {"$search": stage}, {"$limit": limit},
+            {"$project": {**NEWS_FIELDS, "score": {"$meta": "searchScore"},
+                          **({"highlights": {"$meta": "searchHighlights"}} if query else {})}}]))
+        for d in docs:
+            d["highlights"] = _snippets(d.get("highlights"), limit=1) if query else []
+        if not docs:  # a missing or building index answers with nothing: only a failure if a plain match finds some
+            basic = _basic_news(db, query, kind, now, business_id, limit)
+            if basic:
+                return _fallback(db, basic, "Atlas Search returned no news but a plain match did (index missing or building?)")
+        return SearchResult(docs, "atlas")
+    except (OperationFailure, NotImplementedError) as e:
+        return _fallback(db, _basic_news(db, query, kind, now, business_id, limit), str(e)[:200])
+
+
+def _basic_news(db: Database, query: str, kind: Optional[str], now: datetime, business_id: str, limit: int) -> List[dict]:
+    """The same ranking by hand: soon + fresh + near, the way Atlas `near` scores them (pivot / (pivot + distance))."""
+    words = _words(query)
+    out = []
+    for d in db[schema.NEWS].find({"business_id": business_id, "duplicate_of": {"$exists": False},
+                                   **({"kind": kind} if kind else {})}, NEWS_FIELDS):
+        if not d.get("expires_at") or _aware(d["expires_at"]) < now:
+            continue
+        text = f"{d.get('headline', '')} {d.get('summary', '')}"
+        if words and not words & _words(text):
+            continue
+        score = 0.0
+        if d.get("starts_at"):
+            score += 2 * SOON_PIVOT_MS / (SOON_PIVOT_MS + abs((_aware(d["starts_at"]) - now).total_seconds() * 1000))
+        if d.get("published_at"):
+            score += FRESH_PIVOT_MS / (FRESH_PIVOT_MS + abs((_aware(d["published_at"]) - now).total_seconds() * 1000))
+        if d.get("distance_km") is not None:
+            score += NEAR_PIVOT_M / (NEAR_PIVOT_M + d["distance_km"] * 1000)
+        out.append({**d, "score": round(score, 4),
+                    "highlights": _basic_snippets([d.get("headline") or "", d.get("summary") or ""], query, 1) if words else []})
+    return sorted(out, key=lambda d: -d["score"])[:limit]
+
+
+def news_facets(db: Database, now: Optional[datetime] = None, business_id: str = BUSINESS_ID) -> dict:
+    """{"kind": [("event", 3), …], "total": n, "mode"}: one $searchMeta over the live (unexpired, not duplicate) news."""
+    now = now or datetime.now(timezone.utc)
+    try:
+        meta = next(db[schema.NEWS].aggregate([{"$searchMeta": {"index": NEWS_INDEX, "facet": {
+            "operator": {"compound": {"filter": _news_filter(business_id, now, None),
+                                      "mustNot": [{"exists": {"path": "duplicate_of"}}]}},
+            "facets": {"kind": {"type": "string", "path": "kind"}}}}}]), None)
+        if not meta:
+            raise OperationFailure("no $searchMeta result")
+        return {"kind": [(b["_id"], b["count"]) for b in meta["facet"]["kind"]["buckets"]],
+                "total": meta["count"]["lowerBound"], "mode": "atlas"}
+    except (OperationFailure, NotImplementedError, KeyError, TypeError):
+        from collections import Counter
+        live = [d for d in db[schema.NEWS].find({"business_id": business_id, "duplicate_of": {"$exists": False}}, {"kind": 1, "expires_at": 1})
+                if d.get("expires_at") and _aware(d["expires_at"]) >= now]
+        return {"kind": Counter(d.get("kind") for d in live).most_common(), "total": len(live), "mode": "basic"}
+
+
+def is_same_story(doc: dict, other: dict) -> bool:
+    """Two links, one story: headlines share most words AND the same event day (±1) or, for plain news, published
+    within 2 days. "Halloween market at London Fields" (Ticketmaster) = "London Fields Halloween market returns" (paper)."""
+    if doc.get("_id") == other.get("_id") or _overlap(doc.get("headline"), other.get("headline")) < 0.5:
+        return False
+    a, b = doc.get("starts_at"), other.get("starts_at")
+    if a and b:
+        return abs((_aware(a) - _aware(b)).total_seconds()) <= 24 * 3600
+    if a or b:
+        return False
+    pa, pb = doc.get("published_at"), other.get("published_at")
+    return bool(pa and pb) and abs((_aware(pa) - _aware(pb)).total_seconds()) <= 2 * 24 * 3600
+
+
+def same_story(db: Database, doc: dict, business_id: str = BUSINESS_ID) -> Optional[dict]:
+    """An already stored item telling the same story (another source), or None. Atlas `moreLikeThis` finds candidates
+    that read alike; is_same_story makes the call."""
+    fields = {"headline": 1, "starts_at": 1, "published_at": 1, "duplicate_of": 1}
+    try:
+        candidates = list(db[schema.NEWS].aggregate([
+            {"$search": {"index": NEWS_INDEX, "compound": {
+                "filter": [{"equals": {"path": "business_id", "value": business_id}}],
+                "mustNot": [{"exists": {"path": "duplicate_of"}}],
+                "must": [{"moreLikeThis": {"like": {"headline": doc.get("headline") or "", "summary": doc.get("summary") or ""}}}]}}},
+            {"$limit": 10}, {"$project": fields}]))
+        if not candidates:  # a missing or building index answers with nothing: check by hand rather than miss a twin
+            raise OperationFailure("no candidates from Atlas Search")
+    except (OperationFailure, NotImplementedError):
+        candidates = list(db[schema.NEWS].find({"business_id": business_id}, fields).sort("published_at", -1).limit(300))
+    return next((c for c in candidates if not c.get("duplicate_of") and is_same_story(doc, c)), None)
+
+
 # ---------------------------------------------------------------- helpers
 
 def _aware(when: datetime) -> datetime:
@@ -716,6 +862,15 @@ def live_check(db: Database) -> List[tuple]:
     notes = search_notes(db, "milk")
     results.append((notes["mode"] == "atlas", f"board memos + events 'milk': {len(notes['insights'])} insight(s), "
                                               f"{len(notes['events'])} event(s) ({notes['mode']})"))
+    feed = news_feed(db)
+    results.append((feed.mode == "atlas" and bool(feed.hits), f"local news ranked by soon + near: {[h['headline'][:40] for h in feed.hits][:3]} ({feed.mode})"))
+    if feed.hits:
+        twin = {"_id": "check", "headline": feed.hits[0]["headline"], "summary": feed.hits[0].get("summary", ""),
+                "starts_at": feed.hits[0].get("starts_at"), "published_at": feed.hits[0].get("published_at")}
+        found = same_story(db, twin)
+        results.append((bool(found), f"moreLikeThis finds the same story: {bool(found)}"))
+    nf = news_facets(db)
+    results.append((nf["mode"] == "atlas" and bool(nf["kind"]), f"news facets ({nf['mode']}): {nf['kind']}"))
     since = datetime.now(timezone.utc) - timedelta(hours=24)
     fallbacks = db[schema.AGENT_LOG].count_documents({"kind": "search_fallback", "at": {"$gte": since}})
     results.append((fallbacks == 0, f"search fallbacks in the last 24 h: {fallbacks}"))
