@@ -1278,3 +1278,73 @@ def test_loading_screen_is_on_every_page_but_never_blocks_it(db):
     assert 'class="hello"' in page  # the dashboard is in the same page underneath: nothing waits on the splash
     css = web.get("/static/cofoundr.css").text
     assert "splash-failsafe" in css and ".splash { display: none; }" in css  # hidden without JS, gone even if JS fails
+
+
+# ---------------------------------------------------------------- approved reminders, really emailed (fake SMTP)
+from backend import approvals  # noqa: E402
+from backend.outputs import email as email_out  # noqa: E402
+
+
+class FakeSMTP:
+    def __init__(self, fail=None):
+        self.fail, self.sent, self.logged_in = fail, [], None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def login(self, user, password):
+        if self.fail == "login":
+            raise smtplib.SMTPAuthenticationError(535, b"bad app password")
+        self.logged_in = (user, password)
+
+    def send_message(self, msg):
+        if self.fail == "send":
+            raise smtplib.SMTPServerDisconnected("gone")
+        self.sent.append(msg)
+
+
+import smtplib  # noqa: E402
+
+
+def test_approved_reminder_is_emailed_to_the_demo_inbox_never_the_customer(db, gemini_down, inbox_env, monkeypatch):
+    smtp = FakeSMTP()
+    monkeypatch.setattr(email_out, "_smtp", lambda: smtp)
+    overdue.run()
+    a = db[schema.APPROVALS].find_one({"ref": 1})
+    result = approvals.decide(a, "approve", via="whatsapp")
+    msg = smtp.sent[0]
+    assert smtp.logged_in == ("gaia.demo@gmail.com", "abcdefghijklmnop")  # spaces in the app password don't matter
+    assert msg["To"] == "gaia.demo@gmail.com" and a["to_email"] not in msg["To"]  # REMINDER_INBOX unset: the demo inbox
+    assert msg["X-CoFoundr"] == "reminder" and msg["Subject"] == a["draft_subject"]
+    assert a["draft"].strip()[:40] in msg.get_content() and f"written for {a['to_email']}" in msg.get_content()
+    assert "emailed to the demo inbox" in result["effect"]
+    monkeypatch.setenv("REMINDER_INBOX", "judge.demo@example.org")
+    approvals.decide(db[schema.APPROVALS].find_one({"ref": 2}), "approve", via="dashboard")
+    assert smtp.sent[1]["To"] == "judge.demo@example.org"
+
+
+def test_reminder_that_cannot_be_emailed_goes_back_in_the_queue(db, gemini_down, inbox_env, monkeypatch):
+    monkeypatch.setattr(email_out, "_smtp", lambda: FakeSMTP(fail="login"))
+    overdue.run()
+    a = db[schema.APPROVALS].find_one({"ref": 1})
+    with pytest.raises(approvals.DecisionError, match="back in the queue"):
+        approvals.decide(a, "approve", via="whatsapp")
+    assert db[schema.APPROVALS].find_one({"ref": 1})["status"] == "pending"
+    assert db[schema.AGENT_LOG].find_one({"kind": "send_failed"})
+
+
+def test_reminder_without_gmail_credentials_is_simulated_and_says_so(monkeypatch):
+    monkeypatch.delenv("GMAIL_ADDRESS", raising=False)
+    monkeypatch.setattr(email_out, "_smtp", lambda: pytest.fail("no credentials: must not connect"))
+    assert email_out.send_reminder({"to_email": "x@example.com"}) == "reminder sent to x@example.com (simulated)"
+
+
+def test_inbox_check_never_reads_coFoundrs_own_reminders(db, inbox_env, gemini_down):
+    own = email_out.build({"ref": 1, "draft_subject": "Reminder: invoice GAIA-1029", "draft": "Please pay.", "to_email": "a@b.c"},
+                          "gaia.demo@gmail.com", "gaia.demo@gmail.com")
+    r = gmail.check_inbox(connect=lambda: FakeInbox(bytes(own)))
+    assert "0 invoice(s) added" in r.message and "own email" in r.emails[0].note
+    assert not db[schema.INVOICES].find_one({"invoice_number": "GAIA-1029", "source": "email"})
