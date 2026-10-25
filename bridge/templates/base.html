@@ -10,7 +10,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="/static/cofoundr.css?v=20">
+<link rel="preload" href="/static/gaia-van.webp?v=2" as="image" type="image/webp">
+<link rel="stylesheet" href="/static/cofoundr.css?v=31">
 <script>
   document.documentElement.classList.add("js");
   /* Loading screen: once per browser session (or ?splash=1), never for reduced motion. Decided before first paint. */
@@ -20,18 +21,30 @@
       document.documentElement.classList.add("splash-on"); sessionStorage.setItem("cf-splash", "1");
     }
   } catch (e) {}
+  /* Page switch direction: going down the sidebar the new page rises from below, going back up it drops in from above.
+     Set on the new page just before its first frame (pagereveal), cleared when the animation ends. */
+  addEventListener("pagereveal", (e) => {
+    const vt = e.viewTransition, from = window.navigation && navigation.activation && navigation.activation.from;
+    if (!vt || !from) return;
+    const order = [...document.querySelectorAll(".side .nav a[href]")].map((a) => new URL(a.href).pathname);
+    const a = order.indexOf(new URL(from.url).pathname), b = order.indexOf(location.pathname);
+    if (a < 0 || b < 0 || a === b) return;
+    document.documentElement.dataset.vt = b > a ? "down" : "up";
+    const clear = () => { delete document.documentElement.dataset.vt; };
+    vt.finished.then(clear, clear);  // also when the switch is skipped or aborted
+  });
 </script>
 </head>
 <body>
 <div class="splash" aria-hidden="true">
-  <canvas></canvas>
+  <div class="splash__photo"></div>
   <div class="splash__inner">
     <span class="splash__mark">{% for ch in "Cofoundr" %}<b style="--i:{{ loop.index0 }}">{{ ch }}</b>{% endfor %}<i>.</i></span>
     <span class="splash__tag">Your AI co-founder</span>
     <span class="splash__bar"><i></i></span>
   </div>
 </div>
-<div class="backdrop" aria-hidden="true"><canvas></canvas></div>
+<div class="backdrop" aria-hidden="true"></div>
 <div class="grain" aria-hidden="true"></div>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></symbol>
@@ -119,6 +132,6 @@
     {% block content %}{% endblock %}
   </main>
 </div>
-<script src="/static/cofoundr.js?v=17" defer></script>
+<script src="/static/cofoundr.js?v=19" defer></script>
 </body>
 </html>

@@ -11,7 +11,8 @@
   An answer claiming it approved/paid/sent something is replaced: nothing here can do that.
 - Heads-up: before asking Gemini, code lists what's worth flagging (stock running low, wind in the next days,
   invoices to check, the top priority; nothing the owner heard in the last 2 h) and Gemini may end with one of them.
-- Thinking: questions that need judgement (what if / should / why / plan…) get Argon's HIGH thinking; lookups MEDIUM.
+- Thinking: questions that need judgement (should / why / worth / plan…) get Argon's HIGH thinking; lookups and
+  what-ifs (code does the maths) MEDIUM.
 - Gemini busy or broken → a plain answer from the data (what's waiting), never a guess. Every answer is logged.
 """
 import json
@@ -34,8 +35,9 @@ LONDON = ZoneInfo("Europe/London")
 MAX_TOOL_CALLS = 6
 HEADS_UP_QUIET = timedelta(hours=2)  # a heads-up the owner already got isn't repeated for this long
 HEADS_UP_DAYS = 3  # wind and the like: today and the next two days
-# Questions that need judgement get Argon's HIGH thinking (slower, ~15-25 s); lookups stay on MEDIUM (~7 s)
-HARD = re.compile(r"\b(what if|should|why|worth|plan|compare|best|recommend|improve|strategy|how (can|do|could|should) (i|we))\b",
+# Questions that need judgement get Argon's HIGH thinking (slower: 38-62 s measured); lookups stay on MEDIUM (~8 s).
+# "What if" is NOT here: what_if_price does the maths in code, so MEDIUM answers it in seconds (it's in the live demo).
+HARD = re.compile(r"\b(should|why|worth|plan|compare|best|recommend|improve|strategy|how (can|do|could|should) (i|we))\b",
                   re.IGNORECASE)
 MAX_ROWS = 15  # per tool result: enough to answer, small enough to stay fast
 WHAT_IF_DAYS = 28  # price what-ifs use the last 4 weeks of till lines

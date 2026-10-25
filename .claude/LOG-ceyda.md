@@ -12,6 +12,49 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 09:30 — Navy + mustard, focus-pull page switch, typed greeting, light loading screen
+- **Did:** (all in `cofoundr.css` / `cofoundr.js` / `base.html`)
+  1. Accent pair **navy #1f3a5f** (buttons, selected nav, chart line, "fine" states) + **mustard** (#c9962b lines/fills, #a8781a for big text: 3.6:1); greeting all gold (mustard→navy blended olive). Replaces the leaf green
+  2. Page-switch flash fixed: view-transition snapshots can't include the frosted blur, so the morphing panel showed the sharp photo (brown-orange). Solid cream backing on `::view-transition-group(*.morph)`
+  3. Page switch = **focus pull** (old panel blurs out, new one sharpens in, ~0.45 s), direction from the sidebar order (`pagereveal` sets `html[data-vt]`: down the list rises from below, up drops from above)
+  4. "Good morning, GAIA." typed out once per session (after the loading screen), gold caret; panel keeps its size; screen readers get the full text
+  5. Loading screen now light: the van photo frosted with cream, charcoal wordmark + mustard dot, navy→mustard progress line, then a focus pull into the dashboard. Dark WebGL scene removed
+- Checked in the browser (loading screen + typing frames, direction logic). 567 tests pass
+- **Status:** done, PR into `stage` + release PR (needs Sunil)
+- **Next:** see the 04:40 handover list
+- **Blockers / notes for partner:** none in your area. Merge the release well before the demo
+
+## Sun 25 Oct, 09:00 — Contrast: readable text + "Needs you" cards on top of the hierarchy
+- **Did:** measured contrast against the photo: grey labels were 2.8–3.1:1 (1.4:1 over the dark road). Darker text tokens (`--muted` #5f5b52, `--ink-2` #3a3b36, `--ink` #151613) and glass ≥ .8 opaque at its lower edge → ~6:1 on light areas, ≥4.5:1 over the road. "Needs you" cards most solid + lifted with bolder titles; other cards' shadows softer. Checked in the browser. 566 tests pass
+- **Status:** done, PR into `stage`; live with the next release
+- **Next:** see the 04:40 handover list
+- **Blockers / notes for partner:** none in your area
+
+## Sun 25 Oct, 08:40 — Colours taken from the van photo (glass kept)
+- **Did:** new landscape van photo (1672×941) as the backdrop, anchored on the van (51%/55%). "Photo palette" block at the end of `cofoundr.css` (easy to tweak or remove): leaf green accent (buttons, selected nav, chart line), ochre highlights (greeting gradient, £ figures, forecast line), butter cream, charcoal (counts, chat bubbles, send), brick red for overdue; glass tinted warm cream; the old copper/rose/sky/lilac accents mapped onto these. Checked Home, Approvals, Board in the browser. 566 tests pass
+- **Status:** done, PR into `stage`; live with the next release
+- **Next:** see the 04:40 handover list
+- **Blockers / notes for partner:** none in your area
+
+## Sun 25 Oct, 08:10 — Background: Jade's own photo of the GAIA van
+- **Did:** `bridge/static/gaia-van.webp` (Jade's photo, 256 KB) replaces the WebGL gradient as the backdrop: colours untouched, `cover` anchored at 50%/50% (the van's centre), preloaded. Readability without tinting the photo: glass panes a little more solid; the greeting and the "Needs you" label on their own frosted panels; sidebar tighter on screens under 860 px tall (and scrolls rather than cutting off its footer). Checked in the browser at laptop sizes (phone width not checked visually). 566 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **Next:** see the 04:40 handover list
+- **Blockers / notes for partner:** the photo shows the real van and @gaiacoffee.ldn (Jade's own photo): the "GAIA owner OK with the name" question in the plan still applies
+
+## Sun 25 Oct, 04:40 — Demo script updated; HANDOVER for the morning
+- **Did:** `docs/demo-script.md` updated for tonight's work: open on `/?splash=1`, "Send me today's brief" as the opener, approve → show the reminder email in the demo Gmail, Tasks → Approvals, what-if now ~10 s, don't ask "should/why/worth" live (40–60 s), no releases or Fly secret changes from 30 min before. Flagged that **GAIA-1050 is used up** (my 02:44 live test → approval #5). Code: "what if" no longer gets HIGH thinking (`assistant.HARD`): code does the maths, answer in 10 s (measured with real Gemini). 565 tests pass
+- **Status:** done, PR into `stage` + release PR (needs Sunil)
+- **Live now (`main` d717301):** WhatsApp in/out on the legacy sandbox (+1 415 523 8886), unprompted updates, approvals by reply, friendly Gemini answers with 💡 heads-ups, real reminder emails to gaiacoffeedemo@gmail.com, 08:00 morning brief + button, chat panel, Apple-style UI + loading screen, "Needs you" first, new sidebar
+- **Next (in order):**
+  1. Merge the release with the what-if speed fix (if Sunil hasn't)
+  2. Before 08:00: send "hi" from the demo phone to the sandbox (24 h window) → the 08:00 brief should arrive; check `/activity` for "Sent your morning brief"
+  3. Choose a fresh overdue invoice for the live demo (GAIA-1050 is used); rehearse with the sandbox (`COFOUNDR_SANDBOX=1`), then one full live run with the phone (tell Sunil first)
+  4. README: fill the _TBD_ judging + user-guide sections with evidence (files, endpoints, demo timestamps)
+  5. Record the 3-min video (also MongoDB's submission): script's "Backup video" section; upload unlisted, link in README
+  6. Submit before **12:00**: all tracks + MongoDB + Gemini
+- **Blockers / notes for partner:** Sunil, I edited `docs/demo-script.md` (yours): see the changes above, especially the GAIA-1050 note. Don't release during the demo
+
 ## Sun 25 Oct, 04:10 — Sidebar follows the owner's day; Activity labels
 - **Did:** sidebar = Home · Approvals (was Tasks) · Inbox (new) · Finances · Insights · Board · Activity (new), then "More": Inventory · News · Chat (was Ask) · Settings. Activity: friendly labels for WhatsApp/brief/assistant events; the dashboard chat's own `chat_message` copies hidden (the "Answered your question" entry covers it). Checked in the browser. Live record shows #1 approved on the dashboard at 03:01 and its reminder really emailed to the demo inbox. 565 tests pass
 - **Status:** done, PR into `stage` + release PR
