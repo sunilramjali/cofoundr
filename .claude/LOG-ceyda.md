@@ -12,6 +12,12 @@ Newest entry at the top. Format:
 
 ---
 
+## Sun 25 Oct, 01:40 — Stock in whole units, wind warning, natural to-do questions
+- **Did:** `view.qty()` = whole numbers with units ("3 kg", "12 litres", "40"; needs/orders rounded up) on `/inventory` and in the assistant's `stock_needed`; `view.wind_warning()` (≥ 30 km/h max wind) on the home card and in `day_conditions` (Gemini passes it on with 💨). "What needs to be done?", "what's our to-do list?", "what's up today?" now get the list (Gemini prompt + the no-Gemini fallback). WhatsApp answers: bold titles, gaps, "Would you like to approve any now?". 435 tests pass
+- **Status:** done, PR into `stage` + release PR
+- **Next:** live check on the phone
+- **Blockers / notes for partner:** Sunil, **edit in your test file** `tests/test_assistant_tools.py`: `stock_needed` now returns strings like "19" / "3 kg" (was 1-dp floats), assertions updated to match
+
 ## Sun 25 Oct, 00:50 — WhatsApp live on a real phone (MVP1)
 - **Did:** "what's waiting?" on WhatsApp → `/whatsapp/twilio` (signature ✓, owner ✓) → Gemini answer delivered in 9 s. Getting there: Twilio upgraded; the newer trial sandbox (+44 7723 317807) only allows templates, so we use the **legacy sandbox +1 415 523 8886**; `OWNER_WHATSAPP` set to the demo phone; Twilio's identity check (Individual profile in Trust Hub) approved, before that every send was refused ("Primary compliance profile is not approved")
 - **Status:** replies live; unprompted push not yet seen live

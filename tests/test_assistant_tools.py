@@ -77,11 +77,14 @@ def test_stock_needed_scales_usage_by_the_forecast_and_flags_shortfalls(db, till
     assert r["trading"] and r["expected_takings"] == 600 and r["busier_than_usual_pct"] == 20  # 600 vs a usual 500
     est = view.stock_estimate(list(db[schema.STOCK_COUNTS].find()), datetime.now(timezone.utc))
     per_day = {x["name"]: x["per_day"] for x in est["rows"] if x["per_day"]}
+    unit = {x["name"]: x["unit"] for x in est["rows"]}
     assert r["short"] and {i["item"] for i in r["short"]} <= set(per_day)
-    for i in r["short"]:
-        assert i["day_needs"] == round(per_day[i["item"]] * 1.2, 1)
-        assert i["short_by"] > 0 and abs(i["short_by"] - (i["day_needs"] - i["on_truck_by_then"])) < 0.11  # each rounded to 0.1
-    assert [i["short_by"] for i in r["short"]] == sorted((i["short_by"] for i in r["short"]), reverse=True)
+    for i in r["short"]:  # whole numbers with their unit, needs and shortfalls rounded up
+        assert i["day_needs"] == view.qty(per_day[i["item"]] * 1.2, unit[i["item"]], up=True)
+        assert i["short_by"] and int(i["short_by"].split()[0]) > 0
+        assert not any("." in i[k] for k in ("on_truck_by_then", "day_needs", "short_by"))
+    amounts = [int(i["short_by"].split()[0]) for i in r["short"]]
+    assert amounts == sorted(amounts, reverse=True)
     assert len(r["short"]) + r["enough_of"] == len(per_day)
     assert "estimate" in r["basis"] and "deliveries aren't recorded" in r["basis"]
 

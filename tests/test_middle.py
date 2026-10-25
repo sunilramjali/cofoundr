@@ -1020,3 +1020,18 @@ def test_timestamps_without_an_offset_are_london_time(db):
     from backend import conditions
     conditions.record_events([_event(starts_at="2026-07-01T09:00:00")])  # BST: 09:00 London = 08:00 UTC
     assert db[schema.EVENTS].find_one({})["starts_at"].hour == 8
+
+
+# ---------------------------------------------------------------- Argon thinking level on every call
+
+def test_every_gemini_call_sets_a_thinking_level(monkeypatch):
+    import pathlib
+    from backend.ai import gemini
+
+    for path in pathlib.Path("backend").rglob("*.py"):
+        src = path.read_text()
+        for chunk in src.split("GenerateContentConfig(")[1:]:
+            assert "thinking_config=thinking(" in chunk[:200], f"{path}: a Gemini call without a thinking level"
+    assert gemini.thinking(gemini.HIGH).thinking_level == gemini.HIGH
+    monkeypatch.setenv("GEMINI_THINKING", "off")  # the escape hatch: model default, no deploy needed
+    assert gemini.thinking(gemini.HIGH) is None

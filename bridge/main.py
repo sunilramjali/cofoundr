@@ -77,6 +77,8 @@ templates.env.filters["stamp"] = lambda d: d.strftime("%d %b %H:%M") if d else "
 templates.env.filters["money0"] = view.money0
 templates.env.filters["ago"] = view.ago
 templates.env.globals["due_label"] = view.due_label
+templates.env.globals["qty"] = view.qty
+templates.env.globals["wind_warning"] = view.wind_warning
 
 BUSINESS_ID = "gaia-coffee"
 MAX_UPLOAD = 10 * 1024 * 1024  # pipeline.ingest_invoice rejects anything larger
@@ -253,7 +255,7 @@ def ask(text: str = Form(""), back: str = Form("/")):
     anything else is a question for the Gemini assistant, which can read the data but not change it."""
     text = text.strip()
     if not text:
-        return _back("Type a question first, e.g. “what's waiting?”.", back)
+        return _back("Type a question first, e.g. “what needs doing?”.", back)
     parsed = parse_reply(text)
     if not parsed:
         return _back(assistant.answer(text).text, back)
